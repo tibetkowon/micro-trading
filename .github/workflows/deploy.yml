@@ -19,6 +19,7 @@ jobs:
           host: ${{ secrets.NCP_HOST }}
           username: ${{ secrets.NCP_USERNAME }}
           key: ${{ secrets.NCP_SSH_KEY }}
+          passphrase: ${{ secrets.NCP_SSH_PASSPHRASE }}
           port: 22
           script: |
             cd /service/micro-trading
