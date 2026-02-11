@@ -1,0 +1,113 @@
+"""KIS OpenAPI HTTP client with OAuth token management."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+from datetime import datetime, timedelta
+from typing import Any
+
+import httpx
+
+from app.config import settings
+from app.broker.kis.endpoints import HASHKEY_PATH, TOKEN_PATH
+from app.broker.kis.models import KISToken
+
+logger = logging.getLogger(__name__)
+
+
+class KISClient:
+    """Low-level HTTP client for KIS OpenAPI."""
+
+    def __init__(self):
+        self._client: httpx.AsyncClient | None = None
+        self._token = KISToken()
+        self._is_mock = "vts" in settings.kis_base_url.lower()
+
+    @property
+    def is_mock(self) -> bool:
+        return self._is_mock
+
+    async def open(self):
+        self._client = httpx.AsyncClient(
+            base_url=settings.kis_base_url,
+            timeout=30.0,
+        )
+
+    async def close(self):
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+
+    async def _ensure_token(self):
+        if not self._token.is_expired:
+            return
+        if not self._client:
+            await self.open()
+        resp = await self._client.post(
+            TOKEN_PATH,
+            json={
+                "grant_type": "client_credentials",
+                "appkey": settings.kis_app_key,
+                "appsecret": settings.kis_app_secret,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._token = KISToken(
+            access_token=data["access_token"],
+            token_type=data.get("token_type", "Bearer"),
+            expires_at=datetime.now() + timedelta(hours=23),
+        )
+        logger.info("KIS token refreshed (mock=%s)", self._is_mock)
+
+    async def _get_hashkey(self, body: dict) -> str:
+        if not self._client:
+            await self.open()
+        resp = await self._client.post(
+            HASHKEY_PATH,
+            json=body,
+            headers={
+                "content-Type": "application/json",
+                "appKey": settings.kis_app_key,
+                "appSecret": settings.kis_app_secret,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["HASH"]
+
+    def _base_headers(self, tr_id: str) -> dict[str, str]:
+        return {
+            "content-type": "application/json; charset=utf-8",
+            "authorization": f"{self._token.token_type} {self._token.access_token}",
+            "appkey": settings.kis_app_key,
+            "appsecret": settings.kis_app_secret,
+            "tr_id": tr_id,
+        }
+
+    async def get(self, path: str, tr_id: str, params: dict[str, str] | None = None) -> dict[str, Any]:
+        await self._ensure_token()
+        if not self._client:
+            await self.open()
+        headers = self._base_headers(tr_id)
+        resp = await self._client.get(path, headers=headers, params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def post(
+        self,
+        path: str,
+        tr_id: str,
+        body: dict[str, Any],
+        use_hashkey: bool = True,
+    ) -> dict[str, Any]:
+        await self._ensure_token()
+        if not self._client:
+            await self.open()
+        headers = self._base_headers(tr_id)
+        if use_hashkey:
+            headers["hashkey"] = await self._get_hashkey(body)
+        resp = await self._client.post(path, headers=headers, json=body)
+        resp.raise_for_status()
+        return resp.json()

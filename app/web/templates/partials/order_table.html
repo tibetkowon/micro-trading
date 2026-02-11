@@ -1,0 +1,34 @@
+{% if orders %}
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Status</th>
+            <th>Source</th>
+            <th>Time</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for o in orders %}
+        <tr>
+            <td>{{ o.id }}</td>
+            <td><strong>{{ o.symbol }}</strong></td>
+            <td class="{{ 'buy-side' if o.side == 'BUY' else 'sell-side' }}">{{ o.side }}</td>
+            <td>{{ o.filled_quantity or o.quantity }}</td>
+            <td>{{ "{:,.0f}".format(o.filled_price or o.price or 0) }}</td>
+            <td><mark>{{ o.status }}</mark></td>
+            <td>{{ o.source }}</td>
+            <td>{{ o.created_at.strftime('%m-%d %H:%M') if o.created_at else '' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<p>No orders yet.</p>
+{% endif %}

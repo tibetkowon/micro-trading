@@ -1,0 +1,169 @@
+"""Web dashboard routes (Jinja2 + HTMX)."""
+
+from __future__ import annotations
+
+import json
+
+from fastapi import APIRouter, Depends, Request, Form
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.database import get_session
+from app.services.order_service import OrderService
+from app.services.portfolio_service import PortfolioService
+from app.services.strategy_service import StrategyService
+from app.schemas.order import OrderCreate
+from app.schemas.common import Market, OrderSide, OrderType, TradingMode
+
+import pathlib
+
+templates = Jinja2Templates(directory=str(pathlib.Path(__file__).parent / "templates"))
+
+web_router = APIRouter(tags=["web"])
+
+
+@web_router.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = PortfolioService(session)
+    summary = await svc.get_summary(settings.trading_mode.value)
+    positions = await svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
+
+    order_svc = OrderService(session)
+    recent_orders = await order_svc.get_orders(limit=10)
+
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "summary": summary,
+        "positions": positions[:5],
+        "recent_orders": recent_orders,
+        "trading_mode": settings.trading_mode.value,
+    })
+
+
+@web_router.get("/orders", response_class=HTMLResponse)
+async def orders_page(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = OrderService(session)
+    orders = await svc.get_orders(limit=100)
+    return templates.TemplateResponse("orders.html", {
+        "request": request,
+        "orders": orders,
+        "trading_mode": settings.trading_mode.value,
+    })
+
+
+@web_router.post("/orders/submit", response_class=HTMLResponse)
+async def submit_order(
+    request: Request,
+    symbol: str = Form(...),
+    market: str = Form("KR"),
+    side: str = Form(...),
+    order_type: str = Form("MARKET"),
+    quantity: int = Form(...),
+    price: float | None = Form(None),
+    session: AsyncSession = Depends(get_session),
+):
+    req = OrderCreate(
+        symbol=symbol.upper(),
+        market=Market(market),
+        side=OrderSide(side),
+        order_type=OrderType(order_type),
+        quantity=quantity,
+        price=price if order_type == "LIMIT" else None,
+        trading_mode=TradingMode(settings.trading_mode.value),
+    )
+    svc = OrderService(session)
+    await svc.create_order(req)
+
+    orders = await svc.get_orders(limit=100)
+    return templates.TemplateResponse("partials/order_table.html", {
+        "request": request,
+        "orders": orders,
+    })
+
+
+@web_router.get("/positions", response_class=HTMLResponse)
+async def positions_page(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = PortfolioService(session)
+    is_paper = settings.trading_mode == TradingMode.PAPER
+    positions = await svc.get_positions(is_paper=is_paper)
+    return templates.TemplateResponse("positions.html", {
+        "request": request,
+        "positions": positions,
+        "trading_mode": settings.trading_mode.value,
+    })
+
+
+@web_router.get("/portfolio", response_class=HTMLResponse)
+async def portfolio_page(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = PortfolioService(session)
+    summary = await svc.get_summary(settings.trading_mode.value)
+    snapshots = await svc.get_snapshots(settings.trading_mode.value)
+    snapshots_data = [
+        {"date": str(s.date), "value": s.total_value, "pnl": s.realized_pnl + s.unrealized_pnl}
+        for s in reversed(snapshots)
+    ]
+    return templates.TemplateResponse("portfolio.html", {
+        "request": request,
+        "summary": summary,
+        "snapshots_json": json.dumps(snapshots_data),
+        "trading_mode": settings.trading_mode.value,
+    })
+
+
+@web_router.get("/strategies", response_class=HTMLResponse)
+async def strategies_page(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = StrategyService(session)
+    strategies = await svc.list_all()
+    strats = []
+    for s in strategies:
+        strats.append({
+            "id": s.id,
+            "name": s.name,
+            "strategy_type": s.strategy_type,
+            "symbols": json.loads(s.symbols) if isinstance(s.symbols, str) else s.symbols,
+            "market": s.market,
+            "params": json.loads(s.params) if isinstance(s.params, str) else s.params,
+            "trading_mode": s.trading_mode,
+            "is_active": s.is_active,
+            "schedule_cron": s.schedule_cron,
+        })
+    return templates.TemplateResponse("strategies.html", {
+        "request": request,
+        "strategies": strats,
+        "trading_mode": settings.trading_mode.value,
+    })
+
+
+# HTMX partials
+
+@web_router.get("/partials/positions", response_class=HTMLResponse)
+async def partial_positions(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = PortfolioService(session)
+    is_paper = settings.trading_mode == TradingMode.PAPER
+    positions = await svc.get_positions(is_paper=is_paper)
+    return templates.TemplateResponse("partials/position_table.html", {
+        "request": request,
+        "positions": positions,
+    })
+
+
+@web_router.get("/partials/orders", response_class=HTMLResponse)
+async def partial_orders(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = OrderService(session)
+    orders = await svc.get_orders(limit=50)
+    return templates.TemplateResponse("partials/order_table.html", {
+        "request": request,
+        "orders": orders,
+    })
+
+
+@web_router.get("/partials/summary", response_class=HTMLResponse)
+async def partial_summary(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = PortfolioService(session)
+    summary = await svc.get_summary(settings.trading_mode.value)
+    return templates.TemplateResponse("partials/summary_cards.html", {
+        "request": request,
+        "summary": summary,
+    })

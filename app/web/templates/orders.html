@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Orders - Micro Trading{% endblock %}
+
+{% block content %}
+<h2>Orders</h2>
+
+<details open>
+    <summary>New Order</summary>
+    <form hx-post="/orders/submit" hx-target="#order-list" hx-swap="innerHTML">
+        <div class="grid">
+            <label>
+                Symbol
+                <input type="text" name="symbol" placeholder="005930" required>
+            </label>
+            <label>
+                Market
+                <select name="market">
+                    <option value="KR">KR (Korea)</option>
+                    <option value="US">US (USA)</option>
+                </select>
+            </label>
+            <label>
+                Side
+                <select name="side">
+                    <option value="BUY">BUY</option>
+                    <option value="SELL">SELL</option>
+                </select>
+            </label>
+        </div>
+        <div class="grid">
+            <label>
+                Order Type
+                <select name="order_type" id="order-type">
+                    <option value="MARKET">Market</option>
+                    <option value="LIMIT">Limit</option>
+                </select>
+            </label>
+            <label>
+                Quantity
+                <input type="number" name="quantity" min="1" value="1" required>
+            </label>
+            <label>
+                Price (Limit only)
+                <input type="number" name="price" step="0.01" id="limit-price">
+            </label>
+        </div>
+        <button type="submit">Submit Order</button>
+    </form>
+</details>
+
+<h3>Order History</h3>
+<div id="order-list" hx-get="/partials/orders" hx-trigger="every 30s" hx-swap="innerHTML">
+    {% include "partials/order_table.html" %}
+</div>
+{% endblock %}

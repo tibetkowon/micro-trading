@@ -1,0 +1,24 @@
+<div class="grid">
+    <article>
+        <header>Total Value</header>
+        <p class="big-number">{{ "{:,.0f}".format(summary.total_value) }} KRW</p>
+    </article>
+    <article>
+        <header>Unrealized P&L</header>
+        <p class="big-number {{ 'positive' if summary.unrealized_pnl >= 0 else 'negative' }}">
+            {{ "{:+,.0f}".format(summary.unrealized_pnl) }} KRW
+        </p>
+    </article>
+    <article>
+        <header>Realized P&L</header>
+        <p class="big-number {{ 'positive' if summary.realized_pnl >= 0 else 'negative' }}">
+            {{ "{:+,.0f}".format(summary.realized_pnl) }} KRW
+        </p>
+    </article>
+    <article>
+        <header>Return</header>
+        <p class="big-number {{ 'positive' if summary.return_pct >= 0 else 'negative' }}">
+            {{ "{:+.2f}".format(summary.return_pct) }}%
+        </p>
+    </article>
+</div>

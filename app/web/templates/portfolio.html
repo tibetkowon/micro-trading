@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Portfolio - Micro Trading{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<h2>Portfolio <small>({{ trading_mode }})</small></h2>
+
+{% include "partials/summary_cards.html" %}
+
+<article>
+    <header>Portfolio History</header>
+    <canvas id="portfolio-chart" height="300"></canvas>
+</article>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const snapshots = {{ snapshots_json | safe }};
+    if (snapshots.length > 0) {
+        const ctx = document.getElementById('portfolio-chart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: snapshots.map(s => s.date),
+                datasets: [
+                    {
+                        label: 'Total Value',
+                        data: snapshots.map(s => s.value),
+                        borderColor: '#4CAF50',
+                        tension: 0.3,
+                        fill: false,
+                    },
+                    {
+                        label: 'P&L',
+                        data: snapshots.map(s => s.pnl),
+                        borderColor: '#2196F3',
+                        tension: 0.3,
+                        fill: false,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' } },
+                scales: {
+                    y: { beginAtZero: false }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

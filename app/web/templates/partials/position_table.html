@@ -1,0 +1,33 @@
+{% if positions %}
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Symbol</th>
+            <th>Market</th>
+            <th>Qty</th>
+            <th>Avg Price</th>
+            <th>Current</th>
+            <th>P&L</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in positions %}
+        <tr>
+            <td><strong>{{ p.symbol }}</strong></td>
+            <td>{{ p.market }}</td>
+            <td>{{ p.quantity }}</td>
+            <td>{{ "{:,.0f}".format(p.avg_price) }}</td>
+            <td>{{ "{:,.0f}".format(p.current_price) }}</td>
+            <td class="{{ 'positive' if p.unrealized_pnl >= 0 else 'negative' }}">
+                {{ "{:+,.0f}".format(p.unrealized_pnl) }}
+                <small>({{ "{:+.1f}".format(p.unrealized_pnl_pct) }}%)</small>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<p>No positions yet.</p>
+{% endif %}

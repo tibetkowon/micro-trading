@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Strategies - Micro Trading{% endblock %}
+
+{% block content %}
+<h2>Strategies</h2>
+
+<details>
+    <summary>Create New Strategy</summary>
+    <form method="post" action="/api/strategies" id="strategy-form">
+        <div class="grid">
+            <label>
+                Name
+                <input type="text" name="name" required placeholder="My DCA Strategy">
+            </label>
+            <label>
+                Type
+                <select name="strategy_type">
+                    <option value="DCA">DCA (Dollar-Cost Averaging)</option>
+                    <option value="MOVING_AVERAGE">Moving Average Crossover</option>
+                    <option value="RSI_REBALANCE">RSI Rebalance</option>
+                </select>
+            </label>
+        </div>
+        <div class="grid">
+            <label>
+                Symbols (comma-separated)
+                <input type="text" name="symbols" placeholder="005930,035720">
+            </label>
+            <label>
+                Market
+                <select name="market">
+                    <option value="KR">KR</option>
+                    <option value="US">US</option>
+                </select>
+            </label>
+            <label>
+                Trading Mode
+                <select name="trading_mode">
+                    <option value="PAPER">Paper</option>
+                    <option value="REAL">Real</option>
+                </select>
+            </label>
+        </div>
+        <button type="submit">Create Strategy</button>
+    </form>
+</details>
+
+<h3>Active Strategies</h3>
+{% if strategies %}
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Symbols</th>
+            <th>Market</th>
+            <th>Mode</th>
+            <th>Active</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in strategies %}
+        <tr>
+            <td><strong>{{ s.name }}</strong></td>
+            <td>{{ s.strategy_type }}</td>
+            <td>{{ s.symbols | join(', ') }}</td>
+            <td>{{ s.market }}</td>
+            <td>{{ s.trading_mode }}</td>
+            <td>
+                {% if s.is_active %}
+                    <span class="positive">Active</span>
+                {% else %}
+                    <span class="negative">Inactive</span>
+                {% endif %}
+            </td>
+            <td>
+                <button
+                    hx-patch="/api/strategies/{{ s.id }}"
+                    hx-vals='{"is_active": {{ "false" if s.is_active else "true" }}}'
+                    hx-headers='{"Content-Type": "application/json"}'
+                    hx-swap="none"
+                    hx-on::after-request="location.reload()"
+                    class="outline secondary"
+                >
+                    {{ "Deactivate" if s.is_active else "Activate" }}
+                </button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<p>No strategies configured yet.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('strategy-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const data = {
+            name: form.name.value,
+            strategy_type: form.strategy_type.value,
+            symbols: form.symbols.value.split(',').map(s => s.trim()).filter(Boolean),
+            market: form.market.value,
+            trading_mode: form.trading_mode.value,
+            params: {},
+            schedule_cron: "",
+        };
+        await fetch('/api/strategies', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data),
+        });
+        location.reload();
+    });
+</script>
+{% endblock %}
