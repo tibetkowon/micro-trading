@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Portfolio - Micro Trading{% endblock %}
+{% block title %}포트폴리오 - Micro Trading{% endblock %}
 
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 {% endblock %}
 
 {% block content %}
-<h2>Portfolio <small>({{ trading_mode }})</small></h2>
+<h2 class="page-title">포트폴리오 <small>({% if trading_mode == 'PAPER' %}모의투자{% else %}실매매{% endif %})</small></h2>
 
 {% include "partials/summary_cards.html" %}
 
-<article>
-    <header>Portfolio History</header>
+<div class="chart-card">
+    <div class="card-label">포트폴리오 추이</div>
     <canvas id="portfolio-chart" height="300"></canvas>
-</article>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -27,16 +27,16 @@
                 labels: snapshots.map(s => s.date),
                 datasets: [
                     {
-                        label: 'Total Value',
+                        label: '총 평가금액',
                         data: snapshots.map(s => s.value),
-                        borderColor: '#4CAF50',
+                        borderColor: '#e5534b',
                         tension: 0.3,
                         fill: false,
                     },
                     {
-                        label: 'P&L',
+                        label: '손익',
                         data: snapshots.map(s => s.pnl),
-                        borderColor: '#2196F3',
+                        borderColor: '#539bf5',
                         tension: 0.3,
                         fill: false,
                     }
@@ -45,9 +45,22 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { position: 'top' } },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#8b949e' }
+                    }
+                },
                 scales: {
-                    y: { beginAtZero: false }
+                    x: {
+                        ticks: { color: '#6e7681' },
+                        grid: { color: '#21262d' }
+                    },
+                    y: {
+                        beginAtZero: false,
+                        ticks: { color: '#6e7681' },
+                        grid: { color: '#21262d' }
+                    }
                 }
             }
         });

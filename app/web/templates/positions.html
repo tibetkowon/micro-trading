@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Positions - Micro Trading{% endblock %}
+{% block title %}포지션 - Micro Trading{% endblock %}
 
 {% block content %}
-<h2>Positions <small>({{ trading_mode }})</small></h2>
+<h2 class="page-title">포지션 <small>({% if trading_mode == 'PAPER' %}모의투자{% else %}실매매{% endif %})</small></h2>
 
 <div hx-get="/partials/positions" hx-trigger="every 15s" hx-swap="innerHTML">
     {% include "partials/position_table.html" %}

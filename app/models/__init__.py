@@ -4,6 +4,7 @@ from app.models.position import Position
 from app.models.trade import Trade
 from app.models.strategy import StrategyConfig
 from app.models.portfolio_snapshot import PortfolioSnapshot
+from app.models.stock_memo import StockMemo
 from app.models.base import Base
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "Trade",
     "StrategyConfig",
     "PortfolioSnapshot",
+    "StockMemo",
 ]

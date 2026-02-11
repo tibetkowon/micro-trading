@@ -1,0 +1,35 @@
+{% if memos %}
+<div class="table-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>종목코드</th>
+            <th>시장</th>
+            <th>종목명</th>
+            <th>메모</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for m in memos %}
+        <tr>
+            <td><strong>{{ m.symbol }}</strong></td>
+            <td>{{ m.market }}</td>
+            <td>{{ m.name }}</td>
+            <td>{{ m.memo or '' }}</td>
+            <td>
+                <button
+                    hx-delete="/stocks/memo/{{ m.id }}"
+                    hx-target="#memo-list"
+                    hx-swap="innerHTML"
+                    class="btn btn-outline btn-sm btn-danger"
+                >삭제</button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty-state">저장된 메모 종목이 없습니다.</p>
+{% endif %}

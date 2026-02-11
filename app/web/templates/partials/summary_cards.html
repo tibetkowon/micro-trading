@@ -1,24 +1,24 @@
-<div class="grid">
-    <article>
-        <header>Total Value</header>
-        <p class="big-number">{{ "{:,.0f}".format(summary.total_value) }} KRW</p>
-    </article>
-    <article>
-        <header>Unrealized P&L</header>
+<div class="card-grid">
+    <div class="card">
+        <div class="card-label">총 평가금액</div>
+        <p class="big-number">{{ "{:,.0f}".format(summary.total_value) }} <small>KRW</small></p>
+    </div>
+    <div class="card">
+        <div class="card-label">평가 손익</div>
         <p class="big-number {{ 'positive' if summary.unrealized_pnl >= 0 else 'negative' }}">
-            {{ "{:+,.0f}".format(summary.unrealized_pnl) }} KRW
+            {{ "{:+,.0f}".format(summary.unrealized_pnl) }} <small>KRW</small>
         </p>
-    </article>
-    <article>
-        <header>Realized P&L</header>
+    </div>
+    <div class="card">
+        <div class="card-label">실현 손익</div>
         <p class="big-number {{ 'positive' if summary.realized_pnl >= 0 else 'negative' }}">
-            {{ "{:+,.0f}".format(summary.realized_pnl) }} KRW
+            {{ "{:+,.0f}".format(summary.realized_pnl) }} <small>KRW</small>
         </p>
-    </article>
-    <article>
-        <header>Return</header>
+    </div>
+    <div class="card">
+        <div class="card-label">수익률</div>
         <p class="big-number {{ 'positive' if summary.return_pct >= 0 else 'negative' }}">
             {{ "{:+.2f}".format(summary.return_pct) }}%
         </p>
-    </article>
+    </div>
 </div>

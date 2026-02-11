@@ -1,78 +1,95 @@
 {% extends "base.html" %}
-{% block title %}Strategies - Micro Trading{% endblock %}
+{% block title %}전략 - Micro Trading{% endblock %}
 
 {% block content %}
-<h2>Strategies</h2>
+<h2 class="page-title">전략</h2>
 
-<details>
-    <summary>Create New Strategy</summary>
-    <form method="post" action="/api/strategies" id="strategy-form">
-        <div class="grid">
-            <label>
-                Name
-                <input type="text" name="name" required placeholder="My DCA Strategy">
-            </label>
-            <label>
-                Type
-                <select name="strategy_type">
-                    <option value="DCA">DCA (Dollar-Cost Averaging)</option>
-                    <option value="MOVING_AVERAGE">Moving Average Crossover</option>
-                    <option value="RSI_REBALANCE">RSI Rebalance</option>
-                </select>
-            </label>
-        </div>
-        <div class="grid">
-            <label>
-                Symbols (comma-separated)
-                <input type="text" name="symbols" placeholder="005930,035720">
-            </label>
-            <label>
-                Market
-                <select name="market">
-                    <option value="KR">KR</option>
-                    <option value="US">US</option>
-                </select>
-            </label>
-            <label>
-                Trading Mode
-                <select name="trading_mode">
-                    <option value="PAPER">Paper</option>
-                    <option value="REAL">Real</option>
-                </select>
-            </label>
-        </div>
-        <button type="submit">Create Strategy</button>
-    </form>
+<details class="form-panel">
+    <summary class="form-panel-header">새 전략 만들기</summary>
+    <div class="form-panel-body">
+        <form method="post" action="/api/strategies" id="strategy-form">
+            <div class="form-grid">
+                <div>
+                    <label for="strat-name">전략명</label>
+                    <input type="text" name="name" id="strat-name" required placeholder="내 적립식 전략">
+                </div>
+                <div>
+                    <label for="strat-type">전략 유형</label>
+                    <select name="strategy_type" id="strat-type">
+                        <option value="DCA">적립식 매수 (DCA)</option>
+                        <option value="MOVING_AVERAGE">이동평균 교차</option>
+                        <option value="RSI_REBALANCE">RSI 리밸런싱</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-grid">
+                <div>
+                    <label for="strat-memo-select">메모 종목 추가</label>
+                    <select id="strat-memo-select">
+                        <option value="">-- 메모 종목 선택 --</option>
+                        {% for m in memos %}
+                        <option value="{{ m.symbol }}">{{ m.name }} ({{ m.symbol }} / {{ m.market }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="strat-symbols">종목코드 (쉼표 구분)</label>
+                    <input type="text" name="symbols" id="strat-symbols" placeholder="005930,035720">
+                </div>
+                <div>
+                    <label for="strat-market">시장</label>
+                    <select name="market" id="strat-market">
+                        <option value="KR">한국 (KR)</option>
+                        <option value="US">미국 (US)</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="strat-mode">매매 모드</label>
+                    <select name="trading_mode" id="strat-mode">
+                        <option value="PAPER">모의투자</option>
+                        <option value="REAL">실매매</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">전략 생성</button>
+        </form>
+    </div>
 </details>
 
-<h3>Active Strategies</h3>
+<h3 class="section-title">활성 전략</h3>
 {% if strategies %}
-<figure>
+<div class="table-wrap">
 <table>
     <thead>
         <tr>
-            <th>Name</th>
-            <th>Type</th>
-            <th>Symbols</th>
-            <th>Market</th>
-            <th>Mode</th>
-            <th>Active</th>
-            <th>Actions</th>
+            <th>전략명</th>
+            <th>유형</th>
+            <th>종목</th>
+            <th>시장</th>
+            <th>모드</th>
+            <th>상태</th>
+            <th>관리</th>
         </tr>
     </thead>
     <tbody>
         {% for s in strategies %}
         <tr>
             <td><strong>{{ s.name }}</strong></td>
-            <td>{{ s.strategy_type }}</td>
+            <td>
+                {% if s.strategy_type == 'DCA' %}적립식 매수
+                {% elif s.strategy_type == 'MOVING_AVERAGE' %}이동평균 교차
+                {% elif s.strategy_type == 'RSI_REBALANCE' %}RSI 리밸런싱
+                {% else %}{{ s.strategy_type }}
+                {% endif %}
+            </td>
             <td>{{ s.symbols | join(', ') }}</td>
             <td>{{ s.market }}</td>
-            <td>{{ s.trading_mode }}</td>
+            <td>{% if s.trading_mode == 'PAPER' %}모의{% else %}실매매{% endif %}</td>
             <td>
                 {% if s.is_active %}
-                    <span class="positive">Active</span>
+                    <span class="badge badge-active">활성</span>
                 {% else %}
-                    <span class="negative">Inactive</span>
+                    <span class="badge badge-inactive">비활성</span>
                 {% endif %}
             </td>
             <td>
@@ -82,18 +99,18 @@
                     hx-headers='{"Content-Type": "application/json"}'
                     hx-swap="none"
                     hx-on::after-request="location.reload()"
-                    class="outline secondary"
+                    class="btn btn-outline btn-sm"
                 >
-                    {{ "Deactivate" if s.is_active else "Activate" }}
+                    {{ "비활성화" if s.is_active else "활성화" }}
                 </button>
             </td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
-</figure>
+</div>
 {% else %}
-<p>No strategies configured yet.</p>
+<p class="empty-state">등록된 전략이 없습니다.</p>
 {% endif %}
 {% endblock %}
 

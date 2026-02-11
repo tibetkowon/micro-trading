@@ -1,54 +1,68 @@
 {% extends "base.html" %}
-{% block title %}Orders - Micro Trading{% endblock %}
+{% block title %}주문 - Micro Trading{% endblock %}
 
 {% block content %}
-<h2>Orders</h2>
+<h2 class="page-title">주문</h2>
 
-<details open>
-    <summary>New Order</summary>
-    <form hx-post="/orders/submit" hx-target="#order-list" hx-swap="innerHTML">
-        <div class="grid">
-            <label>
-                Symbol
-                <input type="text" name="symbol" placeholder="005930" required>
-            </label>
-            <label>
-                Market
-                <select name="market">
-                    <option value="KR">KR (Korea)</option>
-                    <option value="US">US (USA)</option>
-                </select>
-            </label>
-            <label>
-                Side
-                <select name="side">
-                    <option value="BUY">BUY</option>
-                    <option value="SELL">SELL</option>
-                </select>
-            </label>
-        </div>
-        <div class="grid">
-            <label>
-                Order Type
-                <select name="order_type" id="order-type">
-                    <option value="MARKET">Market</option>
-                    <option value="LIMIT">Limit</option>
-                </select>
-            </label>
-            <label>
-                Quantity
-                <input type="number" name="quantity" min="1" value="1" required>
-            </label>
-            <label>
-                Price (Limit only)
-                <input type="number" name="price" step="0.01" id="limit-price">
-            </label>
-        </div>
-        <button type="submit">Submit Order</button>
-    </form>
+<details class="form-panel" open>
+    <summary class="form-panel-header">신규 주문</summary>
+    <div class="form-panel-body">
+        <form hx-post="/orders/submit" hx-target="#order-list" hx-swap="innerHTML">
+            <div class="form-grid">
+                <div>
+                    <label for="memo-select">메모 종목</label>
+                    <select id="memo-select">
+                        <option value="">-- 메모 종목 선택 --</option>
+                        {% for m in memos %}
+                        <option value="{{ m.symbol }}" data-market="{{ m.market }}">{{ m.name }} ({{ m.symbol }} / {{ m.market }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="symbol">종목코드</label>
+                    <input type="text" name="symbol" id="symbol" placeholder="005930" required>
+                </div>
+                <div>
+                    <label for="market">시장</label>
+                    <select name="market" id="market">
+                        <option value="KR">한국 (KR)</option>
+                        <option value="US">미국 (US)</option>
+                    </select>
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <div id="price-display" class="price-display"></div>
+                </div>
+                <div>
+                    <label for="side">매매구분</label>
+                    <select name="side" id="side">
+                        <option value="BUY">매수</option>
+                        <option value="SELL">매도</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-grid">
+                <div>
+                    <label for="order-type">주문유형</label>
+                    <select name="order_type" id="order-type">
+                        <option value="MARKET">시장가</option>
+                        <option value="LIMIT">지정가</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="quantity">수량</label>
+                    <input type="number" name="quantity" id="quantity" min="1" value="1" required>
+                </div>
+                <div>
+                    <label for="limit-price">지정가 (지정가 주문시)</label>
+                    <input type="number" name="price" step="0.01" id="limit-price">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">주문 실행</button>
+        </form>
+    </div>
 </details>
 
-<h3>Order History</h3>
+<h3 class="section-title">주문 내역</h3>
 <div id="order-list" hx-get="/partials/orders" hx-trigger="every 30s" hx-swap="innerHTML">
     {% include "partials/order_table.html" %}
 </div>

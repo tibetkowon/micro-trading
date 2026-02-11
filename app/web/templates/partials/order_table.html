@@ -1,16 +1,16 @@
 {% if orders %}
-<figure>
+<div class="table-wrap">
 <table>
     <thead>
         <tr>
             <th>#</th>
-            <th>Symbol</th>
-            <th>Side</th>
-            <th>Qty</th>
-            <th>Price</th>
-            <th>Status</th>
-            <th>Source</th>
-            <th>Time</th>
+            <th>종목</th>
+            <th>구분</th>
+            <th>수량</th>
+            <th>가격</th>
+            <th>상태</th>
+            <th>출처</th>
+            <th>시간</th>
         </tr>
     </thead>
     <tbody>
@@ -18,17 +18,29 @@
         <tr>
             <td>{{ o.id }}</td>
             <td><strong>{{ o.symbol }}</strong></td>
-            <td class="{{ 'buy-side' if o.side == 'BUY' else 'sell-side' }}">{{ o.side }}</td>
+            <td class="{{ 'buy-side' if o.side == 'BUY' else 'sell-side' }}">{{ "매수" if o.side == "BUY" else "매도" }}</td>
             <td>{{ o.filled_quantity or o.quantity }}</td>
             <td>{{ "{:,.0f}".format(o.filled_price or o.price or 0) }}</td>
-            <td><mark>{{ o.status }}</mark></td>
+            <td>
+                {% if o.status == 'FILLED' %}
+                    <span class="badge badge-filled">체결완료</span>
+                {% elif o.status == 'PENDING' %}
+                    <span class="badge badge-pending">대기중</span>
+                {% elif o.status == 'CANCELLED' %}
+                    <span class="badge badge-cancelled">취소</span>
+                {% elif o.status == 'REJECTED' %}
+                    <span class="badge badge-rejected">거부</span>
+                {% else %}
+                    <span class="badge badge-pending">{{ o.status }}</span>
+                {% endif %}
+            </td>
             <td>{{ o.source }}</td>
             <td>{{ o.created_at.strftime('%m-%d %H:%M') if o.created_at else '' }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
-</figure>
+</div>
 {% else %}
-<p>No orders yet.</p>
+<p class="empty-state">주문 내역이 없습니다.</p>
 {% endif %}

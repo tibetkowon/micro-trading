@@ -1,14 +1,14 @@
 {% if positions %}
-<figure>
+<div class="table-wrap">
 <table>
     <thead>
         <tr>
-            <th>Symbol</th>
-            <th>Market</th>
-            <th>Qty</th>
-            <th>Avg Price</th>
-            <th>Current</th>
-            <th>P&L</th>
+            <th>종목</th>
+            <th>시장</th>
+            <th>수량</th>
+            <th>평균단가</th>
+            <th>현재가</th>
+            <th>손익</th>
         </tr>
     </thead>
     <tbody>
@@ -27,7 +27,7 @@
         {% endfor %}
     </tbody>
 </table>
-</figure>
+</div>
 {% else %}
-<p>No positions yet.</p>
+<p class="empty-state">보유 종목이 없습니다.</p>
 {% endif %}

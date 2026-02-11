@@ -1,25 +1,86 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - Micro Trading{% endblock %}
+{% block title %}대시보드 - Micro Trading{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+{% endblock %}
 
 {% block content %}
-<h2>Dashboard</h2>
+<h2 class="page-title">대시보드</h2>
 
 <div hx-get="/partials/summary" hx-trigger="every 30s" hx-swap="innerHTML">
     {% include "partials/summary_cards.html" %}
 </div>
 
-<div class="grid">
+<div class="chart-card" style="margin-top: 1.5rem;">
+    <div class="card-label">포트폴리오 추이</div>
+    <canvas id="portfolio-chart" height="260"></canvas>
+</div>
+
+<div class="section-grid">
     <div>
-        <h3>Positions</h3>
+        <h3 class="section-title">보유 종목</h3>
         <div hx-get="/partials/positions" hx-trigger="every 30s" hx-swap="innerHTML">
             {% include "partials/position_table.html" %}
         </div>
     </div>
     <div>
-        <h3>Recent Orders</h3>
+        <h3 class="section-title">최근 주문</h3>
         <div hx-get="/partials/orders" hx-trigger="every 30s" hx-swap="innerHTML">
             {% include "partials/order_table.html" %}
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const snapshots = {{ snapshots_json | safe }};
+    if (snapshots.length > 0) {
+        const ctx = document.getElementById('portfolio-chart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: snapshots.map(s => s.date),
+                datasets: [
+                    {
+                        label: '총 평가금액',
+                        data: snapshots.map(s => s.value),
+                        borderColor: '#e5534b',
+                        tension: 0.3,
+                        fill: false,
+                    },
+                    {
+                        label: '손익',
+                        data: snapshots.map(s => s.pnl),
+                        borderColor: '#539bf5',
+                        tension: 0.3,
+                        fill: false,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#8b949e' }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#6e7681' },
+                        grid: { color: '#21262d' }
+                    },
+                    y: {
+                        beginAtZero: false,
+                        ticks: { color: '#6e7681' },
+                        grid: { color: '#21262d' }
+                    }
+                }
+            }
+        });
+    }
+</script>
 {% endblock %}
