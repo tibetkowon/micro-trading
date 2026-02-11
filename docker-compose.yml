@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - trading-data:/data
+    env_file:
+      - .env
+
+volumes:
+  trading-data:
