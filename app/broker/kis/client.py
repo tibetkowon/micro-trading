@@ -33,6 +33,7 @@ class KISClient:
         self._client = httpx.AsyncClient(
             base_url=settings.kis_base_url,
             timeout=30.0,
+            verify=not self._is_mock,  # VTS 서버 인증서가 실서버 도메인으로 발급됨
         )
 
     async def close(self):
