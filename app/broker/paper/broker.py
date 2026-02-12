@@ -13,29 +13,31 @@ logger = logging.getLogger(__name__)
 
 
 class PaperBroker(AbstractBroker):
-    """Paper trading broker backed by SQLite for balances and real KIS for prices."""
+    """Paper trading broker backed by SQLite for balances and real market data for prices."""
 
     def __init__(self):
         self._engine = PaperExecutionEngine()
-        self._kis_broker = None  # Lazy init for price data
+        self._price_provider = None  # Lazy init for price data
 
-    async def _get_kis_broker(self):
-        """Get KIS broker for price data (lazy init)."""
-        if self._kis_broker is None:
+    async def _get_price_provider(self):
+        """Get price provider (lazy init). Uses KIS if configured, else FreeMarketProvider."""
+        if self._price_provider is None:
             if settings.kis_app_key:
                 from app.broker.kis.broker import KISBroker
-                self._kis_broker = KISBroker()
-                await self._kis_broker.connect()
+                self._price_provider = KISBroker()
+                await self._price_provider.connect()
             else:
-                logger.warning("KIS credentials not set, paper broker will use dummy prices")
-        return self._kis_broker
+                from app.broker.free.provider import FreeMarketProvider
+                self._price_provider = FreeMarketProvider()
+                logger.info("Using FreeMarketProvider (pykrx + yfinance)")
+        return self._price_provider
 
     async def connect(self) -> None:
         logger.info("PaperBroker connected")
 
     async def disconnect(self) -> None:
-        if self._kis_broker:
-            await self._kis_broker.disconnect()
+        if self._price_provider and hasattr(self._price_provider, "disconnect"):
+            await self._price_provider.disconnect()
         logger.info("PaperBroker disconnected")
 
     async def place_order(
@@ -97,20 +99,17 @@ class PaperBroker(AbstractBroker):
             )
 
     async def get_current_price(self, symbol: str, market: str) -> PriceInfo:
-        kis = await self._get_kis_broker()
-        if kis:
-            try:
-                return await kis.get_current_price(symbol, market)
-            except Exception as e:
-                logger.warning("KIS price fetch failed for %s: %s", symbol, e)
-        # Fallback dummy price
-        return PriceInfo(symbol=symbol, price=0.0, market=market)
+        provider = await self._get_price_provider()
+        try:
+            return await provider.get_current_price(symbol, market)
+        except Exception as e:
+            logger.warning("Price fetch failed for %s: %s", symbol, e)
+            return PriceInfo(symbol=symbol, price=0.0, market=market)
 
     async def get_daily_prices(self, symbol: str, market: str, days: int = 60) -> list[dict]:
-        kis = await self._get_kis_broker()
-        if kis:
-            try:
-                return await kis.get_daily_prices(symbol, market, days)
-            except Exception as e:
-                logger.warning("KIS daily prices failed for %s: %s", symbol, e)
-        return []
+        provider = await self._get_price_provider()
+        try:
+            return await provider.get_daily_prices(symbol, market, days)
+        except Exception as e:
+            logger.warning("Daily prices failed for %s: %s", symbol, e)
+            return []
