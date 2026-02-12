@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Micro Trading{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/trading.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    {% block head %}{% endblock %}
+</head>
+<body class="trading-body">
+    <nav class="trading-nav">
+        <a href="/" class="brand">Micro <span>Trading</span></a>
+        <div class="nav-right">
+            <a href="/strategies" class="nav-link">전략</a>
+            {% if trading_mode == 'PAPER' %}
+            <span class="mode-badge paper">모의투자</span>
+            {% else %}
+            <span class="mode-badge real">실매매</span>
+            {% endif %}
+        </div>
+    </nav>
+
+    <div class="trading-layout">
+        <aside id="panel-left" class="panel panel-left">
+            {% block panel_left %}{% endblock %}
+        </aside>
+        <main id="panel-main" class="panel panel-main">
+            {% block panel_main %}{% endblock %}
+        </main>
+        <aside id="panel-right" class="panel panel-right">
+            {% block panel_right %}{% endblock %}
+        </aside>
+    </div>
+
+    <script src="/static/trading.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

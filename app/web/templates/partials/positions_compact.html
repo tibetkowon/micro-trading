@@ -1,0 +1,23 @@
+<div class="sidebar-title">보유종목</div>
+{% if positions %}
+<ul class="pos-list">
+    {% for p in positions %}
+    <li class="pos-item"
+        hx-get="/partials/stock-detail/{{ p.symbol }}?market={{ p.market }}&name={{ p.symbol }}"
+        hx-target="#panel-main"
+        hx-swap="innerHTML"
+        hx-push-url="/stock/{{ p.symbol }}?market={{ p.market }}">
+        <div class="pos-item-left">
+            <div class="pos-item-symbol">{{ p.symbol }}</div>
+            <div class="pos-item-qty">{{ p.quantity }}주 &middot; {{ "{:,.0f}".format(p.avg_price) }}</div>
+        </div>
+        <div class="pos-item-pnl {{ 'positive' if p.unrealized_pnl >= 0 else 'negative' }}">
+            {{ "{:+,.0f}".format(p.unrealized_pnl) }}
+            <br><small>{{ "{:+.1f}".format(p.unrealized_pnl_pct) }}%</small>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="wl-empty">보유종목 없음</div>
+{% endif %}

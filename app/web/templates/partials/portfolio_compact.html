@@ -1,0 +1,25 @@
+<div class="sidebar-title">포트폴리오</div>
+<div class="portfolio-compact">
+    <div class="pf-stat">
+        <div class="pf-stat-label">총 평가</div>
+        <div class="pf-stat-value">{{ "{:,.0f}".format(summary.total_value) }}</div>
+    </div>
+    <div class="pf-stat">
+        <div class="pf-stat-label">수익률</div>
+        <div class="pf-stat-value {{ 'positive' if summary.return_pct >= 0 else 'negative' }}">
+            {{ "{:+.2f}".format(summary.return_pct) }}%
+        </div>
+    </div>
+    <div class="pf-stat">
+        <div class="pf-stat-label">평가 손익</div>
+        <div class="pf-stat-value {{ 'positive' if summary.unrealized_pnl >= 0 else 'negative' }}">
+            {{ "{:+,.0f}".format(summary.unrealized_pnl) }}
+        </div>
+    </div>
+    <div class="pf-stat">
+        <div class="pf-stat-label">실현 손익</div>
+        <div class="pf-stat-value {{ 'positive' if summary.realized_pnl >= 0 else 'negative' }}">
+            {{ "{:+,.0f}".format(summary.realized_pnl) }}
+        </div>
+    </div>
+</div>

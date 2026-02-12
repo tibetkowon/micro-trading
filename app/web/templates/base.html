@@ -13,10 +13,7 @@
         <div class="nav-inner">
             <a href="/" class="brand">Micro <span>Trading</span></a>
             <div class="nav-links">
-                <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>대시보드</a>
-                <a href="/orders" {% if request.url.path == '/orders' %}class="active"{% endif %}>주문</a>
-                <a href="/positions" {% if request.url.path == '/positions' %}class="active"{% endif %}>포지션</a>
-                <a href="/stocks" {% if request.url.path == '/stocks' %}class="active"{% endif %}>종목</a>
+                <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>트레이딩</a>
                 <a href="/strategies" {% if request.url.path == '/strategies' %}class="active"{% endif %}>전략</a>
                 {% if trading_mode == 'PAPER' %}
                 <span class="mode-badge paper">모의투자</span>

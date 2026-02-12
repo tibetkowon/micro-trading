@@ -1,0 +1,34 @@
+<ul class="wl-list">
+{% for item in items %}
+<li class="wl-item{% if item.symbol == selected_symbol %} selected{% endif %}"
+    hx-get="/partials/stock-detail/{{ item.symbol }}?market={{ item.market }}&name={{ item.name | urlencode }}"
+    hx-target="#panel-main"
+    hx-swap="innerHTML"
+    hx-push-url="/stock/{{ item.symbol }}?market={{ item.market }}"
+    onclick="markSelected(this)">
+    <div class="wl-item-info">
+        <div class="wl-item-name">{{ item.name }}</div>
+        <div class="wl-item-symbol">{{ item.symbol }} &middot; {{ item.market }}</div>
+    </div>
+    <div class="wl-item-price">
+        {% if item.price and item.price > 0 %}
+        <div class="price-val">{{ "{:,.0f}".format(item.price) if item.market == 'KR' else "{:,.2f}".format(item.price) }}</div>
+        <div class="price-chg {{ 'positive' if item.change >= 0 else 'negative' }}">
+            {{ "{:+.2f}".format(item.change_pct) }}%
+        </div>
+        {% else %}
+        <div class="price-val" style="color:var(--text-muted);">-</div>
+        {% endif %}
+    </div>
+</li>
+{% endfor %}
+{% if not items %}
+<li class="wl-empty">
+    {% if tab == 'watchlist' %}
+    관심종목이 없습니다.<br><small>/stocks 에서 종목을 추가하세요.</small>
+    {% else %}
+    종목이 없습니다.
+    {% endif %}
+</li>
+{% endif %}
+</ul>

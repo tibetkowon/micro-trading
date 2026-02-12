@@ -1,0 +1,26 @@
+{% if position %}
+<div class="position-card">
+    <div class="position-card-title">내 포지션</div>
+    <div class="position-stats">
+        <div>
+            <div class="position-stat-label">수량</div>
+            <div class="position-stat-value">{{ position.quantity }}</div>
+        </div>
+        <div>
+            <div class="position-stat-label">평균단가</div>
+            <div class="position-stat-value">{{ "{:,.0f}".format(position.avg_price) }}</div>
+        </div>
+        <div>
+            <div class="position-stat-label">현재가</div>
+            <div class="position-stat-value">{{ "{:,.0f}".format(position.current_price) }}</div>
+        </div>
+        <div>
+            <div class="position-stat-label">손익</div>
+            <div class="position-stat-value {{ 'positive' if position.unrealized_pnl >= 0 else 'negative' }}">
+                {{ "{:+,.0f}".format(position.unrealized_pnl) }}
+                <small>({{ "{:+.1f}".format(position.unrealized_pnl_pct) }}%)</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}

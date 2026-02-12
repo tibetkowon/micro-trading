@@ -1,0 +1,18 @@
+{% extends "trading_base.html" %}
+{% block title %}Micro Trading{% endblock %}
+
+{% block panel_left %}
+    {% include "partials/watchlist.html" %}
+{% endblock %}
+
+{% block panel_main %}
+    {% if selected_symbol %}
+        {% include "partials/stock_detail.html" %}
+    {% else %}
+        {% include "partials/dashboard_default.html" %}
+    {% endif %}
+{% endblock %}
+
+{% block panel_right %}
+    {% include "partials/portfolio_sidebar.html" %}
+{% endblock %}

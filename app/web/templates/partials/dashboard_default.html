@@ -1,0 +1,88 @@
+<div class="dashboard-default">
+    <h2 class="page-title">대시보드</h2>
+
+    <div hx-get="/partials/summary" hx-trigger="load, every 30s" hx-swap="innerHTML">
+        {% include "partials/summary_cards.html" %}
+    </div>
+
+    {% if snapshots_json %}
+    <div class="dashboard-chart-card" style="margin-top:1.25rem;">
+        <div class="card-label">포트폴리오 추이</div>
+        <canvas id="dashboard-portfolio-chart" height="240"></canvas>
+    </div>
+
+    <script>
+    (function() {
+        const snapshots = {{ snapshots_json | safe }};
+        if (snapshots.length > 0) {
+            if (window._dashChart) window._dashChart.destroy();
+            const ctx = document.getElementById('dashboard-portfolio-chart');
+            if (!ctx) return;
+            window._dashChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: snapshots.map(s => s.date),
+                    datasets: [
+                        {
+                            label: '총 평가금액',
+                            data: snapshots.map(s => s.value),
+                            borderColor: '#e5534b',
+                            tension: 0.3,
+                            fill: false,
+                            pointRadius: 0,
+                        },
+                        {
+                            label: '손익',
+                            data: snapshots.map(s => s.pnl),
+                            borderColor: '#539bf5',
+                            tension: 0.3,
+                            fill: false,
+                            pointRadius: 0,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#8b949e', font: { size: 11 } }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#6e7681', font: { size: 10 } },
+                            grid: { color: '#21262d' }
+                        },
+                        y: {
+                            ticks: {
+                                color: '#6e7681',
+                                font: { size: 10 },
+                                callback: v => Number(v).toLocaleString()
+                            },
+                            grid: { color: '#21262d' }
+                        }
+                    }
+                }
+            });
+        }
+    })();
+    </script>
+    {% endif %}
+
+    <div class="section-grid" style="margin-top:1.25rem;">
+        <div>
+            <h3 class="section-title">보유 종목</h3>
+            <div hx-get="/partials/positions" hx-trigger="load, every 30s" hx-swap="innerHTML">
+                {% include "partials/position_table.html" %}
+            </div>
+        </div>
+        <div>
+            <h3 class="section-title">최근 주문</h3>
+            <div hx-get="/partials/orders" hx-trigger="load, every 30s" hx-swap="innerHTML">
+                {% include "partials/order_table.html" %}
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,39 @@
+<div class="wl-search">
+    <input type="text"
+           id="wl-search-input"
+           placeholder="종목 검색..."
+           hx-get="/partials/watchlist/search"
+           hx-trigger="keyup changed delay:300ms"
+           hx-target="#wl-search-results"
+           hx-swap="innerHTML"
+           name="q"
+           autocomplete="off">
+</div>
+
+<div id="wl-search-results" class="wl-search-results" style="display:none;"></div>
+
+<div id="wl-tabs-area">
+    <div class="wl-tabs">
+        <button class="wl-tab active" data-tab="watchlist" onclick="switchWlTab(this)">관심종목</button>
+        <button class="wl-tab" data-tab="kr" onclick="switchWlTab(this)">KR</button>
+        <button class="wl-tab" data-tab="us" onclick="switchWlTab(this)">US</button>
+    </div>
+
+    <div id="wl-content-watchlist" class="wl-tab-content"
+         hx-get="/partials/watchlist/items?tab=watchlist"
+         hx-trigger="load, every 15s"
+         hx-swap="innerHTML">
+    </div>
+
+    <div id="wl-content-kr" class="wl-tab-content" style="display:none;"
+         hx-get="/partials/watchlist/items?tab=kr"
+         hx-trigger="revealed, every 15s"
+         hx-swap="innerHTML">
+    </div>
+
+    <div id="wl-content-us" class="wl-tab-content" style="display:none;"
+         hx-get="/partials/watchlist/items?tab=us"
+         hx-trigger="revealed, every 15s"
+         hx-swap="innerHTML">
+    </div>
+</div>

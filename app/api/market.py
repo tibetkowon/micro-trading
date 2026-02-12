@@ -20,3 +20,10 @@ async def get_price(symbol: str, market: str = "KR"):
         volume=info.volume,
         market=info.market,
     )
+
+
+@router.get("/daily-prices/{symbol}")
+async def get_daily_prices(symbol: str, market: str = "KR", days: int = 60):
+    svc = MarketService()
+    data = await svc.get_daily_prices(symbol, market, days)
+    return data

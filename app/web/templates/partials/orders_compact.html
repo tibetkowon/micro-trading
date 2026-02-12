@@ -1,0 +1,32 @@
+<div class="sidebar-title">최근 주문</div>
+{% if orders %}
+<ul class="order-list-compact">
+    {% for o in orders %}
+    <li class="order-item-compact">
+        <div class="order-item-left">
+            <span class="order-side-tag {{ 'buy' if o.side == 'BUY' else 'sell' }}">
+                {{ "매수" if o.side == "BUY" else "매도" }}
+            </span>
+            <span class="order-item-symbol">{{ o.symbol }}</span>
+            <span style="color:var(--text-muted);">{{ o.filled_quantity or o.quantity }}</span>
+        </div>
+        <div class="order-item-right">
+            <div class="order-item-status">
+                {% if o.status == 'FILLED' %}
+                <span style="color:var(--success);">체결</span>
+                {% elif o.status == 'PENDING' %}
+                <span style="color:var(--warning);">대기</span>
+                {% elif o.status == 'REJECTED' %}
+                <span style="color:var(--profit);">거부</span>
+                {% else %}
+                <span style="color:var(--text-muted);">{{ o.status }}</span>
+                {% endif %}
+            </div>
+            <div class="order-item-time">{{ o.created_at.strftime('%m-%d %H:%M') if o.created_at else '' }}</div>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="wl-empty">주문 없음</div>
+{% endif %}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_session
+from app.services.market_service import MarketService
 from app.services.order_service import OrderService
 from app.services.portfolio_service import PortfolioService
 from app.services.strategy_service import StrategyService
@@ -21,13 +23,44 @@ from app.web.stock_list import KR_STOCKS, US_STOCKS
 
 import pathlib
 
+logger = logging.getLogger(__name__)
+
 templates = Jinja2Templates(directory=str(pathlib.Path(__file__).parent / "templates"))
 
 web_router = APIRouter(tags=["web"])
 
 
+# ──────────────────────────────────────────────
+# Helper: build stock name lookup
+# ──────────────────────────────────────────────
+
+_STOCK_NAMES: dict[str, str] = {}
+for _s in KR_STOCKS:
+    _STOCK_NAMES[_s["symbol"]] = _s["name"]
+for _s in US_STOCKS:
+    _STOCK_NAMES[_s["symbol"]] = _s["name"]
+
+
+async def _get_stock_name(symbol: str, market: str, session: AsyncSession) -> str:
+    """Resolve a human-readable name for a symbol."""
+    if symbol in _STOCK_NAMES:
+        return _STOCK_NAMES[symbol]
+    # Check memos
+    memo_svc = StockMemoService(session)
+    memos = await memo_svc.list_all()
+    for m in memos:
+        if m.symbol == symbol:
+            return m.name
+    return symbol
+
+
+# ──────────────────────────────────────────────
+# Main trading view
+# ──────────────────────────────────────────────
+
 @web_router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, session: AsyncSession = Depends(get_session)):
+async def trading_view(request: Request, session: AsyncSession = Depends(get_session)):
+    """3-panel trading view (main page)."""
     svc = PortfolioService(session)
     summary = await svc.get_summary(settings.trading_mode.value)
     positions = await svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
@@ -40,29 +73,283 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_sessio
     order_svc = OrderService(session)
     recent_orders = await order_svc.get_orders(limit=10)
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "summary": summary,
-        "positions": positions[:5],
-        "recent_orders": recent_orders,
-        "snapshots_json": json.dumps(snapshots_data),
-        "trading_mode": settings.trading_mode.value,
-    })
-
-
-@web_router.get("/orders", response_class=HTMLResponse)
-async def orders_page(request: Request, session: AsyncSession = Depends(get_session)):
-    svc = OrderService(session)
-    orders = await svc.get_orders(limit=100)
+    # Watchlist items (memos)
     memo_svc = StockMemoService(session)
     memos = await memo_svc.list_all()
-    return templates.TemplateResponse("orders.html", {
+
+    return templates.TemplateResponse("trading.html", {
         "request": request,
-        "orders": orders,
-        "memos": memos,
+        "summary": summary,
+        "positions": positions,
+        "recent_orders": recent_orders,
+        "orders": recent_orders,
+        "snapshots_json": json.dumps(snapshots_data),
         "trading_mode": settings.trading_mode.value,
+        "selected_symbol": None,
+        "memos": memos,
     })
 
+
+@web_router.get("/stock/{symbol}", response_class=HTMLResponse)
+async def stock_page(
+    request: Request,
+    symbol: str,
+    market: str = "KR",
+    session: AsyncSession = Depends(get_session),
+):
+    """Full page load with a specific stock selected."""
+    svc = PortfolioService(session)
+    summary = await svc.get_summary(settings.trading_mode.value)
+    positions = await svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
+
+    order_svc = OrderService(session)
+    recent_orders = await order_svc.get_orders(limit=10)
+
+    memo_svc = StockMemoService(session)
+    memos = await memo_svc.list_all()
+
+    stock_name = await _get_stock_name(symbol, market, session)
+
+    # Get price for the selected stock
+    market_svc = MarketService()
+    try:
+        price_info = await market_svc.get_price(symbol, market)
+    except Exception:
+        price_info = None
+
+    # Find position for this stock
+    position = None
+    for p in positions:
+        if p.symbol == symbol and p.market == market:
+            position = p
+            break
+
+    return templates.TemplateResponse("trading.html", {
+        "request": request,
+        "summary": summary,
+        "positions": positions,
+        "recent_orders": recent_orders,
+        "orders": recent_orders,
+        "snapshots_json": "[]",
+        "trading_mode": settings.trading_mode.value,
+        "selected_symbol": symbol,
+        "symbol": symbol,
+        "market": market,
+        "stock_name": stock_name,
+        "price_info": price_info,
+        "position": position,
+        "memos": memos,
+    })
+
+
+# ──────────────────────────────────────────────
+# Watchlist partials (left panel)
+# ──────────────────────────────────────────────
+
+@web_router.get("/partials/watchlist/items", response_class=HTMLResponse)
+async def partial_watchlist_items(
+    request: Request,
+    tab: str = "watchlist",
+    session: AsyncSession = Depends(get_session),
+):
+    """Return watchlist items with prices for the given tab."""
+    market_svc = MarketService()
+    items = []
+
+    if tab == "watchlist":
+        memo_svc = StockMemoService(session)
+        memos = await memo_svc.list_all()
+        for m in memos:
+            try:
+                p = await market_svc.get_price(m.symbol, m.market)
+                items.append({
+                    "symbol": m.symbol, "market": m.market, "name": m.name,
+                    "price": p.price, "change": p.change, "change_pct": p.change_pct,
+                })
+            except Exception:
+                items.append({
+                    "symbol": m.symbol, "market": m.market, "name": m.name,
+                    "price": 0, "change": 0, "change_pct": 0,
+                })
+    elif tab == "kr":
+        for s in KR_STOCKS:
+            try:
+                p = await market_svc.get_price(s["symbol"], "KR")
+                items.append({
+                    "symbol": s["symbol"], "market": "KR", "name": s["name"],
+                    "price": p.price, "change": p.change, "change_pct": p.change_pct,
+                })
+            except Exception:
+                items.append({
+                    "symbol": s["symbol"], "market": "KR", "name": s["name"],
+                    "price": 0, "change": 0, "change_pct": 0,
+                })
+    elif tab == "us":
+        for s in US_STOCKS:
+            try:
+                p = await market_svc.get_price(s["symbol"], "US")
+                items.append({
+                    "symbol": s["symbol"], "market": "US", "name": s["name"],
+                    "price": p.price, "change": p.change, "change_pct": p.change_pct,
+                })
+            except Exception:
+                items.append({
+                    "symbol": s["symbol"], "market": "US", "name": s["name"],
+                    "price": 0, "change": 0, "change_pct": 0,
+                })
+
+    return templates.TemplateResponse("partials/watchlist_items.html", {
+        "request": request,
+        "items": items,
+        "tab": tab,
+        "selected_symbol": None,
+    })
+
+
+@web_router.get("/partials/watchlist/search", response_class=HTMLResponse)
+async def partial_watchlist_search(
+    request: Request,
+    q: str = "",
+):
+    """Search stocks by name or symbol."""
+    q = q.strip().upper()
+    if not q:
+        return HTMLResponse("")
+
+    results = []
+    for s in KR_STOCKS:
+        if q in s["symbol"] or q in s["name"].upper():
+            results.append({"symbol": s["symbol"], "market": "KR", "name": s["name"]})
+    for s in US_STOCKS:
+        if q in s["symbol"] or q in s["name"].upper():
+            results.append({"symbol": s["symbol"], "market": "US", "name": s["name"]})
+
+    return templates.TemplateResponse("partials/watchlist_search_results.html", {
+        "request": request,
+        "results": results[:15],
+        "q": q,
+    })
+
+
+# ──────────────────────────────────────────────
+# Stock detail partials (center panel)
+# ──────────────────────────────────────────────
+
+@web_router.get("/partials/stock-detail/{symbol}", response_class=HTMLResponse)
+async def partial_stock_detail(
+    request: Request,
+    symbol: str,
+    market: str = "KR",
+    name: str = "",
+    session: AsyncSession = Depends(get_session),
+):
+    """Load stock detail into center panel via HTMX."""
+    stock_name = name or await _get_stock_name(symbol, market, session)
+
+    market_svc = MarketService()
+    try:
+        price_info = await market_svc.get_price(symbol, market)
+    except Exception:
+        price_info = None
+
+    # Find position
+    portfolio_svc = PortfolioService(session)
+    positions = await portfolio_svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
+    position = None
+    for p in positions:
+        if p.symbol == symbol and p.market == market:
+            position = p
+            break
+
+    return templates.TemplateResponse("partials/stock_detail.html", {
+        "request": request,
+        "symbol": symbol,
+        "market": market,
+        "stock_name": stock_name,
+        "price_info": price_info,
+        "position": position,
+    })
+
+
+@web_router.get("/partials/stock-price/{symbol}", response_class=HTMLResponse)
+async def partial_stock_price(
+    request: Request,
+    symbol: str,
+    market: str = "KR",
+):
+    """Real-time price hero (10s polling)."""
+    market_svc = MarketService()
+    try:
+        price_info = await market_svc.get_price(symbol, market)
+    except Exception:
+        price_info = None
+
+    return templates.TemplateResponse("partials/stock_price_hero.html", {
+        "request": request,
+        "price_info": price_info,
+        "market": market,
+    })
+
+
+@web_router.get("/partials/stock-position/{symbol}", response_class=HTMLResponse)
+async def partial_stock_position(
+    request: Request,
+    symbol: str,
+    market: str = "KR",
+    session: AsyncSession = Depends(get_session),
+):
+    """Position card for a specific stock."""
+    svc = PortfolioService(session)
+    positions = await svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
+    position = None
+    for p in positions:
+        if p.symbol == symbol and p.market == market:
+            position = p
+            break
+
+    return templates.TemplateResponse("partials/stock_position_card.html", {
+        "request": request,
+        "position": position,
+    })
+
+
+# ──────────────────────────────────────────────
+# Portfolio sidebar partials (right panel)
+# ──────────────────────────────────────────────
+
+@web_router.get("/partials/portfolio-compact", response_class=HTMLResponse)
+async def partial_portfolio_compact(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = PortfolioService(session)
+    summary = await svc.get_summary(settings.trading_mode.value)
+    return templates.TemplateResponse("partials/portfolio_compact.html", {
+        "request": request,
+        "summary": summary,
+    })
+
+
+@web_router.get("/partials/positions-compact", response_class=HTMLResponse)
+async def partial_positions_compact(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = PortfolioService(session)
+    positions = await svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
+    return templates.TemplateResponse("partials/positions_compact.html", {
+        "request": request,
+        "positions": positions,
+    })
+
+
+@web_router.get("/partials/orders-compact", response_class=HTMLResponse)
+async def partial_orders_compact(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = OrderService(session)
+    orders = await svc.get_orders(limit=10)
+    return templates.TemplateResponse("partials/orders_compact.html", {
+        "request": request,
+        "orders": orders,
+    })
+
+
+# ──────────────────────────────────────────────
+# Order submission (Phase 6 - inline result)
+# ──────────────────────────────────────────────
 
 @web_router.post("/orders/submit", response_class=HTMLResponse)
 async def submit_order(
@@ -85,12 +372,54 @@ async def submit_order(
         trading_mode=TradingMode(settings.trading_mode.value),
     )
     svc = OrderService(session)
-    await svc.create_order(req)
 
+    try:
+        order = await svc.create_order(req)
+        side_label = "매수" if side == "BUY" else "매도"
+        result_html = (
+            f'<div class="order-result success">'
+            f'{symbol} {side_label} {quantity}주 주문이 접수되었습니다.'
+            f'</div>'
+        )
+    except Exception as e:
+        result_html = (
+            f'<div class="order-result error">'
+            f'주문 실패: {e}'
+            f'</div>'
+        )
+
+    # Check if request is from the new trading view (HTMX to #order-result)
+    hx_target = request.headers.get("hx-target", "")
+    if hx_target == "order-result":
+        from fastapi.responses import HTMLResponse as HR
+        resp = HR(result_html)
+        # Trigger sidebar refresh
+        resp.headers["HX-Trigger"] = "refreshSidebar"
+        return resp
+
+    # Legacy: orders page expects full order table
     orders = await svc.get_orders(limit=100)
     return templates.TemplateResponse("partials/order_table.html", {
         "request": request,
         "orders": orders,
+    })
+
+
+# ──────────────────────────────────────────────
+# Legacy pages (kept accessible)
+# ──────────────────────────────────────────────
+
+@web_router.get("/orders", response_class=HTMLResponse)
+async def orders_page(request: Request, session: AsyncSession = Depends(get_session)):
+    svc = OrderService(session)
+    orders = await svc.get_orders(limit=100)
+    memo_svc = StockMemoService(session)
+    memos = await memo_svc.list_all()
+    return templates.TemplateResponse("orders.html", {
+        "request": request,
+        "orders": orders,
+        "memos": memos,
+        "trading_mode": settings.trading_mode.value,
     })
 
 
@@ -199,7 +528,9 @@ async def strategies_page(request: Request, session: AsyncSession = Depends(get_
     })
 
 
-# HTMX partials
+# ──────────────────────────────────────────────
+# Existing HTMX partials (for legacy pages)
+# ──────────────────────────────────────────────
 
 @web_router.get("/partials/positions", response_class=HTMLResponse)
 async def partial_positions(request: Request, session: AsyncSession = Depends(get_session)):

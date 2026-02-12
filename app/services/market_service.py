@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Simple TTL cache: {(symbol, market): (PriceInfo, timestamp)}
 _price_cache: dict[tuple[str, str], tuple[PriceInfo, float]] = {}
-CACHE_TTL = 30  # seconds
+CACHE_TTL = 15  # seconds
 
 
 class MarketService:

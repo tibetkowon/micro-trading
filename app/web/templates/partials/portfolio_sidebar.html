@@ -1,0 +1,23 @@
+<div class="sidebar-section"
+     hx-get="/partials/portfolio-compact"
+     hx-trigger="load, every 30s"
+     hx-swap="innerHTML">
+    <div class="sidebar-title">포트폴리오</div>
+    {% include "partials/portfolio_compact.html" %}
+</div>
+
+<div class="sidebar-section"
+     hx-get="/partials/positions-compact"
+     hx-trigger="load, every 15s"
+     hx-swap="innerHTML">
+    <div class="sidebar-title">보유종목</div>
+    {% include "partials/positions_compact.html" %}
+</div>
+
+<div class="sidebar-section"
+     hx-get="/partials/orders-compact"
+     hx-trigger="load, every 15s"
+     hx-swap="innerHTML">
+    <div class="sidebar-title">최근 주문</div>
+    {% include "partials/orders_compact.html" %}
+</div>
