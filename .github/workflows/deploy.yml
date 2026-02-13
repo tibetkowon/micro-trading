@@ -1,4 +1,4 @@
-name: Deploy to NCP
+name: CI & Deploy to NCP
 
 on:
   push:
@@ -6,13 +6,30 @@ on:
       - main
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install .[dev]
+
+      - name: Run tests
+        run: pytest -v
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
       - name: Deploy to NCP Server
         uses: appleboy/ssh-action@v1
         with:
@@ -30,3 +47,16 @@ jobs:
             # Build and run with Docker
             docker compose down
             docker compose up -d --build
+
+            # Health check (최대 30초 대기)
+            echo "Waiting for service to start..."
+            for i in $(seq 1 6); do
+              sleep 5
+              if curl -sf http://localhost:8000/api/health > /dev/null 2>&1; then
+                echo "Service is healthy!"
+                exit 0
+              fi
+              echo "Attempt $i/6: waiting..."
+            done
+            echo "WARNING: Health check failed after 30s"
+            exit 1
