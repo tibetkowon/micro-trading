@@ -102,6 +102,40 @@ function toggleLimitPrice(select) {
         limitInput.value = '';
         limitInput.placeholder = '시장가 주문';
     }
+    updateEstimate();
+}
+
+// === 예상 주문금액 계산 ===
+function updateEstimate() {
+    const el = document.getElementById('order-estimate');
+    if (!el) return;
+
+    const qty = parseInt(document.getElementById('order-quantity')?.value) || 0;
+    const limitInput = document.getElementById('inline-limit-price');
+    const orderType = document.getElementById('inline-order-type');
+    const isLimit = orderType && orderType.value === 'LIMIT';
+
+    let price = 0;
+    if (isLimit && limitInput && limitInput.value) {
+        price = parseFloat(limitInput.value);
+    } else {
+        price = window._currentPrice || 0;
+    }
+
+    if (price <= 0 || qty <= 0) {
+        el.textContent = '';
+        return;
+    }
+
+    const total = price * qty;
+    const commission = total * 0.0005;
+    const isKR = (window._currentMarket || 'KR') === 'KR';
+
+    if (isKR) {
+        el.innerHTML = `예상 금액: <strong>${Number(total).toLocaleString()}원</strong> <small>(수수료 ${Number(Math.round(commission)).toLocaleString()}원)</small>`;
+    } else {
+        el.innerHTML = `예상 금액: <strong>$${total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</strong> <small>(수수료 $${commission.toFixed(2)})</small>`;
+    }
 }
 
 // === Order completion: clear result after delay, refresh sidebar ===

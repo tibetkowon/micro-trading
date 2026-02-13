@@ -1,0 +1,10 @@
+<div class="order-balance-info">
+    <span class="order-balance-label">주문 가능</span>
+    <span class="order-balance-value">
+        {% if market == 'US' %}
+        ${{ "{:,.2f}".format(balance) }}
+        {% else %}
+        {{ "{:,.0f}".format(balance) }} <small>원</small>
+        {% endif %}
+    </span>
+</div>

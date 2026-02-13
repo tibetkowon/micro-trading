@@ -603,6 +603,77 @@
     max-height: 240px;
 }
 
+/* === Watchlist Search Add Button === */
+.wl-search-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.wl-add-btn {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--accent);
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    line-height: 1;
+}
+
+.wl-add-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+}
+
+.wl-add-btn:disabled {
+    color: var(--success);
+    cursor: default;
+}
+
+/* === Order Balance & Estimate === */
+.order-balance-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.6rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+    font-size: 0.82rem;
+}
+
+.order-balance-label {
+    color: var(--text-muted);
+}
+
+.order-balance-value {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.order-estimate {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+    padding: 0 0.2rem;
+    min-height: 1.2em;
+    font-variant-numeric: tabular-nums;
+}
+
+.order-estimate strong {
+    color: var(--text-primary);
+}
+
 /* === Dashboard Watchlist Price Grid === */
 .dash-wl-grid {
     display: grid;

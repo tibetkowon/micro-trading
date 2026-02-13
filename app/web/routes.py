@@ -347,6 +347,31 @@ async def partial_stock_position(
 
 
 # ──────────────────────────────────────────────
+# Order helper partials
+# ──────────────────────────────────────────────
+
+@web_router.get("/partials/order-balance", response_class=HTMLResponse)
+async def partial_order_balance(
+    request: Request,
+    market: str = "KR",
+    session: AsyncSession = Depends(get_session),
+):
+    """주문 폼에 표시할 주문 가능 잔고."""
+    from app.models.account import Account
+    from sqlalchemy import select
+    result = await session.execute(select(Account).limit(1))
+    account = result.scalar_one_or_none()
+    balance = 0.0
+    if account:
+        balance = account.paper_balance_usd if market == "US" else account.paper_balance_krw
+    return templates.TemplateResponse("partials/order_balance.html", {
+        "request": request,
+        "balance": balance,
+        "market": market,
+    })
+
+
+# ──────────────────────────────────────────────
 # Portfolio sidebar partials (right panel)
 # ──────────────────────────────────────────────
 

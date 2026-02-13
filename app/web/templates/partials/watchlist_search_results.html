@@ -1,16 +1,23 @@
 {% if results %}
 <ul class="wl-list">
 {% for item in results %}
-<li class="wl-item"
-    hx-get="/partials/stock-detail/{{ item.symbol }}?market={{ item.market }}&name={{ item.name | urlencode }}"
-    hx-target="#panel-main"
-    hx-swap="innerHTML"
-    hx-push-url="/stock/{{ item.symbol }}?market={{ item.market }}"
-    onclick="markSelected(this); clearSearch();">
-    <div class="wl-item-info">
+<li class="wl-item wl-search-item">
+    <div class="wl-item-info"
+         hx-get="/partials/stock-detail/{{ item.symbol }}?market={{ item.market }}&name={{ item.name | urlencode }}"
+         hx-target="#panel-main"
+         hx-swap="innerHTML"
+         hx-push-url="/stock/{{ item.symbol }}?market={{ item.market }}"
+         onclick="markSelected(this.parentElement); clearSearch();"
+         style="cursor:pointer;">
         <div class="wl-item-name">{{ item.name }}</div>
         <div class="wl-item-symbol">{{ item.symbol }} &middot; {{ item.market }}</div>
     </div>
+    <button class="wl-add-btn"
+            hx-post="/stocks/memo"
+            hx-vals='{"symbol":"{{ item.symbol }}","market":"{{ item.market }}","name":"{{ item.name }}"}'
+            hx-swap="none"
+            hx-on::after-request="this.textContent='✓'; this.disabled=true;"
+            title="관심종목에 추가">+</button>
 </li>
 {% endfor %}
 </ul>

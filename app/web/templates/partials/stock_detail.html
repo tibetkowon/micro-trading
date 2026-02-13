@@ -27,6 +27,13 @@
             <button class="side-btn sell" onclick="setSide('SELL', this)">매도</button>
         </div>
 
+        <!-- 잔고 표시 -->
+        <div id="order-balance"
+             hx-get="/partials/order-balance?market={{ market }}"
+             hx-trigger="load, refreshSidebar from:body"
+             hx-swap="innerHTML">
+        </div>
+
         <form id="order-form"
               hx-post="/orders/submit"
               hx-target="#order-result"
@@ -46,13 +53,18 @@
                 </div>
                 <div>
                     <label>수량</label>
-                    <input type="number" name="quantity" min="1" value="1" required>
+                    <input type="number" name="quantity" id="order-quantity" min="1" value="1" required
+                           oninput="updateEstimate()">
                 </div>
                 <div class="full-width">
                     <label>지정가</label>
-                    <input type="number" name="price" id="inline-limit-price" step="0.01" disabled placeholder="시장가 주문">
+                    <input type="number" name="price" id="inline-limit-price" step="0.01" disabled
+                           placeholder="시장가 주문" oninput="updateEstimate()">
                 </div>
             </div>
+
+            <!-- 예상 주문금액 -->
+            <div class="order-estimate" id="order-estimate"></div>
 
             <button type="submit" class="order-submit-btn buy" id="order-submit-btn">매수 주문</button>
         </form>
@@ -63,13 +75,18 @@
     <!-- My Position for this stock -->
     <div id="stock-position"
          hx-get="/partials/stock-position/{{ symbol }}?market={{ market }}"
-         hx-trigger="load, every 15s"
+         hx-trigger="load, every 15s, refreshSidebar from:body"
          hx-swap="innerHTML">
     </div>
 </div>
 
 <script>
 (function() {
+    // 현재가 저장 (예상금액 계산용)
+    window._currentPrice = {{ price_info.price if price_info and price_info.price else 0 }};
+    window._currentMarket = '{{ market }}';
+    updateEstimate();
+
     // Load daily chart
     fetch(`/api/market/daily-prices/${encodeURIComponent('{{ symbol }}')}?market=${encodeURIComponent('{{ market }}')}`)
         .then(r => r.json())
@@ -78,7 +95,6 @@
             const ctx = document.getElementById('daily-chart');
             if (!ctx) return;
 
-            // Destroy existing chart if any
             if (window._dailyChart) {
                 window._dailyChart.destroy();
             }
@@ -130,4 +146,19 @@
         })
         .catch(() => {});
 })();
+
+// 실시간 가격 갱신 시 현재가 업데이트
+document.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target && evt.detail.target.id === 'price-hero') {
+        const priceEl = evt.detail.target.querySelector('.price-hero-value');
+        if (priceEl) {
+            const text = priceEl.textContent.replace(/[^0-9.]/g, '');
+            const price = parseFloat(text);
+            if (price > 0) {
+                window._currentPrice = price;
+                updateEstimate();
+            }
+        }
+    }
+});
 </script>
