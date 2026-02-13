@@ -1,0 +1,31 @@
+{% if items %}
+<div class="dash-wl-grid">
+    {% for item in items %}
+    <div class="dash-wl-card"
+         hx-get="/partials/stock-detail/{{ item.symbol }}?market={{ item.market }}&name={{ item.name | urlencode }}"
+         hx-target="#panel-main"
+         hx-swap="innerHTML"
+         hx-push-url="/stock/{{ item.symbol }}?market={{ item.market }}"
+         style="cursor:pointer;">
+        <div class="dash-wl-card-top">
+            <span class="dash-wl-name">{{ item.name }}</span>
+            <span class="dash-wl-symbol">{{ item.symbol }}</span>
+        </div>
+        <div class="dash-wl-card-bottom">
+            {% if item.price and item.price > 0 %}
+            <span class="dash-wl-price">
+                {{ "{:,.0f}".format(item.price) if item.market == 'KR' else "{:,.2f}".format(item.price) }}
+            </span>
+            <span class="dash-wl-change {{ 'positive' if item.change_pct >= 0 else 'negative' }}">
+                {{ "{:+.2f}".format(item.change_pct) }}%
+            </span>
+            {% else %}
+            <span class="dash-wl-price" style="color:var(--text-muted);">-</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="wl-empty">관심종목을 추가하면 실시간 시세가 표시됩니다.</div>
+{% endif %}

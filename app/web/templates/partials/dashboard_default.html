@@ -1,11 +1,13 @@
 <div class="dashboard-default">
     <h2 class="page-title">대시보드</h2>
 
+    <!-- 자산 현황 카드 (실시간 갱신) -->
     <div hx-get="/partials/summary" hx-trigger="load, every 30s" hx-swap="innerHTML">
         {% include "partials/summary_cards.html" %}
     </div>
 
-    {% if snapshots_json %}
+    <!-- 포트폴리오 추이 차트 -->
+    {% if snapshots_json and snapshots_json != '[]' %}
     <div class="dashboard-chart-card" style="margin-top:1.25rem;">
         <div class="card-label">포트폴리오 추이</div>
         <canvas id="dashboard-portfolio-chart" height="240"></canvas>
@@ -71,6 +73,17 @@
     </script>
     {% endif %}
 
+    <!-- 관심종목 실시간 시장가 -->
+    <div style="margin-top:1.25rem;">
+        <h3 class="section-title">관심종목 시세</h3>
+        <div hx-get="/partials/dashboard/watchlist-prices"
+             hx-trigger="load, every 30s"
+             hx-swap="innerHTML">
+            <div class="wl-empty">시세 불러오는 중...</div>
+        </div>
+    </div>
+
+    <!-- 보유종목 + 최근 주문 -->
     <div class="section-grid" style="margin-top:1.25rem;">
         <div>
             <h3 class="section-title">보유 종목</h3>

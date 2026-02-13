@@ -11,6 +11,14 @@
         </div>
     </div>
     <div class="pf-stat">
+        <div class="pf-stat-label">보유 현금</div>
+        <div class="pf-stat-value">{{ "{:,.0f}".format(summary.cash_krw) }}</div>
+    </div>
+    <div class="pf-stat">
+        <div class="pf-stat-label">투자 금액</div>
+        <div class="pf-stat-value">{{ "{:,.0f}".format(summary.total_invested) }}</div>
+    </div>
+    <div class="pf-stat">
         <div class="pf-stat-label">평가 손익</div>
         <div class="pf-stat-value {{ 'positive' if summary.unrealized_pnl >= 0 else 'negative' }}">
             {{ "{:+,.0f}".format(summary.unrealized_pnl) }}

@@ -603,6 +603,76 @@
     max-height: 240px;
 }
 
+/* === Dashboard Watchlist Price Grid === */
+.dash-wl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.6rem;
+}
+
+.dash-wl-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 0.75rem 0.85rem;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.dash-wl-card:hover {
+    border-color: var(--accent);
+    background: var(--bg-hover);
+}
+
+.dash-wl-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.4rem;
+}
+
+.dash-wl-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dash-wl-symbol {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    margin-left: 0.4rem;
+}
+
+.dash-wl-card-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.dash-wl-price {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.dash-wl-change {
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+/* sub-number for secondary currency */
+.sub-number {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.15rem;
+    font-variant-numeric: tabular-nums;
+}
+
 /* === Responsive for smaller screens === */
 @media (max-width: 1100px) {
     .trading-layout {

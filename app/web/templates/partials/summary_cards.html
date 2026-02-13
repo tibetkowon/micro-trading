@@ -4,6 +4,23 @@
         <p class="big-number">{{ "{:,.0f}".format(summary.total_value) }} <small>KRW</small></p>
     </div>
     <div class="card">
+        <div class="card-label">보유 현금</div>
+        <p class="big-number">{{ "{:,.0f}".format(summary.cash_krw) }} <small>KRW</small></p>
+        {% if summary.cash_usd > 0 %}
+        <p class="sub-number">{{ "{:,.2f}".format(summary.cash_usd) }} <small>USD</small></p>
+        {% endif %}
+    </div>
+    <div class="card">
+        <div class="card-label">투자 금액</div>
+        <p class="big-number">{{ "{:,.0f}".format(summary.total_invested) }} <small>KRW</small></p>
+    </div>
+    <div class="card">
+        <div class="card-label">수익률</div>
+        <p class="big-number {{ 'positive' if summary.return_pct >= 0 else 'negative' }}">
+            {{ "{:+.2f}".format(summary.return_pct) }}%
+        </p>
+    </div>
+    <div class="card">
         <div class="card-label">평가 손익</div>
         <p class="big-number {{ 'positive' if summary.unrealized_pnl >= 0 else 'negative' }}">
             {{ "{:+,.0f}".format(summary.unrealized_pnl) }} <small>KRW</small>
@@ -13,12 +30,6 @@
         <div class="card-label">실현 손익</div>
         <p class="big-number {{ 'positive' if summary.realized_pnl >= 0 else 'negative' }}">
             {{ "{:+,.0f}".format(summary.realized_pnl) }} <small>KRW</small>
-        </p>
-    </div>
-    <div class="card">
-        <div class="card-label">수익률</div>
-        <p class="big-number {{ 'positive' if summary.return_pct >= 0 else 'negative' }}">
-            {{ "{:+.2f}".format(summary.return_pct) }}%
         </p>
     </div>
 </div>

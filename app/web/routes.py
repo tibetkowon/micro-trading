@@ -232,6 +232,38 @@ async def partial_watchlist_search(
 
 
 # ──────────────────────────────────────────────
+# Dashboard partials
+# ──────────────────────────────────────────────
+
+@web_router.get("/partials/dashboard/watchlist-prices", response_class=HTMLResponse)
+async def partial_dashboard_watchlist_prices(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """대시보드 관심종목 실시간 시세 카드 그리드."""
+    market_svc = MarketService(session)
+    memo_svc = WatchlistService(session)
+    memos = await memo_svc.list_all()
+    items = []
+    for m in memos:
+        try:
+            p = await market_svc.get_price(m.symbol, m.market)
+            items.append({
+                "symbol": m.symbol, "market": m.market, "name": m.name,
+                "price": p.price, "change": p.change, "change_pct": p.change_pct,
+            })
+        except Exception:
+            items.append({
+                "symbol": m.symbol, "market": m.market, "name": m.name,
+                "price": 0, "change": 0, "change_pct": 0,
+            })
+    return templates.TemplateResponse("partials/dashboard_watchlist_prices.html", {
+        "request": request,
+        "items": items,
+    })
+
+
+# ──────────────────────────────────────────────
 # Stock detail partials (center panel)
 # ──────────────────────────────────────────────
 
