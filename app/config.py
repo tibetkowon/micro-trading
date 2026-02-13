@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-from enum import Enum
-
 from pydantic_settings import BaseSettings
 
-
-class TradingMode(str, Enum):
-    REAL = "REAL"
-    PAPER = "PAPER"
+from app.schemas.common import TradingMode
 
 
 class Settings(BaseSettings):
@@ -26,6 +21,7 @@ class Settings(BaseSettings):
     # Paper trading
     paper_balance_krw: float = 100_000_000
     paper_balance_usd: float = 100_000.0
+    paper_commission_rate: float = 0.0005  # 0.05%
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./trading.db"

@@ -16,7 +16,7 @@ from app.services.market_service import MarketService
 from app.services.order_service import OrderService
 from app.services.portfolio_service import PortfolioService
 from app.services.strategy_service import StrategyService
-from app.services.stock_memo_service import StockMemoService
+from app.services.watchlist_service import WatchlistService
 from app.schemas.order import OrderCreate
 from app.schemas.common import Market, OrderSide, OrderType, TradingMode
 from app.web.stock_list import KR_STOCKS, US_STOCKS
@@ -46,7 +46,7 @@ async def _get_stock_name(symbol: str, market: str, session: AsyncSession) -> st
     if symbol in _STOCK_NAMES:
         return _STOCK_NAMES[symbol]
     # Check memos
-    memo_svc = StockMemoService(session)
+    memo_svc = WatchlistService(session)
     memos = await memo_svc.list_all()
     for m in memos:
         if m.symbol == symbol:
@@ -74,7 +74,7 @@ async def trading_view(request: Request, session: AsyncSession = Depends(get_ses
     recent_orders = await order_svc.get_orders(limit=10)
 
     # Watchlist items (memos)
-    memo_svc = StockMemoService(session)
+    memo_svc = WatchlistService(session)
     memos = await memo_svc.list_all()
 
     return templates.TemplateResponse("trading.html", {
@@ -105,7 +105,7 @@ async def stock_page(
     order_svc = OrderService(session)
     recent_orders = await order_svc.get_orders(limit=10)
 
-    memo_svc = StockMemoService(session)
+    memo_svc = WatchlistService(session)
     memos = await memo_svc.list_all()
 
     stock_name = await _get_stock_name(symbol, market, session)
@@ -157,7 +157,7 @@ async def partial_watchlist_items(
     items = []
 
     if tab == "watchlist":
-        memo_svc = StockMemoService(session)
+        memo_svc = WatchlistService(session)
         memos = await memo_svc.list_all()
         for m in memos:
             try:
@@ -413,7 +413,7 @@ async def submit_order(
 async def orders_page(request: Request, session: AsyncSession = Depends(get_session)):
     svc = OrderService(session)
     orders = await svc.get_orders(limit=100)
-    memo_svc = StockMemoService(session)
+    memo_svc = WatchlistService(session)
     memos = await memo_svc.list_all()
     return templates.TemplateResponse("orders.html", {
         "request": request,
@@ -454,7 +454,7 @@ async def portfolio_page(request: Request, session: AsyncSession = Depends(get_s
 
 @web_router.get("/stocks", response_class=HTMLResponse)
 async def stocks_page(request: Request, session: AsyncSession = Depends(get_session)):
-    svc = StockMemoService(session)
+    svc = WatchlistService(session)
     memos = await svc.list_all()
     return templates.TemplateResponse("stocks.html", {
         "request": request,
@@ -474,7 +474,7 @@ async def add_memo(
     memo: str = Form(""),
     session: AsyncSession = Depends(get_session),
 ):
-    svc = StockMemoService(session)
+    svc = WatchlistService(session)
     try:
         await svc.add(symbol, market, name, memo or None)
     except Exception:
@@ -492,7 +492,7 @@ async def delete_memo(
     memo_id: int,
     session: AsyncSession = Depends(get_session),
 ):
-    svc = StockMemoService(session)
+    svc = WatchlistService(session)
     await svc.remove(memo_id)
     memos = await svc.list_all()
     return templates.TemplateResponse("partials/memo_table.html", {
@@ -518,7 +518,7 @@ async def strategies_page(request: Request, session: AsyncSession = Depends(get_
             "is_active": s.is_active,
             "schedule_cron": s.schedule_cron,
         })
-    memo_svc = StockMemoService(session)
+    memo_svc = WatchlistService(session)
     memos = await memo_svc.list_all()
     return templates.TemplateResponse("strategies.html", {
         "request": request,
@@ -565,7 +565,7 @@ async def partial_summary(request: Request, session: AsyncSession = Depends(get_
 
 @web_router.get("/partials/memos", response_class=HTMLResponse)
 async def partial_memos(request: Request, session: AsyncSession = Depends(get_session)):
-    svc = StockMemoService(session)
+    svc = WatchlistService(session)
     memos = await svc.list_all()
     return templates.TemplateResponse("partials/memo_table.html", {
         "request": request,
@@ -575,7 +575,7 @@ async def partial_memos(request: Request, session: AsyncSession = Depends(get_se
 
 @web_router.get("/partials/memo-options", response_class=HTMLResponse)
 async def partial_memo_options(request: Request, session: AsyncSession = Depends(get_session)):
-    svc = StockMemoService(session)
+    svc = WatchlistService(session)
     memos = await svc.list_all()
     options = '<option value="">-- 메모 종목 선택 --</option>'
     for m in memos:

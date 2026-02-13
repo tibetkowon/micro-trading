@@ -40,6 +40,9 @@ async def lifespan(app: FastAPI):
                 account_number=settings.kis_account_number,
                 paper_balance_krw=settings.paper_balance_krw,
                 paper_balance_usd=settings.paper_balance_usd,
+                initial_balance_krw=settings.paper_balance_krw,
+                initial_balance_usd=settings.paper_balance_usd,
+                commission_rate=settings.paper_commission_rate,
             ))
             await session.commit()
             logger.info("Created default account")

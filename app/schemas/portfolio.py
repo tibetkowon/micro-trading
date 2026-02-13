@@ -10,6 +10,8 @@ class PortfolioSummary(BaseModel):
     total_invested: float = 0.0
     cash_krw: float = 0.0
     cash_usd: float = 0.0
+    initial_balance_krw: float = 0.0
+    initial_balance_usd: float = 0.0
     realized_pnl: float = 0.0
     unrealized_pnl: float = 0.0
     total_pnl: float = 0.0

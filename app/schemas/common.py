@@ -32,6 +32,11 @@ class TradingMode(str, Enum):
     PAPER = "PAPER"
 
 
+class OrderSource(str, Enum):
+    MANUAL = "MANUAL"
+    STRATEGY = "STRATEGY"
+
+
 class StrategyType(str, Enum):
     DCA = "DCA"
     MOVING_AVERAGE = "MOVING_AVERAGE"
