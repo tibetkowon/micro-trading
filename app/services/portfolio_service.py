@@ -22,7 +22,7 @@ class PortfolioService:
 
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.market_svc = MarketService()
+        self.market_svc = MarketService(session)
 
     async def get_positions(self, is_paper: bool = True) -> list[dict]:
         result = await self.session.execute(
@@ -86,6 +86,8 @@ class PortfolioService:
             total_invested=round(total_invested, 2),
             cash_krw=round(cash_krw, 2),
             cash_usd=round(cash_usd, 2),
+            initial_balance_krw=account.initial_balance_krw,
+            initial_balance_usd=account.initial_balance_usd,
             realized_pnl=round(realized_pnl, 2),
             unrealized_pnl=round(unrealized_pnl, 2),
             total_pnl=round(total_pnl, 2),

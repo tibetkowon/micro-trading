@@ -23,8 +23,11 @@
 - 보안: API Key 등 민감 정보는 .env 파일을 통해 관리하고 깃허브 노출 금지.
 
 ## 마일스톤 (Implementation Phases)
-- Phase 1: 가상지갑, 종목저장, 거래내역, 실시간시장가 를 위한 데이터 모델 설계 및 구현
-- Phase 2: 실시간 시장가 조회를 위한 API 탐색 및 연동
-- Phase 3: 가상 거래 로직 구현
-- Phase 4: 웹 대시보드 설계 및 구현
-- Phase 5: 웹 거래화면 설계 및 구현
+| Phase | 상태 | 내용 |
+|:---|:---|:---|
+| Phase 1 | **완료** | 데이터 모델 설계 및 구현 (Account/WatchlistItem/PriceCache/Trade 리팩토링, FK 인덱스, PRAGMA 최적화) |
+| Phase 2 | **완료** | 실시간 시장가 API 연동 (3계층 캐시: 메모리→API→DB, PriceCache 영속화, 30초 스케줄러) |
+| Phase 3 | 대기 | 가상 거래 로직 구현 |
+| Phase 4 | 대기 | 웹 대시보드 설계 및 구현 |
+| Phase 5 | 대기 | 웹 거래화면 설계 및 구현 |
+| Phase 6 | 대기 | 서버 배포 자동화를 위한 git Action 구현 |

@@ -14,6 +14,15 @@ async def run_strategy_tick():
     await runner.run_all()
 
 
+async def refresh_prices():
+    """관심종목 및 보유종목 시세 갱신 (30초 간격)."""
+    from app.database import async_session
+    from app.services.market_service import MarketService
+    async with async_session() as session:
+        svc = MarketService(session)
+        await svc.refresh_watchlist_prices()
+
+
 async def take_portfolio_snapshot():
     """Take a daily portfolio snapshot for all accounts."""
     from app.database import async_session
@@ -24,6 +33,15 @@ async def take_portfolio_snapshot():
 
 
 def register_jobs(scheduler: AsyncIOScheduler):
+    # 시세 갱신: 30초 간격 (장중 KST 09:00-15:30 + US 프리마켓 포함)
+    scheduler.add_job(
+        refresh_prices,
+        "interval",
+        seconds=30,
+        id="refresh_prices",
+        replace_existing=True,
+    )
+
     # Strategy tick every minute during market hours (KST 09:00-15:30)
     scheduler.add_job(
         run_strategy_tick,

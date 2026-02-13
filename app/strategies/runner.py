@@ -37,12 +37,12 @@ def _load_registry():
 class StrategyRunner:
 
     def __init__(self):
-        self.market_svc = MarketService()
         _load_registry()
 
     async def run_all(self):
         """Run all active strategies."""
         async with async_session() as session:
+            self.market_svc = MarketService(session)
             result = await session.execute(
                 select(StrategyConfig).where(StrategyConfig.is_active == True)
             )

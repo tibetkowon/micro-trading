@@ -111,7 +111,7 @@ async def stock_page(
     stock_name = await _get_stock_name(symbol, market, session)
 
     # Get price for the selected stock
-    market_svc = MarketService()
+    market_svc = MarketService(session)
     try:
         price_info = await market_svc.get_price(symbol, market)
     except Exception:
@@ -153,7 +153,7 @@ async def partial_watchlist_items(
     session: AsyncSession = Depends(get_session),
 ):
     """Return watchlist items with prices for the given tab."""
-    market_svc = MarketService()
+    market_svc = MarketService(session)
     items = []
 
     if tab == "watchlist":
@@ -246,7 +246,7 @@ async def partial_stock_detail(
     """Load stock detail into center panel via HTMX."""
     stock_name = name or await _get_stock_name(symbol, market, session)
 
-    market_svc = MarketService()
+    market_svc = MarketService(session)
     try:
         price_info = await market_svc.get_price(symbol, market)
     except Exception:
@@ -276,9 +276,10 @@ async def partial_stock_price(
     request: Request,
     symbol: str,
     market: str = "KR",
+    session: AsyncSession = Depends(get_session),
 ):
     """Real-time price hero (10s polling)."""
-    market_svc = MarketService()
+    market_svc = MarketService(session)
     try:
         price_info = await market_svc.get_price(symbol, market)
     except Exception:

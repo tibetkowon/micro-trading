@@ -8,7 +8,7 @@
 - **Constraints**: Optimize memory usage. Refer to `.claude/skills/memory.md`.
 
 ## Essential Commands
-- **Env**: `source venv/bin/activate`
+- **Env**: `source .venv/bin/activate`
 - **Install**: `pip install -r requirements.txt`
 - **Run**: `uvicorn main:app --reload`
 - **Test**: `pytest`

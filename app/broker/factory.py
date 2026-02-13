@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.broker.base import AbstractBroker
-from app.config import TradingMode
+from app.schemas.common import TradingMode
 
 
 _broker_cache: dict[TradingMode, AbstractBroker] = {}
