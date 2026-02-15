@@ -1,4 +1,5 @@
 {% if results %}
+<div class="wl-search-count">검색 결과 {{ results|length }}건</div>
 <ul class="wl-list">
 {% for item in results %}
 <li class="wl-item wl-search-item">
@@ -9,7 +10,14 @@
          hx-push-url="/stock/{{ item.symbol }}?market={{ item.market }}"
          onclick="markSelected(this.parentElement); clearSearch();"
          style="cursor:pointer;">
-        <div class="wl-item-name">{{ item.name }}</div>
+        <div class="wl-item-name">
+            {%- if q and item.match_type != 'chosung' -%}
+                {{ item.name | replace(q, '<b>' ~ q ~ '</b>') | replace(q | lower, '<b>' ~ q | lower ~ '</b>') | safe }}
+            {%- else -%}
+                {{ item.name }}
+            {%- endif -%}
+            {% if item.match_type == 'chosung' %}<span class="wl-match-tag">초성</span>{% endif %}
+        </div>
         <div class="wl-item-symbol">{{ item.symbol }} &middot; {{ item.market }}</div>
     </div>
     <button class="wl-add-btn"

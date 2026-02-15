@@ -217,6 +217,24 @@
     padding: 0;
 }
 
+.wl-search-count {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+.wl-match-tag {
+    display: inline-block;
+    font-size: 0.6rem;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    padding: 0 3px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
 .wl-empty {
     padding: 2rem 1rem;
     text-align: center;

@@ -6,6 +6,7 @@ from app.models.strategy import StrategyConfig
 from app.models.portfolio_snapshot import PortfolioSnapshot
 from app.models.watchlist import WatchlistItem
 from app.models.price_cache import PriceCache
+from app.models.stock_master import StockMaster
 from app.models.base import Base
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "PortfolioSnapshot",
     "WatchlistItem",
     "PriceCache",
+    "StockMaster",
 ]

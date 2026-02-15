@@ -87,6 +87,15 @@ async def lifespan(app: FastAPI):
             await session.commit()
             logger.info("Created default account")
 
+    # 종목 마스터 동기화 (pykrx → DB)
+    try:
+        from app.services.stock_master_service import StockMasterService
+        async with async_session() as session:
+            stock_svc = StockMasterService(session)
+            await stock_svc.sync_if_needed()
+    except Exception:
+        logger.exception("종목 마스터 동기화 실패 (앱 시작은 정상 진행)")
+
     # Start scheduler
     from app.scheduler.scheduler import start_scheduler
     scheduler = start_scheduler()

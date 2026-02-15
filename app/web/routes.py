@@ -17,6 +17,7 @@ from app.services.order_service import OrderService
 from app.services.portfolio_service import PortfolioService
 from app.services.strategy_service import StrategyService
 from app.services.watchlist_service import WatchlistService
+from app.services.stock_master_service import StockMasterService
 from app.schemas.order import OrderCreate
 from app.schemas.common import Market, OrderSide, OrderType, TradingMode
 from app.web.stock_list import KR_STOCKS, US_STOCKS
@@ -45,7 +46,18 @@ async def _get_stock_name(symbol: str, market: str, session: AsyncSession) -> st
     """Resolve a human-readable name for a symbol."""
     if symbol in _STOCK_NAMES:
         return _STOCK_NAMES[symbol]
-    # Check memos
+    # DB 마스터에서 검색
+    from app.models.stock_master import StockMaster
+    from sqlalchemy import select
+    result = await session.execute(
+        select(StockMaster.name).where(
+            StockMaster.symbol == symbol, StockMaster.market == market
+        )
+    )
+    name = result.scalar_one_or_none()
+    if name:
+        return name
+    # 관심종목에서 검색
     memo_svc = WatchlistService(session)
     memos = await memo_svc.list_all()
     for m in memos:
@@ -210,23 +222,19 @@ async def partial_watchlist_items(
 async def partial_watchlist_search(
     request: Request,
     q: str = "",
+    session: AsyncSession = Depends(get_session),
 ):
-    """Search stocks by name or symbol."""
-    q = q.strip().upper()
+    """종목 검색 — DB 기반, 초성 검색 지원."""
+    q = q.strip()
     if not q:
         return HTMLResponse("")
 
-    results = []
-    for s in KR_STOCKS:
-        if q in s["symbol"] or q in s["name"].upper():
-            results.append({"symbol": s["symbol"], "market": "KR", "name": s["name"]})
-    for s in US_STOCKS:
-        if q in s["symbol"] or q in s["name"].upper():
-            results.append({"symbol": s["symbol"], "market": "US", "name": s["name"]})
+    svc = StockMasterService(session)
+    results = await svc.search(q, limit=15)
 
     return templates.TemplateResponse("partials/watchlist_search_results.html", {
         "request": request,
-        "results": results[:15],
+        "results": results,
         "q": q,
     })
 
