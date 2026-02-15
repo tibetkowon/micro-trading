@@ -22,6 +22,7 @@ def _migrate_add_missing_columns(connection) -> None:
         "accounts": [
             ("initial_balance_krw", "FLOAT DEFAULT 100000000.0"),
             ("initial_balance_usd", "FLOAT DEFAULT 100000.0"),
+            ("commission_rate", "FLOAT DEFAULT 0.0005"),
         ],
     }
     for table_name, columns in migrations.items():
