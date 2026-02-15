@@ -481,17 +481,6 @@ async def orders_page(request: Request, session: AsyncSession = Depends(get_sess
     })
 
 
-@web_router.get("/positions", response_class=HTMLResponse)
-async def positions_page(request: Request, session: AsyncSession = Depends(get_session)):
-    svc = PortfolioService(session)
-    is_paper = settings.trading_mode == TradingMode.PAPER
-    positions = await svc.get_positions(is_paper=is_paper)
-    return templates.TemplateResponse("positions.html", {
-        "request": request,
-        "positions": positions,
-        "trading_mode": settings.trading_mode.value,
-    })
-
 
 @web_router.get("/portfolio", response_class=HTMLResponse)
 async def portfolio_page(request: Request, session: AsyncSession = Depends(get_session)):
@@ -509,18 +498,6 @@ async def portfolio_page(request: Request, session: AsyncSession = Depends(get_s
         "trading_mode": settings.trading_mode.value,
     })
 
-
-@web_router.get("/stocks", response_class=HTMLResponse)
-async def stocks_page(request: Request, session: AsyncSession = Depends(get_session)):
-    svc = WatchlistService(session)
-    memos = await svc.list_all()
-    return templates.TemplateResponse("stocks.html", {
-        "request": request,
-        "memos": memos,
-        "kr_stocks": KR_STOCKS,
-        "us_stocks": US_STOCKS,
-        "trading_mode": settings.trading_mode.value,
-    })
 
 
 @web_router.post("/stocks/memo", response_class=HTMLResponse)

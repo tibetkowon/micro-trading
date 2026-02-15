@@ -14,6 +14,8 @@
             <a href="/" class="brand">Micro <span>Trading</span></a>
             <div class="nav-links">
                 <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>트레이딩</a>
+                <a href="/portfolio" {% if request.url.path == '/portfolio' %}class="active"{% endif %}>포트폴리오</a>
+                <a href="/orders" {% if request.url.path == '/orders' %}class="active"{% endif %}>주문내역</a>
                 <a href="/strategies" {% if request.url.path == '/strategies' %}class="active"{% endif %}>전략</a>
                 {% if trading_mode == 'PAPER' %}
                 <span class="mode-badge paper">모의투자</span>
@@ -29,7 +31,7 @@
     </main>
 
     <footer class="site-footer container">
-        <small>Micro Trading v0.1.0 | <a href="/api/docs">API 문서</a></small>
+        <small>Micro Trading | <a href="/api/docs">API 문서</a></small>
     </footer>
 
     <script src="/static/app.js"></script>

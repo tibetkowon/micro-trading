@@ -14,6 +14,9 @@
     <nav class="trading-nav">
         <a href="/" class="brand">Micro <span>Trading</span></a>
         <div class="nav-right">
+            <a href="/" class="nav-link">트레이딩</a>
+            <a href="/portfolio" class="nav-link">포트폴리오</a>
+            <a href="/orders" class="nav-link">주문내역</a>
             <a href="/strategies" class="nav-link">전략</a>
             {% if trading_mode == 'PAPER' %}
             <span class="mode-badge paper">모의투자</span>
@@ -34,6 +37,10 @@
             {% block panel_right %}{% endblock %}
         </aside>
     </div>
+
+    <footer class="site-footer">
+        <small>Micro Trading | <a href="/api/docs">API 문서</a></small>
+    </footer>
 
     <script src="/static/trading.js"></script>
     {% block scripts %}{% endblock %}
