@@ -13,6 +13,43 @@ from app.models.base import Base
 logger = logging.getLogger(__name__)
 
 
+def _migrate_add_missing_columns(connection) -> None:
+    """기존 SQLite DB에 누락된 컬럼을 자동 추가하는 마이그레이션."""
+    import sqlalchemy as sa
+
+    inspector = sa.inspect(connection)
+    migrations: dict[str, list[tuple[str, str]]] = {
+        "accounts": [
+            ("initial_balance_krw", "FLOAT DEFAULT 100000000.0"),
+            ("initial_balance_usd", "FLOAT DEFAULT 100000.0"),
+        ],
+    }
+    for table_name, columns in migrations.items():
+        if not inspector.has_table(table_name):
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table_name)}
+        for col_name, col_def in columns:
+            if col_name not in existing:
+                connection.execute(
+                    sa.text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}")
+                )
+                logger.info("Migrated: %s.%s added", table_name, col_name)
+    # 기존 accounts 행의 initial_balance를 paper_balance 값으로 보정
+    if inspector.has_table("accounts"):
+        connection.execute(
+            sa.text(
+                "UPDATE accounts SET initial_balance_krw = paper_balance_krw "
+                "WHERE initial_balance_krw = 100000000.0 AND paper_balance_krw != 100000000.0"
+            )
+        )
+        connection.execute(
+            sa.text(
+                "UPDATE accounts SET initial_balance_usd = paper_balance_usd "
+                "WHERE initial_balance_usd = 100000.0 AND paper_balance_usd != 100000.0"
+            )
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -24,6 +61,8 @@ async def lifespan(app: FastAPI):
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 기존 DB에 누락된 컬럼 자동 추가 (SQLite ALTER TABLE)
+        await conn.run_sync(_migrate_add_missing_columns)
     logger.info("Database tables ready")
 
     # Ensure default account exists
