@@ -1,24 +1,14 @@
-FROM python:3.11-slim AS builder
-
-WORKDIR /build
-
-# 의존성 정의만 먼저 복사 → pip install 레이어 캐싱
-COPY pyproject.toml .
-RUN pip install --no-cache-dir --prefix=/install .
-
-# 소스 코드는 나중에 복사 (변경되어도 pip 캐시 유지)
-COPY app/ app/
-COPY run.py .
-
-
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# 빌드 스테이지에서 설치된 패키지 복사
-COPY --from=builder /install /usr/local
-COPY --from=builder /build/app ./app
-COPY --from=builder /build/run.py .
+# 의존성 정의만 먼저 복사 → pip install 레이어 캐싱
+COPY pyproject.toml .
+RUN pip install --no-cache-dir . && rm -rf /tmp/*
+
+# 소스 코드는 나중에 복사 (변경되어도 pip 캐시 유지)
+COPY app/ app/
+COPY run.py .
 
 # 데이터 디렉토리
 RUN mkdir -p /data
