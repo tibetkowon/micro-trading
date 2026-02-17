@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import logging
+
 from pydantic_settings import BaseSettings
 
 from app.schemas.common import TradingMode
+
+logger = logging.getLogger(__name__)
+
+
+# 런타임에서 변경 가능한 거래 모드 (Settings는 frozen이므로 별도 관리)
+_runtime_trading_mode: TradingMode | None = None
 
 
 class Settings(BaseSettings):
@@ -29,6 +37,18 @@ class Settings(BaseSettings):
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
+
+    def get_trading_mode(self) -> TradingMode:
+        """현재 활성 거래 모드 반환 (런타임 변경값 우선)."""
+        if _runtime_trading_mode is not None:
+            return _runtime_trading_mode
+        return self.trading_mode
+
+    def switch_trading_mode(self, mode: TradingMode) -> None:
+        """런타임에서 거래 모드 전환."""
+        global _runtime_trading_mode
+        _runtime_trading_mode = mode
+        logger.info("거래 모드 전환: %s", mode.value)
 
 
 settings = Settings()

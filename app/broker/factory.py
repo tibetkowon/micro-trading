@@ -13,7 +13,7 @@ async def get_broker(mode: TradingMode | str | None = None) -> AbstractBroker:
     """Get or create a broker instance for the given trading mode."""
     if mode is None:
         from app.config import settings
-        mode = settings.trading_mode
+        mode = settings.get_trading_mode()
     if isinstance(mode, str):
         mode = TradingMode(mode)
 

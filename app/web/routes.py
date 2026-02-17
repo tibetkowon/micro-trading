@@ -74,9 +74,9 @@ async def _get_stock_name(symbol: str, market: str, session: AsyncSession) -> st
 async def trading_view(request: Request, session: AsyncSession = Depends(get_session)):
     """3-panel trading view (main page)."""
     svc = PortfolioService(session)
-    summary = await svc.get_summary(settings.trading_mode.value)
-    positions = await svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
-    snapshots = await svc.get_snapshots(settings.trading_mode.value)
+    summary = await svc.get_summary(settings.get_trading_mode().value)
+    positions = await svc.get_positions(is_paper=settings.get_trading_mode() == TradingMode.PAPER)
+    snapshots = await svc.get_snapshots(settings.get_trading_mode().value)
     snapshots_data = [
         {"date": str(s.date), "value": s.total_value, "pnl": s.realized_pnl + s.unrealized_pnl}
         for s in reversed(snapshots)
@@ -96,7 +96,7 @@ async def trading_view(request: Request, session: AsyncSession = Depends(get_ses
         "recent_orders": recent_orders,
         "orders": recent_orders,
         "snapshots_json": json.dumps(snapshots_data),
-        "trading_mode": settings.trading_mode.value,
+        "trading_mode": settings.get_trading_mode().value,
         "selected_symbol": None,
         "memos": memos,
     })
@@ -111,8 +111,8 @@ async def stock_page(
 ):
     """Full page load with a specific stock selected."""
     svc = PortfolioService(session)
-    summary = await svc.get_summary(settings.trading_mode.value)
-    positions = await svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
+    summary = await svc.get_summary(settings.get_trading_mode().value)
+    positions = await svc.get_positions(is_paper=settings.get_trading_mode() == TradingMode.PAPER)
 
     order_svc = OrderService(session)
     recent_orders = await order_svc.get_orders(limit=10)
@@ -143,7 +143,7 @@ async def stock_page(
         "recent_orders": recent_orders,
         "orders": recent_orders,
         "snapshots_json": "[]",
-        "trading_mode": settings.trading_mode.value,
+        "trading_mode": settings.get_trading_mode().value,
         "selected_symbol": symbol,
         "symbol": symbol,
         "market": market,
@@ -294,7 +294,7 @@ async def partial_stock_detail(
 
     # Find position
     portfolio_svc = PortfolioService(session)
-    positions = await portfolio_svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
+    positions = await portfolio_svc.get_positions(is_paper=settings.get_trading_mode() == TradingMode.PAPER)
     position = None
     for p in positions:
         if p.symbol == symbol and p.market == market:
@@ -341,7 +341,7 @@ async def partial_stock_position(
 ):
     """Position card for a specific stock."""
     svc = PortfolioService(session)
-    positions = await svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
+    positions = await svc.get_positions(is_paper=settings.get_trading_mode() == TradingMode.PAPER)
     position = None
     for p in positions:
         if p.symbol == symbol and p.market == market:
@@ -386,7 +386,7 @@ async def partial_order_balance(
 @web_router.get("/partials/portfolio-compact", response_class=HTMLResponse)
 async def partial_portfolio_compact(request: Request, session: AsyncSession = Depends(get_session)):
     svc = PortfolioService(session)
-    summary = await svc.get_summary(settings.trading_mode.value)
+    summary = await svc.get_summary(settings.get_trading_mode().value)
     return templates.TemplateResponse("partials/portfolio_compact.html", {
         "request": request,
         "summary": summary,
@@ -396,7 +396,7 @@ async def partial_portfolio_compact(request: Request, session: AsyncSession = De
 @web_router.get("/partials/positions-compact", response_class=HTMLResponse)
 async def partial_positions_compact(request: Request, session: AsyncSession = Depends(get_session)):
     svc = PortfolioService(session)
-    positions = await svc.get_positions(is_paper=settings.trading_mode == TradingMode.PAPER)
+    positions = await svc.get_positions(is_paper=settings.get_trading_mode() == TradingMode.PAPER)
     return templates.TemplateResponse("partials/positions_compact.html", {
         "request": request,
         "positions": positions,
@@ -435,7 +435,7 @@ async def submit_order(
         order_type=OrderType(order_type),
         quantity=quantity,
         price=price if order_type == "LIMIT" else None,
-        trading_mode=TradingMode(settings.trading_mode.value),
+        trading_mode=TradingMode(settings.get_trading_mode().value),
     )
     svc = OrderService(session)
 
@@ -485,7 +485,7 @@ async def orders_page(request: Request, session: AsyncSession = Depends(get_sess
         "request": request,
         "orders": orders,
         "memos": memos,
-        "trading_mode": settings.trading_mode.value,
+        "trading_mode": settings.get_trading_mode().value,
     })
 
 
@@ -493,8 +493,8 @@ async def orders_page(request: Request, session: AsyncSession = Depends(get_sess
 @web_router.get("/portfolio", response_class=HTMLResponse)
 async def portfolio_page(request: Request, session: AsyncSession = Depends(get_session)):
     svc = PortfolioService(session)
-    summary = await svc.get_summary(settings.trading_mode.value)
-    snapshots = await svc.get_snapshots(settings.trading_mode.value)
+    summary = await svc.get_summary(settings.get_trading_mode().value)
+    snapshots = await svc.get_snapshots(settings.get_trading_mode().value)
     snapshots_data = [
         {"date": str(s.date), "value": s.total_value, "pnl": s.realized_pnl + s.unrealized_pnl}
         for s in reversed(snapshots)
@@ -503,7 +503,7 @@ async def portfolio_page(request: Request, session: AsyncSession = Depends(get_s
         "request": request,
         "summary": summary,
         "snapshots_json": json.dumps(snapshots_data),
-        "trading_mode": settings.trading_mode.value,
+        "trading_mode": settings.get_trading_mode().value,
     })
 
 
@@ -567,7 +567,7 @@ async def strategies_page(request: Request, session: AsyncSession = Depends(get_
         "request": request,
         "strategies": strats,
         "memos": memos,
-        "trading_mode": settings.trading_mode.value,
+        "trading_mode": settings.get_trading_mode().value,
     })
 
 
@@ -578,7 +578,7 @@ async def strategies_page(request: Request, session: AsyncSession = Depends(get_
 @web_router.get("/partials/positions", response_class=HTMLResponse)
 async def partial_positions(request: Request, session: AsyncSession = Depends(get_session)):
     svc = PortfolioService(session)
-    is_paper = settings.trading_mode == TradingMode.PAPER
+    is_paper = settings.get_trading_mode() == TradingMode.PAPER
     positions = await svc.get_positions(is_paper=is_paper)
     return templates.TemplateResponse("partials/position_table.html", {
         "request": request,
@@ -599,7 +599,7 @@ async def partial_orders(request: Request, session: AsyncSession = Depends(get_s
 @web_router.get("/partials/summary", response_class=HTMLResponse)
 async def partial_summary(request: Request, session: AsyncSession = Depends(get_session)):
     svc = PortfolioService(session)
-    summary = await svc.get_summary(settings.trading_mode.value)
+    summary = await svc.get_summary(settings.get_trading_mode().value)
     return templates.TemplateResponse("partials/summary_cards.html", {
         "request": request,
         "summary": summary,
@@ -624,3 +624,87 @@ async def partial_memo_options(request: Request, session: AsyncSession = Depends
     for m in memos:
         options += f'<option value="{m.symbol}" data-market="{m.market}">{m.name} ({m.symbol} / {m.market})</option>'
     return HTMLResponse(options)
+
+
+# ──────────────────────────────────────────────
+# Settings (Phase 9 & 10)
+# ──────────────────────────────────────────────
+
+@web_router.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    """설정 페이지."""
+    from app.services.connection_service import ConnectionService
+    conn_svc = ConnectionService()
+    status = conn_svc.get_connection_status()
+    mode = settings.get_trading_mode()
+
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "trading_mode": mode.value,
+        "connection_status": status,
+        "kis_configured": conn_svc.is_kis_configured(),
+        "masked_app_key": conn_svc.mask_key(settings.kis_app_key),
+        "masked_app_secret": conn_svc.mask_key(settings.kis_app_secret),
+        "masked_account": conn_svc.mask_key(settings.kis_account_number),
+    })
+
+
+@web_router.post("/settings/test-connection", response_class=HTMLResponse)
+async def test_connection(request: Request):
+    """KIS API 연결 테스트 (HTMX)."""
+    from app.services.connection_service import ConnectionService
+    conn_svc = ConnectionService()
+    status = await conn_svc.test_connection()
+
+    if status.connected:
+        html = (
+            '<div class="order-result success">'
+            f'연결 성공 — {status.last_test_time}'
+            '</div>'
+        )
+    else:
+        html = (
+            '<div class="order-result error">'
+            f'연결 실패: {status.error_message}'
+            '</div>'
+        )
+    return HTMLResponse(html)
+
+
+@web_router.get("/partials/account-info", response_class=HTMLResponse)
+async def partial_account_info(request: Request):
+    """계좌 잔고 정보 partial."""
+    from app.services.connection_service import ConnectionService
+    conn_svc = ConnectionService()
+    paper_balance = await conn_svc.get_paper_balance()
+    real_balance = await conn_svc.get_real_balance()
+
+    return templates.TemplateResponse("partials/account_info.html", {
+        "request": request,
+        "paper_balance": paper_balance,
+        "real_balance": real_balance,
+        "commission_rate": settings.paper_commission_rate,
+    })
+
+
+@web_router.post("/settings/trading-mode", response_class=HTMLResponse)
+async def switch_trading_mode(request: Request, mode: str = Form(...)):
+    """런타임 거래 모드 전환 (Phase 10)."""
+    from app.services.connection_service import ConnectionService
+
+    target_mode = TradingMode(mode)
+
+    # REAL 전환 시 KIS API 키 확인
+    if target_mode == TradingMode.REAL:
+        conn_svc = ConnectionService()
+        if not conn_svc.is_kis_configured():
+            return HTMLResponse(
+                "KIS API 키가 설정되지 않아 실매매 모드로 전환할 수 없습니다.",
+                status_code=400,
+            )
+
+    settings.switch_trading_mode(target_mode)
+
+    resp = HTMLResponse("OK")
+    resp.headers["HX-Refresh"] = "true"
+    return resp

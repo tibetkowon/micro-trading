@@ -11,6 +11,6 @@ router = APIRouter(tags=["system"])
 async def health():
     return {
         "status": "ok",
-        "trading_mode": settings.trading_mode.value,
+        "trading_mode": settings.get_trading_mode().value,
         "version": "0.1.0",
     }
