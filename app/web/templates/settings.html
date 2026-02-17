@@ -97,10 +97,37 @@
         </div>
         <div id="connection-result" style="margin-top: 0.75rem;"></div>
 
-        <p class="settings-hint" style="margin-top: 1rem;">
-            API 키는 <code>.env</code> 파일에서 설정합니다:
-            <code>KIS_APP_KEY</code>, <code>KIS_APP_SECRET</code>, <code>KIS_ACCOUNT_NUMBER</code>
-        </p>
+        <details class="settings-guide" style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.85rem; line-height: 1.6;">
+            <summary style="cursor: pointer; color: var(--text-primary); font-weight: 500; margin-bottom: 0.5rem;">
+                KIS API 키 발급 가이드
+            </summary>
+            <div style="margin-top: 0.75rem; padding: 0.75rem; background: var(--bg-secondary, #161b22); border-radius: 6px;">
+                <p style="margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">필요한 키 3가지</p>
+                <ul style="margin: 0 0 1rem 1.25rem; padding: 0;">
+                    <li><code>KIS_APP_KEY</code> — 앱 키</li>
+                    <li><code>KIS_APP_SECRET</code> — 앱 시크릿</li>
+                    <li><code>KIS_ACCOUNT_NUMBER</code> — 계좌번호 (8자리-2자리)</li>
+                </ul>
+
+                <p style="margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">발급 절차</p>
+                <ol style="margin: 0 0 1rem 1.25rem; padding: 0;">
+                    <li>한국투자증권 계좌 개설 (비대면 가능)</li>
+                    <li><a href="https://apiportal.koreainvestment.com" target="_blank" rel="noopener" style="color: #539bf5;">KIS Developers</a> 가입</li>
+                    <li>앱 등록 → <strong>App Key</strong> / <strong>App Secret</strong> 발급</li>
+                    <li>계좌번호 확인 (MTS/HTS 또는 증권사 앱)</li>
+                    <li>프로젝트 루트의 <code>.env</code> 파일에 설정:
+                        <pre style="margin: 0.4rem 0 0; padding: 0.5rem; background: var(--bg-tertiary, #0d1117); border-radius: 4px; overflow-x: auto;">KIS_APP_KEY=발급받은_앱키
+KIS_APP_SECRET=발급받은_시크릿
+KIS_ACCOUNT_NUMBER=12345678-01</pre>
+                    </li>
+                    <li>모의투자 서버로 먼저 테스트 → 정상 확인 후 실거래 전환</li>
+                </ol>
+
+                <p style="margin: 0; color: var(--text-muted, #6e7681);">
+                    ※ 모의투자용 키와 실거래용 키는 별도로 발급해야 합니다.
+                </p>
+            </div>
+        </details>
     </div>
 </div>
 
