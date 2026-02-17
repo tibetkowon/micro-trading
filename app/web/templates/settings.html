@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}설정 - Micro Trading{% endblock %}
+
+{% block content %}
+<h1 class="page-title">설정</h1>
+
+<!-- 섹션 1: 거래 모드 -->
+<div class="card settings-section" style="margin-bottom: 1.5rem;">
+    <div class="settings-header">
+        <h2 class="section-title" style="margin-bottom: 0;">거래 모드</h2>
+    </div>
+    <div class="settings-body" style="margin-top: 1rem;">
+        <div class="mode-switch-area">
+            <div class="mode-current">
+                <span class="settings-label">현재 모드</span>
+                {% if trading_mode == 'PAPER' %}
+                <span class="mode-badge paper" style="font-size: 0.85rem; padding: 0.3rem 0.8rem;">모의투자</span>
+                {% else %}
+                <span class="mode-badge real" style="font-size: 0.85rem; padding: 0.3rem 0.8rem;">실매매</span>
+                {% endif %}
+            </div>
+            <div class="mode-toggle" style="margin-top: 1rem;">
+                {% if trading_mode == 'PAPER' %}
+                <button class="btn btn-outline btn-danger"
+                        onclick="confirmModeSwitch('REAL')"
+                        {% if not kis_configured %}disabled title="KIS API 키를 먼저 설정하세요"{% endif %}>
+                    실매매로 전환
+                </button>
+                {% if not kis_configured %}
+                <p class="settings-hint" style="margin-top: 0.5rem;">
+                    실매매 전환을 위해 KIS API 키를 먼저 설정하세요.
+                </p>
+                {% endif %}
+                {% else %}
+                <button class="btn btn-outline"
+                        onclick="confirmModeSwitch('PAPER')">
+                    모의투자로 전환
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 섹션 2: KIS API 연결 -->
+<div class="card settings-section" style="margin-bottom: 1.5rem;">
+    <div class="settings-header">
+        <h2 class="section-title" style="margin-bottom: 0;">KIS API 연결</h2>
+    </div>
+    <div class="settings-body" style="margin-top: 1rem;">
+        <div class="settings-grid">
+            <div class="settings-row">
+                <span class="settings-label">연결 상태</span>
+                <span>
+                    {% if kis_configured %}
+                    <span class="badge badge-active">설정 완료</span>
+                    {% else %}
+                    <span class="badge badge-inactive">미설정</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">App Key</span>
+                <span class="settings-value mono">{{ masked_app_key or '미설정' }}</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">App Secret</span>
+                <span class="settings-value mono">{{ masked_app_secret or '미설정' }}</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">계좌번호</span>
+                <span class="settings-value mono">{{ masked_account or '미설정' }}</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">서버</span>
+                <span class="settings-value">
+                    {% if connection_status.is_mock_server %}
+                    모의투자 서버 (VTS)
+                    {% else %}
+                    실거래 서버
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+
+        <div style="margin-top: 1rem;">
+            <button class="btn btn-outline btn-sm"
+                    hx-post="/settings/test-connection"
+                    hx-target="#connection-result"
+                    hx-indicator="#test-spinner">
+                연결 테스트
+            </button>
+            <span id="test-spinner" class="htmx-indicator" style="margin-left: 0.5rem; color: var(--text-muted); font-size: 0.85rem;">
+                테스트 중...
+            </span>
+        </div>
+        <div id="connection-result" style="margin-top: 0.75rem;"></div>
+
+        <p class="settings-hint" style="margin-top: 1rem;">
+            API 키는 <code>.env</code> 파일에서 설정합니다:
+            <code>KIS_APP_KEY</code>, <code>KIS_APP_SECRET</code>, <code>KIS_ACCOUNT_NUMBER</code>
+        </p>
+    </div>
+</div>
+
+<!-- 섹션 3: 계좌 정보 -->
+<div class="card settings-section" style="margin-bottom: 1.5rem;">
+    <div class="settings-header">
+        <h2 class="section-title" style="margin-bottom: 0;">계좌 정보</h2>
+    </div>
+    <div id="account-info"
+         hx-get="/partials/account-info"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <div class="empty-state" style="padding: 1.5rem;">불러오는 중...</div>
+    </div>
+</div>
+
+<!-- 모드 전환 확인 다이얼로그 -->
+<div id="mode-confirm-overlay" class="modal-overlay" style="display: none;">
+    <div class="modal-box">
+        <h3 id="mode-confirm-title" style="margin-bottom: 0.75rem;"></h3>
+        <p id="mode-confirm-msg" style="color: var(--text-secondary); margin-bottom: 1.25rem;"></p>
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+            <button class="btn btn-outline" onclick="closeModeDialog()">취소</button>
+            <button id="mode-confirm-btn" class="btn btn-primary" onclick="executeSwitch()">전환</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let pendingMode = null;
+
+function confirmModeSwitch(mode) {
+    pendingMode = mode;
+    const overlay = document.getElementById('mode-confirm-overlay');
+    const title = document.getElementById('mode-confirm-title');
+    const msg = document.getElementById('mode-confirm-msg');
+    const btn = document.getElementById('mode-confirm-btn');
+
+    if (mode === 'REAL') {
+        title.textContent = '실매매 모드로 전환';
+        msg.textContent = '실제 자산으로 거래됩니다. 전환하시겠습니까?';
+        btn.className = 'btn btn-outline btn-danger';
+        btn.style.background = 'rgba(229, 83, 75, 0.15)';
+    } else {
+        title.textContent = '모의투자 모드로 전환';
+        msg.textContent = '가상 자산으로 거래됩니다. 전환하시겠습니까?';
+        btn.className = 'btn btn-primary';
+        btn.style.background = '';
+    }
+
+    overlay.style.display = 'flex';
+}
+
+function closeModeDialog() {
+    document.getElementById('mode-confirm-overlay').style.display = 'none';
+    pendingMode = null;
+}
+
+function executeSwitch() {
+    if (!pendingMode) return;
+    closeModeDialog();
+    fetch('/settings/trading-mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'mode=' + pendingMode
+    }).then(resp => {
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            resp.text().then(t => {
+                document.getElementById('connection-result').innerHTML =
+                    '<div class="order-result error">' + t + '</div>';
+            });
+        }
+    });
+}
+</script>
+{% endblock %}

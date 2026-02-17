@@ -18,10 +18,11 @@
             <a href="/portfolio" class="nav-link">포트폴리오</a>
             <a href="/orders" class="nav-link">주문내역</a>
             <a href="/strategies" class="nav-link">전략</a>
+            <a href="/settings" class="nav-link">설정</a>
             {% if trading_mode == 'PAPER' %}
-            <span class="mode-badge paper">모의투자</span>
+            <a href="/settings" class="mode-badge paper" style="text-decoration:none;">모의투자</a>
             {% else %}
-            <span class="mode-badge real">실매매</span>
+            <a href="/settings" class="mode-badge real" style="text-decoration:none;">실매매</a>
             {% endif %}
         </div>
     </nav>

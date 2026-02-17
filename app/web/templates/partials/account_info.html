@@ -1,0 +1,49 @@
+<div class="settings-body" style="margin-top: 1rem;">
+    <!-- 모의투자 잔고 -->
+    <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">
+        모의투자 잔고
+    </h3>
+    <div class="settings-grid" style="margin-bottom: 1.25rem;">
+        <div class="settings-row">
+            <span class="settings-label">KRW</span>
+            <span class="settings-value">{{ "{:,.0f}".format(paper_balance.get('cash_krw', 0)) }}원</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">USD</span>
+            <span class="settings-value">${{ "{:,.2f}".format(paper_balance.get('cash_usd', 0)) }}</span>
+        </div>
+    </div>
+
+    <!-- 실계좌 잔고 -->
+    <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">
+        실계좌 잔고
+    </h3>
+    <div class="settings-grid">
+        {% if real_balance.get('error') %}
+        <div class="settings-row">
+            <span class="settings-label">상태</span>
+            <span class="settings-value" style="color: var(--text-muted);">{{ real_balance.error }}</span>
+        </div>
+        {% else %}
+        <div class="settings-row">
+            <span class="settings-label">예수금 (KRW)</span>
+            <span class="settings-value">{{ "{:,.0f}".format(real_balance.get('cash_krw', 0)) }}원</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">총 평가금액</span>
+            <span class="settings-value">{{ "{:,.0f}".format(real_balance.get('total_value_krw', 0)) }}원</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 수수료율 -->
+    <h3 style="font-size: 0.95rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.75rem; color: var(--text-secondary);">
+        수수료
+    </h3>
+    <div class="settings-grid">
+        <div class="settings-row">
+            <span class="settings-label">모의투자 수수료율</span>
+            <span class="settings-value">{{ "{:.2%}".format(commission_rate) }}</span>
+        </div>
+    </div>
+</div>
