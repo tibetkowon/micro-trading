@@ -108,9 +108,9 @@ class ConnectionService:
 
     @staticmethod
     def mask_key(key: str) -> str:
-        """API 키를 마스킹하여 반환 (앞 4자리만 표시)."""
+        """API 키를 마스킹하여 반환 (앞 4자리 + ****)."""
         if not key:
             return ""
         if len(key) <= 4:
             return "*" * len(key)
-        return key[:4] + "*" * (len(key) - 4)
+        return key[:4] + "****"  # 길이 고정으로 화면 오버플로우 방지

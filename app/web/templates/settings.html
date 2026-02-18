@@ -190,11 +190,12 @@ function closeModeDialog() {
 
 function executeSwitch() {
     if (!pendingMode) return;
+    const mode = pendingMode;   // closeModeDialog()가 pendingMode를 null로 초기화하기 전에 저장
     closeModeDialog();
     fetch('/settings/trading-mode', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'mode=' + pendingMode
+        body: 'mode=' + mode
     }).then(resp => {
         if (resp.ok) {
             window.location.reload();

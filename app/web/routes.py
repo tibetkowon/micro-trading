@@ -692,7 +692,10 @@ async def switch_trading_mode(request: Request, mode: str = Form(...)):
     """런타임 거래 모드 전환 (Phase 10)."""
     from app.services.connection_service import ConnectionService
 
-    target_mode = TradingMode(mode)
+    try:
+        target_mode = TradingMode(mode)
+    except ValueError:
+        return HTMLResponse(f"잘못된 거래 모드 값입니다: {mode}", status_code=400)
 
     # REAL 전환 시 KIS API 키 확인
     if target_mode == TradingMode.REAL:
