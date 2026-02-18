@@ -18,6 +18,26 @@ _price_cache: dict[tuple[str, str], tuple[PriceInfo, float]] = {}
 CACHE_TTL = 15  # seconds
 
 
+def _add_moving_averages(prices: list[dict]) -> list[dict]:
+    """일별 가격 목록에 MA5/MA20을 계산해 추가.
+
+    날짜 오름차순(과거→현재)으로 정렬 후 계산, 동일 순서로 반환.
+    데이터가 부족한 초반 행은 None으로 표시.
+    """
+    if not prices:
+        return prices
+
+    # 날짜 오름차순 정렬 (broker별 정렬 순서 차이 정규화)
+    sorted_prices = sorted(prices, key=lambda x: x["date"])
+    closes = [p["close"] for p in sorted_prices]
+
+    for i, p in enumerate(sorted_prices):
+        p["ma5"] = round(sum(closes[i - 4:i + 1]) / 5, 2) if i >= 4 else None
+        p["ma20"] = round(sum(closes[i - 19:i + 1]) / 20, 2) if i >= 19 else None
+
+    return sorted_prices
+
+
 class MarketService:
 
     def __init__(self, session: AsyncSession | None = None):
@@ -62,7 +82,8 @@ class MarketService:
 
     async def get_daily_prices(self, symbol: str, market: str = "KR", days: int = 60) -> list[dict]:
         broker = await self._get_broker()
-        return await broker.get_daily_prices(symbol, market, days)
+        prices = await broker.get_daily_prices(symbol, market, days)
+        return _add_moving_averages(prices)
 
     async def refresh_watchlist_prices(self) -> int:
         """관심종목 + 보유종목 시세 일괄 갱신 (스케줄러용). 갱신 건수 반환."""
