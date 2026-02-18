@@ -6,9 +6,6 @@
     <div class="card">
         <div class="card-label">보유 현금</div>
         <p class="big-number">{{ "{:,.0f}".format(summary.cash_krw) }} <small>KRW</small></p>
-        {% if summary.cash_usd > 0 %}
-        <p class="sub-number">{{ "{:,.2f}".format(summary.cash_usd) }} <small>USD</small></p>
-        {% endif %}
     </div>
     <div class="card">
         <div class="card-label">투자 금액</div>

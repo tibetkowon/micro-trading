@@ -1,4 +1,4 @@
-"""Free market data provider using pykrx (KR) and yfinance (US)."""
+"""Free market data provider using pykrx (KR)."""
 
 from __future__ import annotations
 
@@ -15,15 +15,11 @@ class FreeMarketProvider:
     """Provides market data without KIS credentials."""
 
     async def get_current_price(self, symbol: str, market: str) -> PriceInfo:
-        if market == "US":
-            return await self._get_us_price(symbol)
         return await self._get_kr_price(symbol)
 
     async def get_daily_prices(
         self, symbol: str, market: str, days: int = 60
     ) -> list[dict]:
-        if market == "US":
-            return await self._get_us_daily(symbol, days)
         return await self._get_kr_daily(symbol, days)
 
     # ── KR (pykrx) ──────────────────────────────────────────────
@@ -86,65 +82,6 @@ class FreeMarketProvider:
                         "low": float(row["저가"]),
                         "close": float(row["종가"]),
                         "volume": int(row["거래량"]),
-                    }
-                )
-            return result
-
-        return await asyncio.to_thread(_fetch)
-
-    # ── US (yfinance) ────────────────────────────────────────────
-
-    async def _get_us_price(self, symbol: str) -> PriceInfo:
-        def _fetch():
-            import yfinance as yf
-
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="5d")
-            if hist.empty:
-                return PriceInfo(symbol=symbol, price=0.0, market="US")
-
-            latest = hist.iloc[-1]
-            price = float(latest["Close"])
-            volume = int(latest["Volume"])
-
-            if len(hist) >= 2:
-                prev_close = float(hist.iloc[-2]["Close"])
-                change = price - prev_close
-                change_pct = (change / prev_close * 100) if prev_close else 0.0
-            else:
-                change = 0.0
-                change_pct = 0.0
-
-            return PriceInfo(
-                symbol=symbol,
-                price=price,
-                change=change,
-                change_pct=change_pct,
-                volume=volume,
-                market="US",
-            )
-
-        return await asyncio.to_thread(_fetch)
-
-    async def _get_us_daily(self, symbol: str, days: int) -> list[dict]:
-        def _fetch():
-            import yfinance as yf
-
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period=f"{days}d")
-            if hist.empty:
-                return []
-
-            result = []
-            for date_idx, row in hist.iterrows():
-                result.append(
-                    {
-                        "date": date_idx.strftime("%Y-%m-%d"),
-                        "open": float(row["Open"]),
-                        "high": float(row["High"]),
-                        "low": float(row["Low"]),
-                        "close": float(row["Close"]),
-                        "volume": int(row["Volume"]),
                     }
                 )
             return result

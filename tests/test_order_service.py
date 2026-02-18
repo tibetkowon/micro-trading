@@ -124,29 +124,6 @@ async def test_sell_insufficient_position_raises(session, account):
 
 
 @pytest.mark.asyncio
-async def test_us_market_uses_usd_balance(session, account):
-    """US 시장 주문은 USD 잔고 사용 확인."""
-    broker = _mock_broker(fill_price=150.0)
-    with patch("app.services.order_service.get_broker", return_value=broker):
-        svc = OrderService(session)
-        req = OrderCreate(
-            symbol="AAPL", market=Market.US, side=OrderSide.BUY,
-            order_type=OrderType.MARKET, quantity=10,
-            trading_mode=TradingMode.PAPER,
-        )
-        order = await svc.create_order(req)
-
-    assert order.status == "FILLED"
-
-    await session.refresh(account)
-    cost = 150.0 * 10
-    commission = cost * 0.0005
-    assert account.paper_balance_usd == pytest.approx(10_000 - cost - commission)
-    # KRW 잔고는 변하지 않아야 함
-    assert account.paper_balance_krw == pytest.approx(10_000_000)
-
-
-@pytest.mark.asyncio
 async def test_buy_creates_position(session, account):
     """매수 후 포지션 생성 확인."""
     broker = _mock_broker(fill_price=50000.0)

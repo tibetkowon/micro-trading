@@ -9,7 +9,7 @@
 | Backend | Python 3.11+, FastAPI, SQLAlchemy 2.0 (async) |
 | Database | SQLite (aiosqlite, WAL mode) |
 | Scheduler | APScheduler (시세 갱신 30초, 전략 틱 1분) |
-| Market Data | pykrx (한국), yfinance (미국) |
+| Market Data | pykrx (한국 주식) |
 | Frontend | Jinja2 + HTMX + Chart.js |
 | Deploy | Docker, GitHub Actions → NCP Micro |
 
@@ -17,12 +17,13 @@
 
 | ID | 기능 | 설명 |
 |:---|:---|:---|
-| F-01 | 종목검색기 | 코드/명으로 KR·US 종목 검색 |
+| F-01 | 종목검색기 | 코드/명으로 KR 종목 검색 (초성 검색 지원) |
 | F-02 | 종목 저장 | 관심종목 워치리스트 관리 |
 | F-03 | 시세 수집기 | 3계층 캐시 (메모리→API→DB), 30초 자동 갱신 |
-| F-04 | 가상 지갑 | .env 기반 초기자산, 거래 시 KRW/USD 잔고 자동 업데이트 |
+| F-04 | 가상 지갑 | .env 기반 초기자산, 거래 시 KRW 잔고 자동 업데이트 |
 | F-05 | 거래 엔진 | 시장가/지정가 주문, 수수료 반영 (기본 0.05%) |
 | F-06 | 대시보드 | 실시간 자산현황, 관심종목 시세, 포트폴리오 추이 차트 |
+| F-07 | 실매매 연동 | KIS API 실계좌 잔고 조회, 거래 모드 전환 |
 
 ## Architecture
 
@@ -37,8 +38,8 @@ app/
 ├── broker/              # 브로커 추상화
 │   ├── base.py          #   AbstractBroker 인터페이스
 │   ├── paper/           #   모의투자 브로커 (PaperExecutionEngine)
-│   ├── kis/             #   한국투자증권 실매매 브로커
-│   └── free/            #   무료 시세 제공자 (pykrx + yfinance)
+│   ├── kis/             #   한국투자증권 실매매 브로커 (국내주식)
+│   └── free/            #   무료 시세 제공자 (pykrx)
 ├── scheduler/           # APScheduler 잡 (시세 갱신, 전략 틱, 일일 스냅샷)
 ├── strategies/          # 내장 전략 (DCA, 이동평균, RSI)
 ├── api/                 # REST API (/api/market, /api/orders, ...)
@@ -49,7 +50,7 @@ app/
 
 ```bash
 # 1. 환경 설정
-cp .env.example .env    # PAPER_BALANCE_KRW, PAPER_BALANCE_USD 수정 가능
+cp .env.example .env    # PAPER_BALANCE_KRW 수정 가능
 
 # 2. 의존성 설치
 python -m venv .venv && source .venv/bin/activate
@@ -80,7 +81,6 @@ pytest -v
 |:---|:---|:---|
 | `TRADING_MODE` | `PAPER` | `PAPER` (모의투자) / `REAL` (실매매) |
 | `PAPER_BALANCE_KRW` | `100000000` | 모의투자 초기 원화 잔고 |
-| `PAPER_BALANCE_USD` | `100000.0` | 모의투자 초기 달러 잔고 |
 | `PAPER_COMMISSION_RATE` | `0.0005` | 수수료율 (0.05%) |
 | `KIS_APP_KEY` | - | 한국투자증권 앱 키 (실매매 시) |
 | `KIS_APP_SECRET` | - | 한국투자증권 앱 시크릿 (실매매 시) |
@@ -92,7 +92,7 @@ pytest -v
 |:---|:---|:---|
 | GET | `/api/health` | 헬스체크 |
 | GET | `/api/market/price/{symbol}` | 실시간 시세 조회 |
-| GET | `/api/market/daily-prices/{symbol}` | 일봉 OHLCV |
+| GET | `/api/market/daily-prices/{symbol}` | 일봉 OHLCV (MA5/MA20 포함) |
 | POST | `/api/orders` | 주문 생성 |
 | GET | `/api/orders` | 주문 내역 조회 |
 | GET | `/api/positions` | 보유 종목 조회 |
@@ -105,10 +105,14 @@ pytest -v
 |:---|:---|:---|
 | Phase 1 | **완료** | 데이터 모델 설계 (ORM, FK 인덱스, PRAGMA 최적화) |
 | Phase 2 | **완료** | 실시간 시장가 API 연동 (3계층 캐시, 30초 스케줄러) |
-| Phase 3 | **완료** | 가상 거래 로직 (잔고검증, 수수료, KRW/USD 구분, 테스트) |
+| Phase 3 | **완료** | 가상 거래 로직 (잔고검증, 수수료, KRW 구분, 테스트) |
 | Phase 4 | **완료** | 웹 대시보드 (자산현황, 관심종목 실시간 시세) |
 | Phase 5 | **완료** | 웹 거래화면 (검색→추가, 주문 잔고/예상금액 표시) |
 | Phase 6 | **완료** | CI/CD (GitHub Actions 테스트→배포→헬스체크) |
+| Phase 7~8 | **완료** | 웹 UI 정리, 초성 검색, 종목 마스터 DB |
+| Phase 9~10 | **완료** | 실매매 연동 (KIS API), 거래 모드 전환 UI |
+| Phase 11~12 | **완료** | UX 개선 (수수료 표시, 예수금 자동 갱신, MA 이동평균 API) |
+| Phase 13 | **완료** | 미국 주식 제거, 주문가능금액 거래 모드별 표시 |
 
 각 Phase별 구현 상세 및 학습 문서는 [`docs/study/`](docs/study/) 참조.
 

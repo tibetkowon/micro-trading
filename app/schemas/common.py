@@ -5,7 +5,6 @@ from enum import Enum
 
 class Market(str, Enum):
     KR = "KR"
-    US = "US"
 
 
 class OrderSide(str, Enum):

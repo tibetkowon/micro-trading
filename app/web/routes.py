@@ -20,7 +20,7 @@ from app.services.watchlist_service import WatchlistService
 from app.services.stock_master_service import StockMasterService
 from app.schemas.order import OrderCreate
 from app.schemas.common import Market, OrderSide, OrderType, TradingMode
-from app.web.stock_list import KR_STOCKS, US_STOCKS
+from app.web.stock_list import KR_STOCKS
 
 import pathlib
 
@@ -37,8 +37,6 @@ web_router = APIRouter(tags=["web"])
 
 _STOCK_NAMES: dict[str, str] = {}
 for _s in KR_STOCKS:
-    _STOCK_NAMES[_s["symbol"]] = _s["name"]
-for _s in US_STOCKS:
     _STOCK_NAMES[_s["symbol"]] = _s["name"]
 
 
@@ -196,20 +194,6 @@ async def partial_watchlist_items(
                     "symbol": s["symbol"], "market": "KR", "name": s["name"],
                     "price": 0, "change": 0, "change_pct": 0,
                 })
-    elif tab == "us":
-        for s in US_STOCKS:
-            try:
-                p = await market_svc.get_price(s["symbol"], "US")
-                items.append({
-                    "symbol": s["symbol"], "market": "US", "name": s["name"],
-                    "price": p.price, "change": p.change, "change_pct": p.change_pct,
-                })
-            except Exception:
-                items.append({
-                    "symbol": s["symbol"], "market": "US", "name": s["name"],
-                    "price": 0, "change": 0, "change_pct": 0,
-                })
-
     return templates.TemplateResponse("partials/watchlist_items.html", {
         "request": request,
         "items": items,
@@ -361,21 +345,23 @@ async def partial_stock_position(
 @web_router.get("/partials/order-balance", response_class=HTMLResponse)
 async def partial_order_balance(
     request: Request,
-    market: str = "KR",
     session: AsyncSession = Depends(get_session),
 ):
-    """주문 폼에 표시할 주문 가능 잔고."""
+    """주문 폼에 표시할 주문 가능 잔고 — 거래 모드별 분기."""
     from app.models.account import Account
     from sqlalchemy import select
-    result = await session.execute(select(Account).limit(1))
-    account = result.scalar_one_or_none()
-    balance = 0.0
-    if account:
-        balance = account.paper_balance_usd if market == "US" else account.paper_balance_krw
+    mode = settings.get_trading_mode()
+    if mode == TradingMode.REAL:
+        from app.services.connection_service import ConnectionService
+        real = await ConnectionService().get_real_balance()
+        balance = real.get("cash_krw", 0.0) if not real.get("error") else 0.0
+    else:
+        result = await session.execute(select(Account).limit(1))
+        account = result.scalar_one_or_none()
+        balance = account.paper_balance_krw if account else 0.0
     return templates.TemplateResponse("partials/order_balance.html", {
         "request": request,
         "balance": balance,
-        "market": market,
     })
 
 

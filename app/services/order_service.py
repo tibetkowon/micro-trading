@@ -19,11 +19,6 @@ from app.schemas.order import OrderCreate
 logger = logging.getLogger(__name__)
 
 
-def _get_balance_field(market: str) -> str:
-    """시장에 따라 사용할 잔고 필드명 반환 (KR→paper_balance_krw, US→paper_balance_usd)."""
-    return "paper_balance_usd" if market == "US" else "paper_balance_krw"
-
-
 class OrderService:
 
     def __init__(self, session: AsyncSession):
@@ -45,7 +40,6 @@ class OrderService:
         account = await self._get_default_account()
         broker = await get_broker(req.trading_mode.value)
         is_paper = req.trading_mode.value == "PAPER"
-        balance_field = _get_balance_field(req.market.value)
 
         # 매수 시 예상 금액으로 잔고 사전 검증
         if req.side.value == "BUY" and is_paper:
@@ -62,7 +56,7 @@ class OrderService:
             )
             commission = estimated_total * commission_rate
             required = estimated_total + commission
-            available = getattr(account, balance_field)
+            available = account.paper_balance_krw
             if available < required:
                 raise ValueError(
                     f"잔고 부족: 필요 {required:,.0f}, 보유 {available:,.0f}"
@@ -161,7 +155,6 @@ class OrderService:
             )
         )
         position = result.scalar_one_or_none()
-        balance_field = _get_balance_field(market)
         total_amount = price * quantity
 
         if side == "BUY":
@@ -183,8 +176,7 @@ class OrderService:
 
             # 매수: 잔고 차감 (체결금액 + 수수료)
             if is_paper:
-                current_balance = getattr(account, balance_field)
-                setattr(account, balance_field, round(current_balance - total_amount - commission, 2))
+                account.paper_balance_krw = round(account.paper_balance_krw - total_amount - commission, 2)
 
         else:  # SELL
             if position is None or position.quantity < quantity:
@@ -200,8 +192,7 @@ class OrderService:
 
             # 매도: 잔고 증가 (체결금액 - 수수료)
             if is_paper:
-                current_balance = getattr(account, balance_field)
-                setattr(account, balance_field, round(current_balance + total_amount - commission, 2))
+                account.paper_balance_krw = round(account.paper_balance_krw + total_amount - commission, 2)
 
     async def cancel_order(self, order_id: int) -> Order:
         result = await self.session.execute(select(Order).where(Order.id == order_id))

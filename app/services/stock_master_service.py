@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.stock_master import StockMaster
 from app.web.hangul_util import extract_chosung, is_chosung_only, match_chosung
-from app.web.stock_list import US_STOCKS
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,6 @@ class StockMasterService:
 
         logger.info("종목 마스터 동기화 시작...")
         await self.sync_kr_stocks()
-        await self.sync_us_stocks()
         logger.info("종목 마스터 동기화 완료")
 
     async def sync_kr_stocks(self) -> int:
@@ -83,23 +81,6 @@ class StockMasterService:
         if count > 0:
             await self.session.commit()
             logger.info("KR 종목 %d건 동기화 완료", count)
-        return count
-
-    async def sync_us_stocks(self) -> int:
-        """US_STOCKS 리스트를 DB에 저장한다."""
-        count = 0
-        for s in US_STOCKS:
-            await self._upsert(
-                symbol=s["symbol"],
-                market="US",
-                name=s["name"],
-                sector=None,
-            )
-            count += 1
-
-        if count > 0:
-            await self.session.commit()
-            logger.info("US 종목 %d건 동기화 완료", count)
         return count
 
     async def _upsert(

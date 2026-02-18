@@ -74,7 +74,7 @@ class PortfolioService:
         realized_pnl = float(result.scalar())
 
         cash_krw = account.paper_balance_krw if is_paper else 0.0
-        cash_usd = account.paper_balance_usd if is_paper else 0.0
+        cash_usd = 0.0
         total_value = total_market_value + cash_krw
 
         total_pnl = realized_pnl + unrealized_pnl
