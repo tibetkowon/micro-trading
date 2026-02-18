@@ -43,7 +43,11 @@
     <div class="settings-grid">
         <div class="settings-row">
             <span class="settings-label">모의투자 수수료율</span>
-            <span class="settings-value">{{ "{:.2%}".format(commission_rate) }}</span>
+            <span class="settings-value">{{ "{:.3%}".format(commission_rate) }}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">실거래 수수료율</span>
+            <span class="settings-value">{{ "{:.3%}".format(real_commission_rate) }}</span>
         </div>
     </div>
 </div>

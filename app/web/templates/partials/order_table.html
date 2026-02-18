@@ -9,6 +9,7 @@
             <th>수량</th>
             <th>가격</th>
             <th>상태</th>
+            <th>수수료</th>
             <th>출처</th>
             <th>시간</th>
         </tr>
@@ -33,6 +34,13 @@
                 {% else %}
                     <span class="badge badge-pending">{{ o.status }}</span>
                 {% endif %}
+            </td>
+            <td>
+              {% if o.status == 'FILLED' %}
+                {{ "{:,.0f}".format(commission_map.get(o.id, 0)) }}원
+              {% else %}
+                -
+              {% endif %}
             </td>
             <td>{{ o.source }}</td>
             <td>{{ o.created_at.strftime('%m-%d %H:%M') if o.created_at else '' }}</td>

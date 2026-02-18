@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.broker.factory import get_broker
+from app.config import settings as app_settings
 from app.models.order import Order
 from app.models.position import Position
 from app.models.trade import Trade
@@ -54,7 +55,12 @@ class OrderService:
                 price_info = await broker.get_current_price(req.symbol, req.market.value)
                 estimated_price = price_info.price
             estimated_total = estimated_price * req.quantity
-            commission = estimated_total * account.commission_rate
+            commission_rate = (
+                app_settings.real_commission_rate
+                if req.trading_mode.value == "REAL"
+                else account.commission_rate
+            )
+            commission = estimated_total * commission_rate
             required = estimated_total + commission
             available = getattr(account, balance_field)
             if available < required:
@@ -98,7 +104,12 @@ class OrderService:
 
             filled_price = order.filled_price or 0.0
             total_amount = filled_price * order.filled_quantity
-            commission = round(total_amount * account.commission_rate, 2)
+            commission_rate = (
+                app_settings.real_commission_rate
+                if req.trading_mode.value == "REAL"
+                else account.commission_rate
+            )
+            commission = round(total_amount * commission_rate, 2)
 
             # 거래 기록 생성 (수수료 포함)
             trade = Trade(
@@ -207,6 +218,14 @@ class OrderService:
         order.status = "CANCELLED"
         await self.session.commit()
         return order
+
+    async def get_trades_by_order_ids(self, order_ids: list[int]) -> dict[int, float]:
+        """주문 ID 목록에 대한 수수료 매핑 반환. {order_id: commission}"""
+        if not order_ids:
+            return {}
+        stmt = select(Trade).where(Trade.order_id.in_(order_ids))
+        result = await self.session.execute(stmt)
+        return {t.order_id: t.commission for t in result.scalars().all()}
 
     async def get_orders(
         self,

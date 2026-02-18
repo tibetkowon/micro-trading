@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     paper_balance_krw: float = 100_000_000
     paper_balance_usd: float = 100_000.0
     paper_commission_rate: float = 0.0005  # 0.05%
+    real_commission_rate: float = 0.0015  # KIS 실거래 수수료 기본값 0.15%
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./trading.db"

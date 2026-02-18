@@ -138,7 +138,7 @@ KIS_ACCOUNT_NUMBER=12345678-01</pre>
     </div>
     <div id="account-info"
          hx-get="/partials/account-info"
-         hx-trigger="load"
+         hx-trigger="load, every 30s"
          hx-swap="innerHTML">
         <div class="empty-state" style="padding: 1.5rem;">불러오는 중...</div>
     </div>

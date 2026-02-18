@@ -465,9 +465,11 @@ async def submit_order(
 
     # Legacy: orders page expects full order table
     orders = await svc.get_orders(limit=100)
+    commission_map = await svc.get_trades_by_order_ids([o.id for o in orders])
     return templates.TemplateResponse("partials/order_table.html", {
         "request": request,
         "orders": orders,
+        "commission_map": commission_map,
     })
 
 
@@ -479,11 +481,13 @@ async def submit_order(
 async def orders_page(request: Request, session: AsyncSession = Depends(get_session)):
     svc = OrderService(session)
     orders = await svc.get_orders(limit=100)
+    commission_map = await svc.get_trades_by_order_ids([o.id for o in orders])
     memo_svc = WatchlistService(session)
     memos = await memo_svc.list_all()
     return templates.TemplateResponse("orders.html", {
         "request": request,
         "orders": orders,
+        "commission_map": commission_map,
         "memos": memos,
         "trading_mode": settings.get_trading_mode().value,
     })
@@ -590,9 +594,11 @@ async def partial_positions(request: Request, session: AsyncSession = Depends(ge
 async def partial_orders(request: Request, session: AsyncSession = Depends(get_session)):
     svc = OrderService(session)
     orders = await svc.get_orders(limit=50)
+    commission_map = await svc.get_trades_by_order_ids([o.id for o in orders])
     return templates.TemplateResponse("partials/order_table.html", {
         "request": request,
         "orders": orders,
+        "commission_map": commission_map,
     })
 
 
@@ -684,6 +690,7 @@ async def partial_account_info(request: Request):
         "paper_balance": paper_balance,
         "real_balance": real_balance,
         "commission_rate": settings.paper_commission_rate,
+        "real_commission_rate": settings.real_commission_rate,
     })
 
 
