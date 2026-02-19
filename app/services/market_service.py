@@ -85,6 +85,13 @@ class MarketService:
         prices = await broker.get_daily_prices(symbol, market, days)
         return _add_moving_averages(prices)
 
+    async def get_intraday_candles(
+        self, symbol: str, market: str = "KR", interval: int = 1
+    ) -> list[dict]:
+        """분봉 데이터 조회 (interval: 1 또는 5분)."""
+        broker = await self._get_broker()
+        return await broker.get_intraday_candles(symbol, market, interval)
+
     async def get_latest_indicators(self, symbol: str, market: str = "KR") -> dict:
         """현재가에 포함할 MA5/MA20 지표를 계산한다. 일별 데이터 마지막 행 기준."""
         try:

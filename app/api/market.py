@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
@@ -48,6 +48,20 @@ async def get_daily_prices(
 ):
     svc = MarketService(session)
     return await svc.get_daily_prices(symbol, market, days)
+
+
+@router.get("/candles/{symbol}")
+async def get_intraday_candles(
+    symbol: str,
+    market: str = "KR",
+    interval: int = Query(default=1, ge=1, le=60),
+    session: AsyncSession = Depends(get_session),
+):
+    """분봉 데이터 조회. interval=1 (1분봉) 또는 interval=5 (5분봉).
+    KIS API 인증이 없는 경우 빈 목록을 반환한다.
+    """
+    svc = MarketService(session)
+    return await svc.get_intraday_candles(symbol, market, interval)
 
 
 @router.get("/cache", response_model=list[PriceCacheResponse])

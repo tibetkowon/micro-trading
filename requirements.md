@@ -2,7 +2,7 @@
 - 목적: 저사양 주식거래 트레이딩 서비스
 - 핵심가치: 저사양 환경 최적화, 주요종목 추천, 실시간 시세반영, 직관적 자산관리
 
-## 기능 (Functional Requirements) 
+## 기능 (Functional Requirements)
 - 우선순위는 낮을수록 높음 - 최고 0
 - 기능 개발 후에는 적용여부에 'O' 추가
 | ID   | 우선순위 | 기능명       | 상세 내용                                                                 | 적용 여부 |
@@ -18,7 +18,7 @@
 | F-09 | 9         | 자동거래     | AI 연동을 통한 자동 거래 시스템                                          |            |
 | F-10 | 9         | 거래 보고서   | 직접 거래 및 AI 거래 후 일일 보고서 Discord 통해 보고                   |            |
 
-## 비기능 (Non-Functional Requirements) 
+## 비기능 (Non-Functional Requirements)
 - 성능: NCP Micro(RAM 1GB)에서 OOM(Out of Memory) 없이 24시간 구동.
 - 데이터: SQLite를 사용하여 별도의 DB 서버 없이 로컬 파일로 관리.
 - 보안: API Key 등 민감 정보는 .env 파일을 통해 관리하고 깃허브 노출 금지.
@@ -36,8 +36,8 @@
 | Phase 8 | **완료** | 종목 검색기능 개선 - pykrx KRX 전종목 DB 동기화, S&P500 전종목 하드코딩, 초성 검색, 검색 정렬(exact>prefix>contains) |
 | Phase 9 | **완료** | 실계좌 연동 관리 — 설정 페이지, KIS API 연결 테스트, 계좌 잔고 조회 |
 | Phase 10 | **완료** | 실거래/모의투자 런타임 스위칭 — 모드 전환 UI, 확인 다이얼로그, 전환 시 데이터 분리 |
-| Phase 11 | | 종목명 - symbol 만으로는 거래에 불편함이 있어, api응답에 종목명도 추가 | 
-| Phase 12 | | 지표 자동 계산 - ma5, ma20 같은 이평선값 계산 하여 응답 추가 | 
-| Phase 13 | | 정밀잔고 - 수수료, 세금이 포함된 실질주문가능 금액을 계산하여 응답 | 
-| Phase 14 | | 주문실패사유 상세화 - 현재 화면상에는 '거절' 로만 나오고 있음 | 
-| Phase 15 | | 초단타를 위해 1분봉, 5분봉 데이터 필요 | 
+| Phase 11 | **완료** | 종목명 추가 — PriceResponse/OrderResponse/PositionResponse에 name 필드 추가, StockMaster 배치 조회 |
+| Phase 12 | **완료** | 지표 자동 계산 — GET /market/price/{symbol} 응답에 ma5/ma20 추가, asyncio.gather 병렬 계산 |
+| Phase 13 | **완료** | 정밀잔고 — PortfolioSummary에 orderable_krw/orderable_usd 추가 (잔고 / (1 + 수수료율)) |
+| Phase 14 | **완료** | 주문실패사유 상세화 — Order 모델 reject_reason 컬럼 추가, OrderResponse에 노출, 자동 마이그레이션 |
+| Phase 15 | **완료** | 분봉 데이터 — GET /market/candles/{symbol}?interval=1\|5, KIS 분봉 API 연동, 5분봉 서버사이드 집계 |
