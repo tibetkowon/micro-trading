@@ -23,10 +23,32 @@ from app.schemas.common import Market, OrderSide, OrderType, TradingMode
 from app.web.stock_list import KR_STOCKS
 
 import pathlib
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=str(pathlib.Path(__file__).parent / "templates"))
+
+
+def _to_kst(dt: datetime | None) -> str:
+    """UTC datetime을 KST(UTC+9) 문자열로 변환."""
+    if dt is None:
+        return ""
+    kst = timezone(timedelta(hours=9))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(kst).strftime("%m-%d %H:%M")
+
+
+def _source_label(source: str | None) -> str:
+    """주문 출처를 한국어 라벨로 변환."""
+    if not source or source == "manual":
+        return "직접주문"
+    return "자동전략"
+
+
+templates.env.filters["to_kst"] = _to_kst
+templates.env.filters["source_label"] = _source_label
 
 web_router = APIRouter(tags=["web"])
 
@@ -401,10 +423,15 @@ async def partial_orders(request: Request, session: AsyncSession = Depends(get_s
     orders = await svc.get_orders(limit=10)
     order_ids = [o.id for o in orders]
     commission_map = await svc.get_trades_by_order_ids(order_ids)
+    # 종목명 일괄 조회
+    stock_svc = StockMasterService(session)
+    symbols = list({(o.symbol, o.market) for o in orders})
+    name_map = await stock_svc.get_names_bulk(symbols)
     return templates.TemplateResponse("partials/order_table.html", {
         "request": request,
         "orders": orders,
         "commission_map": commission_map,
+        "name_map": name_map,
     })
 
 
@@ -412,9 +439,14 @@ async def partial_orders(request: Request, session: AsyncSession = Depends(get_s
 async def partial_orders_compact(request: Request, session: AsyncSession = Depends(get_session)):
     svc = OrderService(session)
     orders = await svc.get_orders(limit=10)
+    # 종목명 일괄 조회
+    stock_svc = StockMasterService(session)
+    symbols = list({(o.symbol, o.market) for o in orders})
+    name_map = await stock_svc.get_names_bulk(symbols)
     return templates.TemplateResponse("partials/orders_compact.html", {
         "request": request,
         "orders": orders,
+        "name_map": name_map,
     })
 
 

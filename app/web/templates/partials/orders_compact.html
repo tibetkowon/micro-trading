@@ -7,10 +7,19 @@
             <span class="order-side-tag {{ 'buy' if o.side == 'BUY' else 'sell' }}">
                 {{ "매수" if o.side == "BUY" else "매도" }}
             </span>
-            <span class="order-item-symbol">{{ o.symbol }}</span>
-            <span style="color:var(--text-muted);">{{ o.filled_quantity or o.quantity }}</span>
+            <span class="order-item-symbol">
+                {{ name_map.get((o.symbol, o.market), o.symbol) if name_map else o.symbol }}
+            </span>
+            <span style="color:var(--text-muted);">{{ o.filled_quantity or o.quantity }}주</span>
         </div>
         <div class="order-item-right">
+            <div class="order-item-price">
+                {% if o.status == 'FILLED' and o.filled_price and o.filled_price > 0 %}
+                <span style="color:var(--text-secondary); font-size:0.8rem;">
+                    {{ "{:,.0f}".format(o.filled_price) }}원
+                </span>
+                {% endif %}
+            </div>
             <div class="order-item-status">
                 {% if o.status == 'FILLED' %}
                 <span style="color:var(--success);">체결</span>
@@ -22,7 +31,7 @@
                 <span style="color:var(--text-muted);">{{ o.status }}</span>
                 {% endif %}
             </div>
-            <div class="order-item-time">{{ o.created_at.strftime('%m-%d %H:%M') if o.created_at else '' }}</div>
+            <div class="order-item-time">{{ o.created_at | to_kst }}</div>
         </div>
     </li>
     {% endfor %}
