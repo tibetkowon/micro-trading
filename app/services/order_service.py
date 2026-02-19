@@ -128,6 +128,7 @@ class OrderService:
             self.session.add(trade)
         else:
             order.status = "REJECTED"
+            order.reject_reason = result.message or "알 수 없는 오류"
             logger.warning("주문 거부: %s", result.message)
 
         await self.session.commit()

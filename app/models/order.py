@@ -27,6 +27,7 @@ class Order(TimestampMixin, Base):
     source: Mapped[str] = mapped_column(String(20), default="manual")
     strategy_name: Mapped[str | None] = mapped_column(String(100), default=None)
     filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    reject_reason: Mapped[str | None] = mapped_column(String(500), default=None)  # 주문 거부 사유
 
     def __repr__(self) -> str:
         return f"<Order id={self.id} {self.side} {self.symbol} qty={self.quantity} status={self.status}>"

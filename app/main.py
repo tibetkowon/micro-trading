@@ -24,6 +24,9 @@ def _migrate_add_missing_columns(connection) -> None:
             ("initial_balance_usd", "FLOAT DEFAULT 100000.0"),
             ("commission_rate", "FLOAT DEFAULT 0.0005"),
         ],
+        "orders": [
+            ("reject_reason", "VARCHAR(500) DEFAULT NULL"),
+        ],
     }
     for table_name, columns in migrations.items():
         if not inspector.has_table(table_name):
