@@ -21,6 +21,7 @@ class OrderResponse(BaseModel):
     id: int
     broker_order_id: str | None = None
     symbol: str
+    name: str | None = None
     market: str
     side: str
     order_type: str
@@ -30,6 +31,7 @@ class OrderResponse(BaseModel):
     filled_price: float | None
     trading_mode: str
     status: str
+    reject_reason: str | None = None
     source: str
     strategy_name: str | None = None
     created_at: datetime

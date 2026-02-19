@@ -188,6 +188,31 @@ class StockMasterService:
 
         return matches
 
+    async def get_name(self, symbol: str, market: str) -> str | None:
+        """단일 종목명 조회. 없으면 None 반환."""
+        result = await self.session.execute(
+            select(StockMaster.name).where(
+                StockMaster.symbol == symbol,
+                StockMaster.market == market,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_names_bulk(self, symbols: list[tuple[str, str]]) -> dict[tuple[str, str], str]:
+        """여러 종목의 이름을 한 번에 조회. {(symbol, market): name} 반환."""
+        if not symbols:
+            return {}
+        from sqlalchemy import or_, and_, tuple_
+        conditions = [
+            and_(StockMaster.symbol == sym, StockMaster.market == mkt)
+            for sym, mkt in symbols
+        ]
+        result = await self.session.execute(
+            select(StockMaster.symbol, StockMaster.market, StockMaster.name)
+            .where(or_(*conditions))
+        )
+        return {(row.symbol, row.market): row.name for row in result.all()}
+
     async def get_count(self) -> int:
         """저장된 종목 수를 반환한다."""
         result = await self.session.execute(

@@ -30,6 +30,12 @@ class PortfolioService:
         )
         positions = result.scalars().all()
 
+        # 종목명 일괄 조회
+        from app.services.stock_master_service import StockMasterService
+        stock_svc = StockMasterService(self.session)
+        symbols = [(p.symbol, p.market) for p in positions]
+        name_map = await stock_svc.get_names_bulk(symbols)
+
         enriched = []
         for pos in positions:
             try:
@@ -44,6 +50,7 @@ class PortfolioService:
             enriched.append({
                 "id": pos.id,
                 "symbol": pos.symbol,
+                "name": name_map.get((pos.symbol, pos.market)),
                 "market": pos.market,
                 "quantity": pos.quantity,
                 "avg_price": pos.avg_price,

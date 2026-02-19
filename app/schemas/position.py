@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class PositionResponse(BaseModel):
     id: int
     symbol: str
+    name: str | None = None
     market: str
     quantity: int
     avg_price: float

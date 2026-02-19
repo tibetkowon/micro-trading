@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 class PriceResponse(BaseModel):
     symbol: str
+    name: str | None = None
     price: float
     change: float = 0.0
     change_pct: float = 0.0

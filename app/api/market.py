@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.schemas.market import PriceCacheResponse, PriceResponse
 from app.services.market_service import MarketService
+from app.services.stock_master_service import StockMasterService
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -17,9 +18,12 @@ async def get_price(
     session: AsyncSession = Depends(get_session),
 ):
     svc = MarketService(session)
+    stock_svc = StockMasterService(session)
     info = await svc.get_price(symbol, market)
+    name = await stock_svc.get_name(symbol, market)
     return PriceResponse(
         symbol=info.symbol,
+        name=name,
         price=info.price,
         change=info.change,
         change_pct=info.change_pct,
