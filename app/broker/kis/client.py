@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -118,6 +119,7 @@ class KISClient:
         tr_id: str,
         body: dict[str, Any],
         use_hashkey: bool = True,
+        _retry: int = 2,
     ) -> dict[str, Any]:
         await self._ensure_token()
         if not self._client:
@@ -126,6 +128,7 @@ class KISClient:
         if use_hashkey:
             headers["hashkey"] = await self._get_hashkey(body)
         resp = await self._client.post(path, headers=headers, json=body)
+
         if resp.status_code == 401:
             # 세션 만료로 인한 401 — 토큰 강제 갱신 후 1회 재시도
             logger.warning("KIS 401 응답 — 토큰 강제 갱신 후 재시도: %s (tr_id=%s)", path, tr_id)
@@ -134,6 +137,16 @@ class KISClient:
             if use_hashkey:
                 headers["hashkey"] = await self._get_hashkey(body)
             resp = await self._client.post(path, headers=headers, json=body)
+
+        # 5xx 서버 오류는 일시적 장애일 수 있으므로 최대 _retry회 재시도
+        if resp.status_code >= 500 and _retry > 0:
+            logger.warning(
+                "KIS POST 5xx 오류 [%s] — %d회 재시도 예정: %s (tr_id=%s)",
+                resp.status_code, _retry, path, tr_id,
+            )
+            await asyncio.sleep(1)
+            return await self.post(path, tr_id, body, use_hashkey=use_hashkey, _retry=_retry - 1)
+
         if not resp.is_success:
             logger.error(
                 "KIS POST 오류 [%s] %s (tr_id=%s): %s",
