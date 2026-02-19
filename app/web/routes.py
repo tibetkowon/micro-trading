@@ -738,17 +738,26 @@ async def test_connection(request: Request):
 
 
 @web_router.get("/partials/account-info", response_class=HTMLResponse)
-async def partial_account_info(request: Request):
+async def partial_account_info(request: Request, session: AsyncSession = Depends(get_session)):
     """계좌 잔고 정보 partial."""
     from app.services.connection_service import ConnectionService
     conn_svc = ConnectionService()
     paper_balance = await conn_svc.get_paper_balance()
     real_balance = await conn_svc.get_real_balance()
 
+    # 주문가능 금액 계산 (수수료 차감 후)
+    paper_cash = paper_balance.get("cash_krw", 0.0) if not paper_balance.get("error") else 0.0
+    paper_orderable = round(paper_cash / (1 + settings.paper_commission_rate), 0) if paper_cash > 0 else 0.0
+
+    real_cash = real_balance.get("cash_krw", 0.0) if not real_balance.get("error") else 0.0
+    real_orderable = round(real_cash / (1 + 0.003), 0) if real_cash > 0 else 0.0  # 실계좌 0.3% 안전 마진
+
     return templates.TemplateResponse("partials/account_info.html", {
         "request": request,
         "paper_balance": paper_balance,
         "real_balance": real_balance,
+        "paper_orderable": paper_orderable,
+        "real_orderable": real_orderable,
         "commission_rate": settings.paper_commission_rate,
         "real_commission_rate": settings.real_commission_rate,
     })
