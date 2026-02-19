@@ -15,7 +15,6 @@
             <div class="nav-links">
                 <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>트레이딩</a>
                 <a href="/portfolio" {% if request.url.path == '/portfolio' %}class="active"{% endif %}>포트폴리오</a>
-                <a href="/orders" {% if request.url.path == '/orders' %}class="active"{% endif %}>주문내역</a>
                 <a href="/strategies" {% if request.url.path == '/strategies' %}class="active"{% endif %}>전략</a>
                 <a href="/settings" {% if request.url.path == '/settings' %}class="active"{% endif %}>설정</a>
                 {% if trading_mode == 'PAPER' %}
