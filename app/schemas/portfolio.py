@@ -16,6 +16,8 @@ class PortfolioSummary(BaseModel):
     unrealized_pnl: float = 0.0
     total_pnl: float = 0.0
     return_pct: float = 0.0
+    orderable_krw: float = 0.0  # 수수료 차감 후 실질 주문가능 금액
+    orderable_usd: float = 0.0
 
 
 class SnapshotResponse(BaseModel):

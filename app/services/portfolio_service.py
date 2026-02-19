@@ -88,6 +88,11 @@ class PortfolioService:
         initial = account.paper_balance_krw if is_paper else 0.0
         return_pct = (total_pnl / initial * 100) if initial > 0 else 0.0
 
+        # 실질 주문가능 금액: 수수료 차감 후 실제 매수에 쓸 수 있는 금액
+        commission_rate = account.commission_rate if is_paper else 0.0015
+        orderable_krw = round(cash_krw / (1 + commission_rate), 2) if cash_krw > 0 else 0.0
+        orderable_usd = round(cash_usd / (1 + commission_rate), 2) if cash_usd > 0 else 0.0
+
         return PortfolioSummary(
             total_value=round(total_value, 2),
             total_invested=round(total_invested, 2),
@@ -99,6 +104,8 @@ class PortfolioService:
             unrealized_pnl=round(unrealized_pnl, 2),
             total_pnl=round(total_pnl, 2),
             return_pct=round(return_pct, 2),
+            orderable_krw=orderable_krw,
+            orderable_usd=orderable_usd,
         )
 
     async def take_daily_snapshot(self):
