@@ -18,7 +18,13 @@ def _with_name(order, name_map: dict) -> OrderResponse:
     return resp
 
 
-@router.post("", response_model=OrderResponse)
+@router.post(
+    "",
+    response_model=OrderResponse,
+    summary="주문 생성",
+    description="새 매수/매도 주문을 생성하고 즉시 체결을 시도합니다. "
+                "모의투자 모드에서는 가상 잔고에서 차감되며, 실매매 모드에서는 KIS API로 실제 주문이 전송됩니다.",
+)
 async def create_order(
     req: OrderCreate,
     session: AsyncSession = Depends(get_session),
@@ -30,7 +36,13 @@ async def create_order(
     return _with_name(order, name_map)
 
 
-@router.get("", response_model=list[OrderResponse])
+@router.get(
+    "",
+    response_model=list[OrderResponse],
+    summary="주문 목록 조회",
+    description="거래 모드, 주문 상태, 최대 건수 필터로 주문 내역을 조회합니다. "
+                "기본값은 최신 50건이며 created_at 내림차순으로 반환됩니다.",
+)
 async def list_orders(
     trading_mode: str | None = None,
     status: str | None = None,
@@ -45,7 +57,13 @@ async def list_orders(
     return [_with_name(o, name_map) for o in orders]
 
 
-@router.delete("/{order_id}", response_model=OrderResponse)
+@router.delete(
+    "/{order_id}",
+    response_model=OrderResponse,
+    summary="주문 취소",
+    description="PENDING 또는 SUBMITTED 상태의 주문을 취소합니다. "
+                "이미 체결(FILLED)되었거나 취소(CANCELLED)된 주문은 취소할 수 없습니다.",
+)
 async def cancel_order(
     order_id: int,
     session: AsyncSession = Depends(get_session),
