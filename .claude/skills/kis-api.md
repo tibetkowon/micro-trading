@@ -60,6 +60,71 @@ resp.raise_for_status()
 - `resp.text`에 KIS 에러코드(`msg_cd`)와 메시지(`msg1`)가 담겨 있음
 - 로깅 없이 `raise_for_status()`만 호출하면 원인 파악 불가
 
+## 토큰 세션 관리
+
+### 토큰 수명 및 갱신 전략
+
+KIS 토큰은 발급 후 **23시간** 유효하다. 세션 끊김을 방지하기 위해 3단계 방어 전략을 사용한다.
+
+| 단계 | 방법 | 파일 |
+|:---|:---|:---|
+| 1. Lazy 갱신 | API 호출 전 `_ensure_token()` — 만료 시 자동 갱신 | `client.py` |
+| 2. 401 자동 재시도 | 401 응답 시 강제 갱신 후 1회 재시도 | `client.py` |
+| 3. 선제 갱신 | 30분 간격 스케줄러 — 만료 1시간 이내이면 미리 갱신 | `jobs.py` |
+
+### `KISToken` 속성
+
+```python
+@property
+def is_expired(self) -> bool:
+    return datetime.now() >= self.expires_at
+
+@property
+def is_expiring_soon(self) -> bool:
+    """만료 1시간 이내인 경우 True — 선제 갱신 판단에 사용."""
+    return datetime.now() >= self.expires_at - timedelta(hours=1)
+```
+
+### `force_refresh_token()` — 강제 갱신
+
+```python
+async def force_refresh_token(self) -> None:
+    """토큰 강제 갱신 — 선제 갱신 스케줄러 및 401 재시도에 사용."""
+    self._token = KISToken()  # 만료 상태로 초기화
+    await self._ensure_token()
+```
+
+### 401 자동 재시도 패턴
+
+```python
+resp = await self._client.get(path, headers=headers, params=params)
+if resp.status_code == 401:
+    logger.warning("KIS 401 응답 — 토큰 강제 갱신 후 재시도: %s", path)
+    await self.force_refresh_token()
+    headers = self._base_headers(tr_id)
+    resp = await self._client.get(path, headers=headers, params=params)
+```
+
+- GET, POST 모두 동일 패턴 적용
+- 재시도는 **1회만** 수행 (무한루프 방지)
+
+### 스케줄러 선제 갱신 (`jobs.py`)
+
+```python
+async def refresh_kis_token():
+    from app.broker.factory import _broker_cache
+    from app.schemas.common import TradingMode
+    broker = _broker_cache.get(TradingMode.REAL)
+    if broker is None:
+        return  # 실매매 브로커 미초기화 시 스킵
+    client = getattr(broker, "_client", None)
+    if client and (client._token.is_expired or client._token.is_expiring_soon):
+        await client.force_refresh_token()
+```
+
+- `_broker_cache`에 캐싱된 브로커만 체크 (새 연결 생성 없음)
+- 30분 간격 실행, KIS 키 미설정 시 자동 스킵
+
 ## 주문 바디 필드
 
 ```python
