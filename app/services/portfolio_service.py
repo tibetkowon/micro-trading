@@ -30,6 +30,12 @@ class PortfolioService:
         )
         positions = result.scalars().all()
 
+        # 종목명 일괄 조회
+        from app.services.stock_master_service import StockMasterService
+        stock_svc = StockMasterService(self.session)
+        symbols = [(p.symbol, p.market) for p in positions]
+        name_map = await stock_svc.get_names_bulk(symbols)
+
         enriched = []
         for pos in positions:
             try:
@@ -44,6 +50,7 @@ class PortfolioService:
             enriched.append({
                 "id": pos.id,
                 "symbol": pos.symbol,
+                "name": name_map.get((pos.symbol, pos.market)),
                 "market": pos.market,
                 "quantity": pos.quantity,
                 "avg_price": pos.avg_price,
@@ -73,13 +80,34 @@ class PortfolioService:
         )
         realized_pnl = float(result.scalar())
 
-        cash_krw = account.paper_balance_krw if is_paper else 0.0
-        cash_usd = 0.0
+        if is_paper:
+            cash_krw = account.paper_balance_krw
+            cash_usd = 0.0
+        else:
+            # REAL 모드: KIS API에서 실계좌 잔고 조회
+            try:
+                from app.services.connection_service import ConnectionService
+                real_bal = await ConnectionService().get_real_balance()
+                if real_bal.get("error"):
+                    cash_krw = 0.0
+                    cash_usd = 0.0
+                else:
+                    cash_krw = float(real_bal.get("cash_krw", 0.0))
+                    cash_usd = float(real_bal.get("cash_usd", 0.0))
+            except Exception:
+                logger.warning("실계좌 잔고 조회 실패, 0으로 처리")
+                cash_krw = 0.0
+                cash_usd = 0.0
         total_value = total_market_value + cash_krw
 
         total_pnl = realized_pnl + unrealized_pnl
-        initial = account.paper_balance_krw if is_paper else 0.0
+        initial = account.initial_balance_krw if is_paper else (cash_krw + total_invested or 1.0)
         return_pct = (total_pnl / initial * 100) if initial > 0 else 0.0
+
+        # 실질 주문가능 금액: 수수료 차감 후 실제 매수에 쓸 수 있는 금액
+        commission_rate = account.commission_rate if is_paper else 0.0015
+        orderable_krw = round(cash_krw / (1 + commission_rate), 2) if cash_krw > 0 else 0.0
+        orderable_usd = round(cash_usd / (1 + commission_rate), 2) if cash_usd > 0 else 0.0
 
         return PortfolioSummary(
             total_value=round(total_value, 2),
@@ -92,6 +120,8 @@ class PortfolioService:
             unrealized_pnl=round(unrealized_pnl, 2),
             total_pnl=round(total_pnl, 2),
             return_pct=round(return_pct, 2),
+            orderable_krw=orderable_krw,
+            orderable_usd=orderable_usd,
         )
 
     async def take_daily_snapshot(self):

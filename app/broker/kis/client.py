@@ -63,6 +63,11 @@ class KISClient:
         )
         logger.info("KIS token refreshed (mock=%s)", self._is_mock)
 
+    async def force_refresh_token(self) -> None:
+        """토큰 강제 갱신 — 선제 갱신 스케줄러 및 401 재시도에 사용."""
+        self._token = KISToken()  # 만료 상태로 초기화
+        await self._ensure_token()
+
     async def _get_hashkey(self, body: dict) -> str:
         if not self._client:
             await self.open()
@@ -70,11 +75,13 @@ class KISClient:
             HASHKEY_PATH,
             json=body,
             headers={
-                "content-Type": "application/json",
+                "content-type": "application/json; charset=utf-8",
                 "appKey": settings.kis_app_key,
                 "appSecret": settings.kis_app_secret,
             },
         )
+        if not resp.is_success:
+            logger.error("해시키 발급 실패 [%s]: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         return resp.json()["HASH"]
 
@@ -85,6 +92,7 @@ class KISClient:
             "appkey": settings.kis_app_key,
             "appsecret": settings.kis_app_secret,
             "tr_id": tr_id,
+            "custtype": "P",  # 개인투자자 구분 (KIS API 필수 헤더)
         }
 
     async def get(self, path: str, tr_id: str, params: dict[str, str] | None = None) -> dict[str, Any]:
@@ -93,6 +101,14 @@ class KISClient:
             await self.open()
         headers = self._base_headers(tr_id)
         resp = await self._client.get(path, headers=headers, params=params)
+        if resp.status_code == 401:
+            # 세션 만료로 인한 401 — 토큰 강제 갱신 후 1회 재시도
+            logger.warning("KIS 401 응답 — 토큰 강제 갱신 후 재시도: %s", path)
+            await self.force_refresh_token()
+            headers = self._base_headers(tr_id)
+            resp = await self._client.get(path, headers=headers, params=params)
+        if not resp.is_success:
+            logger.error("KIS GET 오류 [%s] %s: %s", resp.status_code, path, resp.text)
         resp.raise_for_status()
         return resp.json()
 
@@ -110,5 +126,18 @@ class KISClient:
         if use_hashkey:
             headers["hashkey"] = await self._get_hashkey(body)
         resp = await self._client.post(path, headers=headers, json=body)
+        if resp.status_code == 401:
+            # 세션 만료로 인한 401 — 토큰 강제 갱신 후 1회 재시도
+            logger.warning("KIS 401 응답 — 토큰 강제 갱신 후 재시도: %s (tr_id=%s)", path, tr_id)
+            await self.force_refresh_token()
+            headers = self._base_headers(tr_id)
+            if use_hashkey:
+                headers["hashkey"] = await self._get_hashkey(body)
+            resp = await self._client.post(path, headers=headers, json=body)
+        if not resp.is_success:
+            logger.error(
+                "KIS POST 오류 [%s] %s (tr_id=%s): %s",
+                resp.status_code, path, tr_id, resp.text,
+            )
         resp.raise_for_status()
         return resp.json()

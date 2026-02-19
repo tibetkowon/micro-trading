@@ -113,3 +113,13 @@ class PaperBroker(AbstractBroker):
         except Exception as e:
             logger.warning("Daily prices failed for %s: %s", symbol, e)
             return []
+
+    async def get_intraday_candles(
+        self, symbol: str, market: str, interval: int = 1
+    ) -> list[dict]:
+        provider = await self._get_price_provider()
+        try:
+            return await provider.get_intraday_candles(symbol, market, interval)
+        except Exception as e:
+            logger.warning("Intraday candles failed for %s: %s", symbol, e)
+            return []

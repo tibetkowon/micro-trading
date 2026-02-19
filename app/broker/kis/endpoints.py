@@ -27,3 +27,7 @@ KR_SELL_TR_MOCK = "VTTC0801U"
 KR_CANCEL_TR_MOCK = "VTTC0803U"
 KR_BALANCE_TR_MOCK = "VTTC8434R"
 KR_ORDERS_TR_MOCK = "VTTC8001R"
+
+# --- 분봉 차트 ---
+KR_MINUTE_CHART_PATH = "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
+KR_MINUTE_CHART_TR = "FHKST03010200"

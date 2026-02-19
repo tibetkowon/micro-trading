@@ -83,6 +83,10 @@ async def trading_view(request: Request, session: AsyncSession = Depends(get_ses
     order_svc = OrderService(session)
     recent_orders = await order_svc.get_orders(limit=10)
 
+    # order_table.html에서 commission_map 필요
+    order_ids = [o.id for o in recent_orders]
+    commission_map = await order_svc.get_trades_by_order_ids(order_ids)
+
     # Watchlist items (memos)
     memo_svc = WatchlistService(session)
     memos = await memo_svc.list_all()
@@ -93,6 +97,7 @@ async def trading_view(request: Request, session: AsyncSession = Depends(get_ses
         "positions": positions,
         "recent_orders": recent_orders,
         "orders": recent_orders,
+        "commission_map": commission_map,
         "snapshots_json": json.dumps(snapshots_data),
         "trading_mode": settings.get_trading_mode().value,
         "selected_symbol": None,
@@ -173,12 +178,12 @@ async def partial_watchlist_items(
             try:
                 p = await market_svc.get_price(m.symbol, m.market)
                 items.append({
-                    "symbol": m.symbol, "market": m.market, "name": m.name,
+                    "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
                     "price": p.price, "change": p.change, "change_pct": p.change_pct,
                 })
             except Exception:
                 items.append({
-                    "symbol": m.symbol, "market": m.market, "name": m.name,
+                    "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
                     "price": 0, "change": 0, "change_pct": 0,
                 })
     elif tab == "kr":
@@ -389,6 +394,20 @@ async def partial_positions_compact(request: Request, session: AsyncSession = De
     })
 
 
+@web_router.get("/partials/orders", response_class=HTMLResponse)
+async def partial_orders(request: Request, session: AsyncSession = Depends(get_session)):
+    """대시보드 주문 내역 테이블 partial (commission_map 포함)."""
+    svc = OrderService(session)
+    orders = await svc.get_orders(limit=10)
+    order_ids = [o.id for o in orders]
+    commission_map = await svc.get_trades_by_order_ids(order_ids)
+    return templates.TemplateResponse("partials/order_table.html", {
+        "request": request,
+        "orders": orders,
+        "commission_map": commission_map,
+    })
+
+
 @web_router.get("/partials/orders-compact", response_class=HTMLResponse)
 async def partial_orders_compact(request: Request, session: AsyncSession = Depends(get_session)):
     svc = OrderService(session)
@@ -440,44 +459,9 @@ async def submit_order(
             f'</div>'
         )
 
-    # Check if request is from the new trading view (HTMX to #order-result)
-    hx_target = request.headers.get("hx-target", "")
-    if hx_target == "order-result":
-        from fastapi.responses import HTMLResponse as HR
-        resp = HR(result_html)
-        # Trigger sidebar refresh
-        resp.headers["HX-Trigger"] = "refreshSidebar"
-        return resp
-
-    # Legacy: orders page expects full order table
-    orders = await svc.get_orders(limit=100)
-    commission_map = await svc.get_trades_by_order_ids([o.id for o in orders])
-    return templates.TemplateResponse("partials/order_table.html", {
-        "request": request,
-        "orders": orders,
-        "commission_map": commission_map,
-    })
-
-
-# ──────────────────────────────────────────────
-# Legacy pages (kept accessible)
-# ──────────────────────────────────────────────
-
-@web_router.get("/orders", response_class=HTMLResponse)
-async def orders_page(request: Request, session: AsyncSession = Depends(get_session)):
-    svc = OrderService(session)
-    orders = await svc.get_orders(limit=100)
-    commission_map = await svc.get_trades_by_order_ids([o.id for o in orders])
-    memo_svc = WatchlistService(session)
-    memos = await memo_svc.list_all()
-    return templates.TemplateResponse("orders.html", {
-        "request": request,
-        "orders": orders,
-        "commission_map": commission_map,
-        "memos": memos,
-        "trading_mode": settings.get_trading_mode().value,
-    })
-
+    resp = HTMLResponse(result_html)
+    resp.headers["HX-Trigger"] = "refreshSidebar"
+    return resp
 
 
 @web_router.get("/portfolio", response_class=HTMLResponse)
@@ -534,6 +518,76 @@ async def delete_memo(
     })
 
 
+@web_router.post("/watchlist/item", response_class=HTMLResponse)
+async def add_watchlist_item(
+    request: Request,
+    symbol: str = Form(...),
+    market: str = Form("KR"),
+    name: str = Form(...),
+    memo: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+):
+    """관심종목 패널에서 종목 추가 후 목록 갱신."""
+    svc = WatchlistService(session)
+    try:
+        await svc.add(symbol, market, name, memo or None)
+    except Exception:
+        pass  # 중복 무시
+    market_svc = MarketService(session)
+    memos = await svc.list_all()
+    items = []
+    for m in memos:
+        try:
+            p = await market_svc.get_price(m.symbol, m.market)
+            items.append({
+                "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
+                "price": p.price, "change": p.change, "change_pct": p.change_pct,
+            })
+        except Exception:
+            items.append({
+                "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
+                "price": 0, "change": 0, "change_pct": 0,
+            })
+    return templates.TemplateResponse("partials/watchlist_items.html", {
+        "request": request,
+        "items": items,
+        "tab": "watchlist",
+        "selected_symbol": None,
+    })
+
+
+@web_router.delete("/watchlist/item/{item_id}", response_class=HTMLResponse)
+async def delete_watchlist_item(
+    request: Request,
+    item_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """관심종목 패널에서 종목 제거 후 목록 갱신."""
+    svc = WatchlistService(session)
+    await svc.remove(item_id)
+    market_svc = MarketService(session)
+    memos = await svc.list_all()
+    items = []
+    for m in memos:
+        try:
+            p = await market_svc.get_price(m.symbol, m.market)
+            items.append({
+                "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
+                "price": p.price, "change": p.change, "change_pct": p.change_pct,
+            })
+        except Exception:
+            items.append({
+                "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
+                "price": 0, "change": 0, "change_pct": 0,
+            })
+    return templates.TemplateResponse("partials/watchlist_items.html", {
+        "request": request,
+        "items": items,
+        "tab": "watchlist",
+        "selected_symbol": None,
+    })
+
+
 @web_router.get("/strategies", response_class=HTMLResponse)
 async def strategies_page(request: Request, session: AsyncSession = Depends(get_session)):
     svc = StrategyService(session)
@@ -573,18 +627,6 @@ async def partial_positions(request: Request, session: AsyncSession = Depends(ge
     return templates.TemplateResponse("partials/position_table.html", {
         "request": request,
         "positions": positions,
-    })
-
-
-@web_router.get("/partials/orders", response_class=HTMLResponse)
-async def partial_orders(request: Request, session: AsyncSession = Depends(get_session)):
-    svc = OrderService(session)
-    orders = await svc.get_orders(limit=50)
-    commission_map = await svc.get_trades_by_order_ids([o.id for o in orders])
-    return templates.TemplateResponse("partials/order_table.html", {
-        "request": request,
-        "orders": orders,
-        "commission_map": commission_map,
     })
 
 

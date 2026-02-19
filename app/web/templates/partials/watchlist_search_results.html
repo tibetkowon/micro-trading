@@ -21,10 +21,11 @@
         <div class="wl-item-symbol">{{ item.symbol }} &middot; {{ item.market }}</div>
     </div>
     <button class="wl-add-btn"
-            hx-post="/stocks/memo"
+            hx-post="/watchlist/item"
             hx-vals='{"symbol":"{{ item.symbol }}","market":"{{ item.market }}","name":"{{ item.name }}"}'
-            hx-swap="none"
-            hx-on::after-request="this.textContent='✓'; this.disabled=true;"
+            hx-target="#wl-content-watchlist"
+            hx-swap="innerHTML"
+            hx-on::after-request="this.textContent='✓'; this.disabled=true; clearSearch();"
             title="관심종목에 추가">+</button>
 </li>
 {% endfor %}
