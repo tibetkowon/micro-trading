@@ -20,6 +20,14 @@
         <div class="price-val" style="color:var(--text-muted);">-</div>
         {% endif %}
     </div>
+    {% if tab == 'watchlist' and item.id %}
+    <button class="wl-remove-btn"
+            hx-delete="/watchlist/item/{{ item.id }}"
+            hx-target="#wl-content-watchlist"
+            hx-swap="innerHTML"
+            onclick="event.stopPropagation();"
+            title="관심종목에서 제거">×</button>
+    {% endif %}
 </li>
 {% endfor %}
 {% if not items %}
