@@ -108,6 +108,25 @@ if resp.status_code == 401:
 - GET, POST 모두 동일 패턴 적용
 - 재시도는 **1회만** 수행 (무한루프 방지)
 
+### 5xx 서버 오류 재시도 패턴 (Phase 17)
+
+KIS API 일시적 서버 장애(500/503/504) 시 최대 2회 재시도한다.
+
+```python
+# KISClient.post() 내부 — 5xx 오류 재시도
+if resp.status_code >= 500 and _retry > 0:
+    logger.warning(
+        "KIS POST 5xx 오류 [%s] — %d회 재시도 예정: %s",
+        resp.status_code, _retry, path,
+    )
+    await asyncio.sleep(1)
+    return await self.post(path, tr_id, body, use_hashkey=use_hashkey, _retry=_retry - 1)
+```
+
+- `_retry=2` (기본값): 최대 2회, 1초 딜레이
+- **401은 별도 처리** (토큰 갱신 후 즉시 재시도), **5xx만 backoff 적용**
+- 잔고 부족·검증 오류(4xx/비즈니스 에러)는 재시도 없음 — 즉시 실패 반환
+
 ### 스케줄러 선제 갱신 (`jobs.py`)
 
 ```python

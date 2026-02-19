@@ -16,8 +16,8 @@
 
 <div class="sidebar-section"
      hx-get="/partials/orders-compact"
-     hx-trigger="load, every 15s"
+     hx-trigger="load, every 15s, refreshSidebar from:body"
      hx-swap="innerHTML">
     <div class="sidebar-title">최근 주문</div>
-    {% include "partials/orders_compact.html" %}
+    <div class="wl-empty" style="font-size:0.85rem;">불러오는 중...</div>
 </div>
