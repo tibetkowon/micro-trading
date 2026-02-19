@@ -22,6 +22,8 @@ Custom validation and maintenance skills are defined in `.claude/skills/`.
 
 | Skill | Purpose |
 | :--- | :--- |
-| `verify-implementation` | Runs all verify skills sequentially to generate an integrated report. |
-| `manage-skills` | Analyzes session changes, updates skills, and manages CLAUDE.md. |
-| `study-mentor` | 구현 로직 설명 및 자바 비교 분석을 포함한 학습용 문서 생성 |
+| [`verify-implementation`](./.claude/skills/verify-implementation.md) | 통합 검증 보고서 생성 및 실행 |
+| [`manage-skills`](./.claude/skills/manage-skills.md) | 세션 변경사항 분석 및 스킬/CLAUDE.md 관리 |
+| [`study-mentor`](./.claude/skills/study-mentor.md) | 구현 로직 설명 및 자바 비교 분석 학습 문서 생성 |
+| [`adr`](./.claude/skills/adr.md) | 설계 결정 사항 및 배경 기록 (Architecture Decision Record) |
+| [`context-slimming`](./.claude/skills/context-slimming.md) | 토큰 절약 및 코드 최적화 관리 |
