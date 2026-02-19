@@ -173,12 +173,12 @@ async def partial_watchlist_items(
             try:
                 p = await market_svc.get_price(m.symbol, m.market)
                 items.append({
-                    "symbol": m.symbol, "market": m.market, "name": m.name,
+                    "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
                     "price": p.price, "change": p.change, "change_pct": p.change_pct,
                 })
             except Exception:
                 items.append({
-                    "symbol": m.symbol, "market": m.market, "name": m.name,
+                    "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
                     "price": 0, "change": 0, "change_pct": 0,
                 })
     elif tab == "kr":
@@ -531,6 +531,76 @@ async def delete_memo(
     return templates.TemplateResponse("partials/memo_table.html", {
         "request": request,
         "memos": memos,
+    })
+
+
+@web_router.post("/watchlist/item", response_class=HTMLResponse)
+async def add_watchlist_item(
+    request: Request,
+    symbol: str = Form(...),
+    market: str = Form("KR"),
+    name: str = Form(...),
+    memo: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+):
+    """관심종목 패널에서 종목 추가 후 목록 갱신."""
+    svc = WatchlistService(session)
+    try:
+        await svc.add(symbol, market, name, memo or None)
+    except Exception:
+        pass  # 중복 무시
+    market_svc = MarketService(session)
+    memos = await svc.list_all()
+    items = []
+    for m in memos:
+        try:
+            p = await market_svc.get_price(m.symbol, m.market)
+            items.append({
+                "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
+                "price": p.price, "change": p.change, "change_pct": p.change_pct,
+            })
+        except Exception:
+            items.append({
+                "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
+                "price": 0, "change": 0, "change_pct": 0,
+            })
+    return templates.TemplateResponse("partials/watchlist_items.html", {
+        "request": request,
+        "items": items,
+        "tab": "watchlist",
+        "selected_symbol": None,
+    })
+
+
+@web_router.delete("/watchlist/item/{item_id}", response_class=HTMLResponse)
+async def delete_watchlist_item(
+    request: Request,
+    item_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """관심종목 패널에서 종목 제거 후 목록 갱신."""
+    svc = WatchlistService(session)
+    await svc.remove(item_id)
+    market_svc = MarketService(session)
+    memos = await svc.list_all()
+    items = []
+    for m in memos:
+        try:
+            p = await market_svc.get_price(m.symbol, m.market)
+            items.append({
+                "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
+                "price": p.price, "change": p.change, "change_pct": p.change_pct,
+            })
+        except Exception:
+            items.append({
+                "id": m.id, "symbol": m.symbol, "market": m.market, "name": m.name,
+                "price": 0, "change": 0, "change_pct": 0,
+            })
+    return templates.TemplateResponse("partials/watchlist_items.html", {
+        "request": request,
+        "items": items,
+        "tab": "watchlist",
+        "selected_symbol": None,
     })
 
 
