@@ -25,3 +25,4 @@ Custom validation and maintenance skills are defined in `.claude/skills/`.
 | `verify-implementation` | Runs all verify skills sequentially to generate an integrated report. |
 | `manage-skills` | Analyzes session changes, updates skills, and manages CLAUDE.md. |
 | `study-mentor` | 구현 로직 설명 및 자바 비교 분석을 포함한 학습용 문서 생성 |
+| `kis-api` | KIS OpenAPI 연동 필수 헤더, tr_id 매핑, 에러 처리 패턴 참조 |
