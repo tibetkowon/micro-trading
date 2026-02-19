@@ -20,6 +20,16 @@ class PortfolioSummary(BaseModel):
     orderable_usd: float = 0.0
 
 
+class OrderableResponse(BaseModel):
+    """AI 자동매매용 주문가능 금액 응답 (수수료 반영)."""
+    trading_mode: str
+    cash_krw: float
+    cash_usd: float
+    commission_rate: float
+    orderable_krw: float  # 수수료 차감 후 실질 KRW 주문가능 금액
+    orderable_usd: float  # 수수료 차감 후 실질 USD 주문가능 금액
+
+
 class SnapshotResponse(BaseModel):
     date: date
     trading_mode: str

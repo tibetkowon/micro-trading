@@ -105,7 +105,8 @@ class PortfolioService:
         return_pct = (total_pnl / initial * 100) if initial > 0 else 0.0
 
         # 실질 주문가능 금액: 수수료 차감 후 실제 매수에 쓸 수 있는 금액
-        commission_rate = account.commission_rate if is_paper else 0.0015
+        # 실계좌는 안전 마진 0.3% 적용 (KIS 실거래 수수료 기준)
+        commission_rate = account.commission_rate if is_paper else 0.003
         orderable_krw = round(cash_krw / (1 + commission_rate), 2) if cash_krw > 0 else 0.0
         orderable_usd = round(cash_usd / (1 + commission_rate), 2) if cash_usd > 0 else 0.0
 
@@ -123,6 +124,45 @@ class PortfolioService:
             orderable_krw=orderable_krw,
             orderable_usd=orderable_usd,
         )
+
+    async def get_orderable_info(self, trading_mode: str = "PAPER") -> dict:
+        """AI용 주문가능 금액 정보 반환 (수수료 포함 계산)."""
+        is_paper = trading_mode == "PAPER"
+        account = (await self.session.execute(select(Account).limit(1))).scalar_one_or_none()
+        if not account:
+            return {"orderable_krw": 0.0, "orderable_usd": 0.0, "commission_rate": 0.0}
+
+        if is_paper:
+            cash_krw = account.paper_balance_krw
+            cash_usd = 0.0
+            commission_rate = account.commission_rate
+        else:
+            try:
+                from app.services.connection_service import ConnectionService
+                real_bal = await ConnectionService().get_real_balance()
+                if real_bal.get("error"):
+                    cash_krw = 0.0
+                    cash_usd = 0.0
+                else:
+                    cash_krw = float(real_bal.get("cash_krw", 0.0))
+                    cash_usd = float(real_bal.get("cash_usd", 0.0))
+            except Exception:
+                cash_krw = 0.0
+                cash_usd = 0.0
+            # 실계좌: KIS 수수료 안전 마진 0.3%
+            commission_rate = 0.003
+
+        orderable_krw = round(cash_krw / (1 + commission_rate), 2) if cash_krw > 0 else 0.0
+        orderable_usd = round(cash_usd / (1 + commission_rate), 2) if cash_usd > 0 else 0.0
+
+        return {
+            "trading_mode": trading_mode,
+            "cash_krw": round(cash_krw, 2),
+            "cash_usd": round(cash_usd, 2),
+            "commission_rate": commission_rate,
+            "orderable_krw": orderable_krw,
+            "orderable_usd": orderable_usd,
+        }
 
     async def take_daily_snapshot(self):
         today = date.today()

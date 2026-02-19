@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_session
-from app.schemas.portfolio import PortfolioSummary, SnapshotResponse
+from app.schemas.portfolio import PortfolioSummary, SnapshotResponse, OrderableResponse
 from app.services.portfolio_service import PortfolioService
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -32,6 +32,18 @@ async def portfolio_snapshots(
     svc = PortfolioService(session)
     snapshots = await svc.get_snapshots(mode, limit)
     return [SnapshotResponse.model_validate(s) for s in snapshots]
+
+
+@router.get("/orderable", response_model=OrderableResponse)
+async def portfolio_orderable(
+    trading_mode: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """AI 자동매매용 실질 주문가능 금액 조회 (수수료 0.3% 반영)."""
+    mode = trading_mode or settings.get_trading_mode().value
+    svc = PortfolioService(session)
+    info = await svc.get_orderable_info(mode)
+    return OrderableResponse(**info)
 
 
 @router.post("/snapshot")
