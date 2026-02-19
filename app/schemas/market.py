@@ -13,6 +13,8 @@ class PriceResponse(BaseModel):
     change_pct: float = 0.0
     volume: int = 0
     market: str = "KR"
+    ma5: float | None = None
+    ma20: float | None = None
 
 
 class PriceCacheResponse(BaseModel):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +22,10 @@ async def get_price(
     svc = MarketService(session)
     stock_svc = StockMasterService(session)
     info = await svc.get_price(symbol, market)
-    name = await stock_svc.get_name(symbol, market)
+    name, indicators = await asyncio.gather(
+        stock_svc.get_name(symbol, market),
+        svc.get_latest_indicators(symbol, market),
+    )
     return PriceResponse(
         symbol=info.symbol,
         name=name,
@@ -29,6 +34,8 @@ async def get_price(
         change_pct=info.change_pct,
         volume=info.volume,
         market=info.market,
+        ma5=indicators["ma5"],
+        ma20=indicators["ma20"],
     )
 
 
