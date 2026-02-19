@@ -440,44 +440,9 @@ async def submit_order(
             f'</div>'
         )
 
-    # Check if request is from the new trading view (HTMX to #order-result)
-    hx_target = request.headers.get("hx-target", "")
-    if hx_target == "order-result":
-        from fastapi.responses import HTMLResponse as HR
-        resp = HR(result_html)
-        # Trigger sidebar refresh
-        resp.headers["HX-Trigger"] = "refreshSidebar"
-        return resp
-
-    # Legacy: orders page expects full order table
-    orders = await svc.get_orders(limit=100)
-    commission_map = await svc.get_trades_by_order_ids([o.id for o in orders])
-    return templates.TemplateResponse("partials/order_table.html", {
-        "request": request,
-        "orders": orders,
-        "commission_map": commission_map,
-    })
-
-
-# ──────────────────────────────────────────────
-# Legacy pages (kept accessible)
-# ──────────────────────────────────────────────
-
-@web_router.get("/orders", response_class=HTMLResponse)
-async def orders_page(request: Request, session: AsyncSession = Depends(get_session)):
-    svc = OrderService(session)
-    orders = await svc.get_orders(limit=100)
-    commission_map = await svc.get_trades_by_order_ids([o.id for o in orders])
-    memo_svc = WatchlistService(session)
-    memos = await memo_svc.list_all()
-    return templates.TemplateResponse("orders.html", {
-        "request": request,
-        "orders": orders,
-        "commission_map": commission_map,
-        "memos": memos,
-        "trading_mode": settings.get_trading_mode().value,
-    })
-
+    resp = HTMLResponse(result_html)
+    resp.headers["HX-Trigger"] = "refreshSidebar"
+    return resp
 
 
 @web_router.get("/portfolio", response_class=HTMLResponse)
@@ -643,18 +608,6 @@ async def partial_positions(request: Request, session: AsyncSession = Depends(ge
     return templates.TemplateResponse("partials/position_table.html", {
         "request": request,
         "positions": positions,
-    })
-
-
-@web_router.get("/partials/orders", response_class=HTMLResponse)
-async def partial_orders(request: Request, session: AsyncSession = Depends(get_session)):
-    svc = OrderService(session)
-    orders = await svc.get_orders(limit=50)
-    commission_map = await svc.get_trades_by_order_ids([o.id for o in orders])
-    return templates.TemplateResponse("partials/order_table.html", {
-        "request": request,
-        "orders": orders,
-        "commission_map": commission_map,
     })
 
 
