@@ -97,6 +97,10 @@ function toggleLimitPrice(select) {
     if (select.value === 'LIMIT') {
         limitInput.disabled = false;
         limitInput.placeholder = '지정가 입력';
+        // 현재가를 기본값으로 자동 입력 (비어 있는 경우만)
+        if (!limitInput.value && window._currentPrice && window._currentPrice > 0) {
+            limitInput.value = window._currentPrice;
+        }
     } else {
         limitInput.disabled = true;
         limitInput.value = '';
