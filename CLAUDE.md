@@ -17,6 +17,9 @@
 - Use Korean for docstrings and comments.
 - Always follow `memory.md` for any code changes.
 
+## Develop Rules
+- **API Documentation**: 모든 FastAPI 엔드포인트에는 반드시 `summary`와 `description`을 한글로 작성하고, Pydantic 모델의 필드에는 `Field(..., description="...")`를 사용하여 외부 AI가 이해하기 쉽게 명세화한다.
+
 ## Web Pages (현행 구조)
 
 메인 UI는 `/` (3-패널 트레이딩 뷰). 나머지는 보조 페이지.
