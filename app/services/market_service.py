@@ -85,6 +85,24 @@ class MarketService:
         prices = await broker.get_daily_prices(symbol, market, days)
         return _add_moving_averages(prices)
 
+    async def get_intraday_candles(
+        self, symbol: str, market: str = "KR", interval: int = 1
+    ) -> list[dict]:
+        """분봉 데이터 조회 (interval: 1 또는 5분)."""
+        broker = await self._get_broker()
+        return await broker.get_intraday_candles(symbol, market, interval)
+
+    async def get_latest_indicators(self, symbol: str, market: str = "KR") -> dict:
+        """현재가에 포함할 MA5/MA20 지표를 계산한다. 일별 데이터 마지막 행 기준."""
+        try:
+            prices = await self.get_daily_prices(symbol, market, days=21)
+            if prices:
+                last = prices[-1]
+                return {"ma5": last.get("ma5"), "ma20": last.get("ma20")}
+        except Exception as e:
+            logger.debug("지표 계산 실패 %s/%s: %s", symbol, market, e)
+        return {"ma5": None, "ma20": None}
+
     async def refresh_watchlist_prices(self) -> int:
         """관심종목 + 보유종목 시세 일괄 갱신 (스케줄러용). 갱신 건수 반환."""
         if not self.session:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from app.broker.base import AbstractBroker, BalanceInfo, OrderResult, PriceInfo
@@ -11,6 +12,27 @@ from app.broker.kis import endpoints as ep
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _aggregate_candles(candles: list[dict], interval: int) -> list[dict]:
+    """1분봉 목록을 N분봉으로 집계한다 (오름차순 입력 기준)."""
+    if interval <= 1 or not candles:
+        return candles
+    aggregated = []
+    bucket: list[dict] = []
+    for candle in candles:
+        bucket.append(candle)
+        if len(bucket) == interval:
+            aggregated.append({
+                "datetime": bucket[0]["datetime"],
+                "open": bucket[0]["open"],
+                "high": max(c["high"] for c in bucket),
+                "low": min(c["low"] for c in bucket),
+                "close": bucket[-1]["close"],
+                "volume": sum(c["volume"] for c in bucket),
+            })
+            bucket = []
+    return aggregated
 
 
 class KISBroker(AbstractBroker):
@@ -176,3 +198,46 @@ class KISBroker(AbstractBroker):
             for item in output
             if item.get("stck_bsop_date")
         ]
+
+    # ---- Intraday candles ----
+
+    async def get_intraday_candles(
+        self, symbol: str, market: str, interval: int = 1
+    ) -> list[dict]:
+        """KIS API로 분봉 조회 후 interval(분)에 맞게 집계."""
+        raw = await self._get_kr_minute_candles(symbol)
+        if interval == 1 or not raw:
+            return raw
+        return _aggregate_candles(raw, interval)
+
+    async def _get_kr_minute_candles(self, symbol: str) -> list[dict]:
+        """KIS 분봉 차트 API 호출 (1분봉 기준, 당일 데이터)."""
+        now_str = datetime.now().strftime("%H%M%S")
+        params = {
+            "FID_ETC_CLS_CODE": "",
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": symbol,
+            "FID_INPUT_HOUR_1": now_str,
+            "FID_PW_DATA_INCU_YN": "Y",
+        }
+        try:
+            data = await self._client.get(ep.KR_MINUTE_CHART_PATH, ep.KR_MINUTE_CHART_TR, params)
+            output = data.get("output2", [])
+            result = []
+            for item in output:
+                date = item.get("stck_bsop_date", "")
+                time = item.get("stck_cntg_hour", "")
+                if not date or not time:
+                    continue
+                result.append({
+                    "datetime": f"{date[:4]}-{date[4:6]}-{date[6:]} {time[:2]}:{time[2:4]}:{time[4:]}",
+                    "open": float(item.get("stck_oprc", 0)),
+                    "high": float(item.get("stck_hgpr", 0)),
+                    "low": float(item.get("stck_lwpr", 0)),
+                    "close": float(item.get("stck_prpr", 0)),
+                    "volume": int(item.get("cntg_vol", 0)),
+                })
+            return list(reversed(result))  # 오름차순 정렬
+        except Exception as e:
+            logger.warning("분봉 조회 실패 %s: %s", symbol, e)
+            return []

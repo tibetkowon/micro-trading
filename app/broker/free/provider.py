@@ -22,6 +22,13 @@ class FreeMarketProvider:
     ) -> list[dict]:
         return await self._get_kr_daily(symbol, days)
 
+    async def get_intraday_candles(
+        self, symbol: str, market: str, interval: int = 1
+    ) -> list[dict]:
+        """pykrx는 분봉 데이터를 지원하지 않아 빈 목록을 반환한다."""
+        logger.debug("FreeMarketProvider: 분봉 미지원 (%s/%s)", symbol, market)
+        return []
+
     # ── KR (pykrx) ──────────────────────────────────────────────
 
     async def _get_kr_price(self, symbol: str) -> PriceInfo:

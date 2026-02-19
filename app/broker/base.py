@@ -75,3 +75,9 @@ class AbstractBroker(ABC):
     @abstractmethod
     async def get_daily_prices(self, symbol: str, market: str, days: int = 60) -> list[dict]:
         """Get daily OHLCV data for the last N days."""
+
+    @abstractmethod
+    async def get_intraday_candles(
+        self, symbol: str, market: str, interval: int = 1
+    ) -> list[dict]:
+        """분봉 데이터 조회 (interval: 1 또는 5분). 지원하지 않으면 빈 목록 반환."""
