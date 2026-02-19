@@ -80,12 +80,28 @@ class PortfolioService:
         )
         realized_pnl = float(result.scalar())
 
-        cash_krw = account.paper_balance_krw if is_paper else 0.0
-        cash_usd = 0.0
+        if is_paper:
+            cash_krw = account.paper_balance_krw
+            cash_usd = 0.0
+        else:
+            # REAL 모드: KIS API에서 실계좌 잔고 조회
+            try:
+                from app.services.connection_service import ConnectionService
+                real_bal = await ConnectionService().get_real_balance()
+                if real_bal.get("error"):
+                    cash_krw = 0.0
+                    cash_usd = 0.0
+                else:
+                    cash_krw = float(real_bal.get("cash_krw", 0.0))
+                    cash_usd = float(real_bal.get("cash_usd", 0.0))
+            except Exception:
+                logger.warning("실계좌 잔고 조회 실패, 0으로 처리")
+                cash_krw = 0.0
+                cash_usd = 0.0
         total_value = total_market_value + cash_krw
 
         total_pnl = realized_pnl + unrealized_pnl
-        initial = account.paper_balance_krw if is_paper else 0.0
+        initial = account.initial_balance_krw if is_paper else (cash_krw + total_invested or 1.0)
         return_pct = (total_pnl / initial * 100) if initial > 0 else 0.0
 
         # 실질 주문가능 금액: 수수료 차감 후 실제 매수에 쓸 수 있는 금액
