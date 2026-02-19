@@ -30,6 +30,32 @@ class OrderableResponse(BaseModel):
     orderable_usd: float  # 수수료 차감 후 실질 USD 주문가능 금액
 
 
+class SymbolPnlItem(BaseModel):
+    symbol: str
+    market: str
+    name: str
+    realized_pnl: float
+    total_commission: float
+    trade_count: int
+
+
+class DailyReturnItem(BaseModel):
+    date: str
+    total_value: float
+    realized_pnl: float
+    unrealized_pnl: float
+    total_pnl: float
+    return_pct: float
+
+
+class PnlAnalysisResponse(BaseModel):
+    """수익률 분석 응답 — 종목별 실현손익 및 일별 누적 수익률."""
+    trading_mode: str
+    total_realized_pnl: float
+    symbol_pnl: list[SymbolPnlItem]
+    daily_returns: list[DailyReturnItem]
+
+
 class SnapshotResponse(BaseModel):
     date: date
     trading_mode: str

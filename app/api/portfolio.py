@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_session
-from app.schemas.portfolio import PortfolioSummary, SnapshotResponse, OrderableResponse
+from app.schemas.portfolio import PortfolioSummary, SnapshotResponse, OrderableResponse, PnlAnalysisResponse
 from app.services.portfolio_service import PortfolioService
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -44,6 +44,18 @@ async def portfolio_orderable(
     svc = PortfolioService(session)
     info = await svc.get_orderable_info(mode)
     return OrderableResponse(**info)
+
+
+@router.get("/pnl-analysis", response_model=PnlAnalysisResponse)
+async def portfolio_pnl_analysis(
+    trading_mode: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """수익률 분석 — 종목별 실현손익 및 일별 누적 수익률 조회."""
+    mode = trading_mode or settings.get_trading_mode().value
+    svc = PortfolioService(session)
+    result = await svc.get_pnl_analysis(mode)
+    return PnlAnalysisResponse(**result)
 
 
 @router.post("/snapshot")

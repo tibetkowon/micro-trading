@@ -195,6 +195,68 @@ class PortfolioService:
         await self.session.commit()
         logger.info("Daily snapshot taken for %s", today)
 
+    async def get_pnl_analysis(self, trading_mode: str = "PAPER") -> dict:
+        """수익률 분석: 종목별 실현손익 및 일별 누적 수익률 반환."""
+        from sqlalchemy import func as sql_func
+
+        # 종목별 실현손익 집계
+        stmt_symbol = (
+            select(
+                Trade.symbol,
+                Trade.market,
+                sql_func.sum(Trade.realized_pnl).label("realized_pnl"),
+                sql_func.sum(Trade.commission).label("total_commission"),
+                sql_func.count(Trade.id).label("trade_count"),
+            )
+            .where(Trade.trading_mode == trading_mode, Trade.realized_pnl != None)
+            .group_by(Trade.symbol, Trade.market)
+            .order_by(sql_func.sum(Trade.realized_pnl).desc())
+        )
+        rows = (await self.session.execute(stmt_symbol)).all()
+
+        # 종목명 조회
+        from app.services.stock_master_service import StockMasterService
+        stock_svc = StockMasterService(self.session)
+        symbols = [(r.symbol, r.market) for r in rows]
+        name_map = await stock_svc.get_names_bulk(symbols)
+
+        symbol_pnl = [
+            {
+                "symbol": r.symbol,
+                "market": r.market,
+                "name": name_map.get((r.symbol, r.market), r.symbol),
+                "realized_pnl": round(float(r.realized_pnl or 0), 2),
+                "total_commission": round(float(r.total_commission or 0), 2),
+                "trade_count": r.trade_count,
+            }
+            for r in rows
+        ]
+
+        # 일별 누적 수익률 (포트폴리오 스냅샷 기반)
+        snapshots = await self.get_snapshots(trading_mode, limit=90)
+        account = (await self.session.execute(select(Account).limit(1))).scalar_one_or_none()
+        initial = account.initial_balance_krw if account else 1.0
+
+        daily_returns = [
+            {
+                "date": str(s.date),
+                "total_value": s.total_value,
+                "realized_pnl": s.realized_pnl,
+                "unrealized_pnl": s.unrealized_pnl,
+                "total_pnl": round(s.realized_pnl + s.unrealized_pnl, 2),
+                "return_pct": round((s.realized_pnl + s.unrealized_pnl) / initial * 100, 2) if initial > 0 else 0.0,
+            }
+            for s in reversed(snapshots)
+        ]
+
+        total_realized = sum(r["realized_pnl"] for r in symbol_pnl)
+        return {
+            "trading_mode": trading_mode,
+            "total_realized_pnl": round(total_realized, 2),
+            "symbol_pnl": symbol_pnl,
+            "daily_returns": daily_returns,
+        }
+
     async def get_snapshots(
         self,
         trading_mode: str = "PAPER",
