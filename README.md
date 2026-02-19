@@ -79,7 +79,7 @@ pytest -v
 
 | 변수 | 기본값 | 설명 |
 |:---|:---|:---|
-| `TRADING_MODE` | `PAPER` | `PAPER` (모의투자) / `REAL` (실매매) |
+| `TRADING_MODE` | `PAPER` | `PAPER` (모의투자) / `REAL` (실매매) — 런타임 전환값은 `runtime_settings.json`에 영속화 |
 | `PAPER_BALANCE_KRW` | `100000000` | 모의투자 초기 원화 잔고 |
 | `PAPER_COMMISSION_RATE` | `0.0005` | 수수료율 (0.05%) |
 | `KIS_APP_KEY` | - | 한국투자증권 앱 키 (실매매 시) |
@@ -113,6 +113,7 @@ pytest -v
 | Phase 9~10 | **완료** | 실매매 연동 (KIS API), 거래 모드 전환 UI |
 | Phase 11~12 | **완료** | UX 개선 (수수료 표시, 예수금 자동 갱신, MA 이동평균 API) |
 | Phase 13 | **완료** | 미국 주식 제거, 주문가능금액 거래 모드별 표시 |
+| Bugfix | **완료** | 설정 영속화, 포트폴리오 잔고 조회, 메인화면 500 오류 수정 |
 
 각 Phase별 구현 상세 및 학습 문서는 [`docs/study/`](docs/study/) 참조.
 

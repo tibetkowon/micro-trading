@@ -83,6 +83,10 @@ async def trading_view(request: Request, session: AsyncSession = Depends(get_ses
     order_svc = OrderService(session)
     recent_orders = await order_svc.get_orders(limit=10)
 
+    # order_table.html에서 commission_map 필요
+    order_ids = [o.id for o in recent_orders]
+    commission_map = await order_svc.get_trades_by_order_ids(order_ids)
+
     # Watchlist items (memos)
     memo_svc = WatchlistService(session)
     memos = await memo_svc.list_all()
@@ -93,6 +97,7 @@ async def trading_view(request: Request, session: AsyncSession = Depends(get_ses
         "positions": positions,
         "recent_orders": recent_orders,
         "orders": recent_orders,
+        "commission_map": commission_map,
         "snapshots_json": json.dumps(snapshots_data),
         "trading_mode": settings.get_trading_mode().value,
         "selected_symbol": None,
@@ -386,6 +391,20 @@ async def partial_positions_compact(request: Request, session: AsyncSession = De
     return templates.TemplateResponse("partials/positions_compact.html", {
         "request": request,
         "positions": positions,
+    })
+
+
+@web_router.get("/partials/orders", response_class=HTMLResponse)
+async def partial_orders(request: Request, session: AsyncSession = Depends(get_session)):
+    """대시보드 주문 내역 테이블 partial (commission_map 포함)."""
+    svc = OrderService(session)
+    orders = await svc.get_orders(limit=10)
+    order_ids = [o.id for o in orders]
+    commission_map = await svc.get_trades_by_order_ids(order_ids)
+    return templates.TemplateResponse("partials/order_table.html", {
+        "request": request,
+        "orders": orders,
+        "commission_map": commission_map,
     })
 
 
