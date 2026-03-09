@@ -222,11 +222,13 @@ func runMarketScheduler(ctx context.Context,
 				wsRunning = true
 				tradingReady = false
 
-				// Subscribe execution notices if HTS ID is configured.
-				time.Sleep(2 * time.Second) // Wait for connection
+				// Wait for connection, then subscribe.
+				time.Sleep(2 * time.Second)
 				if err := wsClient.SubscribeExecNotice(); err != nil {
 					logger.Warn("exec notice subscribe failed", map[string]any{"error": err.Error()})
 				}
+				// DB/KIS 복구로 등록된 포지션 재구독 (서버 시작 시 WS 미연결 상태였으므로).
+				mon.ResubscribeAll()
 				logger.Info("market scheduler: WebSocket connected", map[string]any{"hhmm": hhmm})
 
 			case wsRunning && !tradingReady && hhmm >= 900 && hhmm < 1515:
