@@ -756,6 +756,55 @@ func (h *Handler) GetReports(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"reports": reports})
 }
 
+// POST /api/ws/connect — 수동 WebSocket 연결 (테스트·장애 복구용)
+// 1) approval_key 발급 → 2) StartWithReconnect → 3) ResubscribeAll
+func (h *Handler) ConnectWebSocket(c *gin.Context) {
+	if h.wsClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "WebSocket client not initialized (KIS credentials missing)"})
+		return
+	}
+	if h.wsClient.IsConnected() {
+		c.JSON(http.StatusOK, gin.H{"message": "already connected"})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	if _, err := h.tokenManager.IssueToken(ctx); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "token refresh failed: " + err.Error()})
+		return
+	}
+
+	approvalKey, err := h.client.GetApprovalKey(ctx)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "GetApprovalKey failed: " + err.Error()})
+		return
+	}
+
+	h.wsClient.SetApprovalKey(approvalKey)
+	go h.wsClient.StartWithReconnect(context.Background())
+
+	time.Sleep(2 * time.Second)
+
+	if err := h.wsClient.SubscribeExecNotice(); err != nil {
+		// non-fatal: log only
+		_ = err
+	}
+	h.monitor.ResubscribeAll()
+
+	c.JSON(http.StatusOK, gin.H{"message": "WebSocket connected", "subscribed": h.monitor.Count()})
+}
+
+// POST /api/ws/disconnect — 수동 WebSocket 해제
+func (h *Handler) DisconnectWebSocket(c *gin.Context) {
+	if h.wsClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "WebSocket client not initialized"})
+		return
+	}
+	h.wsClient.Disconnect()
+	c.JSON(http.StatusOK, gin.H{"message": "WebSocket disconnected"})
+}
+
 // GET /api/reports/:date — 특정 날짜 리포트 전문 조회 (YYYY-MM-DD)
 func (h *Handler) GetReport(c *gin.Context) {
 	date := c.Param("date")
