@@ -770,8 +770,8 @@ func (h *Handler) ConnectWebSocket(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	if _, err := h.tokenManager.IssueToken(ctx); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "token refresh failed: " + err.Error()})
+	if _, err := h.tokenManager.EnsureToken(ctx); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "토큰 발급 실패 (KIS AppKey/Secret 확인 필요): " + err.Error()})
 		return
 	}
 
@@ -781,8 +781,11 @@ func (h *Handler) ConnectWebSocket(c *gin.Context) {
 		return
 	}
 
+	// 기존 reconnect 고루틴이 있으면 먼저 중단 후 재시작
+	ctx2, cancel := context.WithCancel(context.Background())
+	h.wsClient.SetReconnectCancel(cancel)
 	h.wsClient.SetApprovalKey(approvalKey)
-	go h.wsClient.StartWithReconnect(context.Background())
+	go h.wsClient.StartWithReconnect(ctx2)
 
 	time.Sleep(2 * time.Second)
 

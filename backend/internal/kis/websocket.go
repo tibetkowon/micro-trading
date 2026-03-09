@@ -22,6 +22,11 @@ const (
 	TrIDPrice = "H0STCNT0"
 	// TrIDExecNotice is the TR_ID for real-time execution notice (국내주식 실시간체결통보).
 	TrIDExecNotice = "H0STCNI0"
+
+	// reconnect backoff limits
+	reconnectInitialBackoff = 10 * time.Second
+	reconnectMaxBackoff     = 5 * time.Minute
+	reconnectMaxAttempts    = 10 // 최대 재연결 시도 횟수 (초과 시 중단)
 )
 
 // PriceEvent carries a real-time price update from KIS WebSocket.
@@ -51,6 +56,10 @@ type WebSocketClient struct {
 	conn          *websocket.Conn
 	aesKeys       map[string]aesKey // trID → aes credentials per subscription
 	subscriptions map[string]string // trID → trKey
+
+	// reconnect 고루틴 제어
+	cancelReconnect context.CancelFunc
+	intentionalStop bool // Disconnect()로 명시적 중단한 경우 재연결 금지
 
 	PriceCh chan PriceEvent
 	ExecCh  chan ExecEvent
@@ -106,15 +115,38 @@ func (c *WebSocketClient) SetApprovalKey(key string) {
 	c.mu.Unlock()
 }
 
-// Disconnect closes the WebSocket connection gracefully.
+// SetReconnectCancel stores a cancel func and resets the intentionalStop flag.
+// ConnectWebSocket 핸들러에서 새 연결을 시작하기 전에 호출합니다.
+func (c *WebSocketClient) SetReconnectCancel(cancel context.CancelFunc) {
+	c.mu.Lock()
+	// 기존 reconnect 고루틴 중단
+	if c.cancelReconnect != nil {
+		c.cancelReconnect()
+	}
+	c.cancelReconnect = cancel
+	c.intentionalStop = false // 수동 연결 재시도 — 재연결 허용
+	c.mu.Unlock()
+}
+
+// Disconnect closes the WebSocket connection gracefully and stops any reconnect loop.
+// 이후 StartWithReconnect는 더 이상 재연결을 시도하지 않습니다.
 func (c *WebSocketClient) Disconnect() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.conn != nil {
-		c.conn.WriteMessage(websocket.CloseMessage,
+	c.intentionalStop = true
+	cancel := c.cancelReconnect
+	conn := c.conn
+	c.conn = nil
+	c.mu.Unlock()
+
+	// reconnect 고루틴 중단
+	if cancel != nil {
+		cancel()
+	}
+
+	if conn != nil {
+		conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-		c.conn.Close()
-		c.conn = nil
+		conn.Close()
 		logger.Info("KIS WebSocket disconnected", nil)
 	}
 }
@@ -199,10 +231,22 @@ func (c *WebSocketClient) StartReadLoop(ctx context.Context) {
 }
 
 // StartWithReconnect runs the WebSocket lifecycle (connect → subscribe → read loop)
-// and automatically reconnects on failure until ctx is cancelled.
+// and automatically reconnects on failure with exponential backoff.
+// 재연결은 최대 reconnectMaxAttempts 회까지만 시도하며, Disconnect() 호출 시 즉시 중단합니다.
 func (c *WebSocketClient) StartWithReconnect(ctx context.Context) {
-	backoff := 5 * time.Second
+	backoff := reconnectInitialBackoff
+	attempts := 0
+
 	for {
+		// intentionalStop 체크 — Disconnect()가 호출된 경우 재연결 금지
+		c.mu.RLock()
+		stopped := c.intentionalStop
+		c.mu.RUnlock()
+		if stopped {
+			logger.Info("KIS WebSocket reconnect cancelled (intentional disconnect)", nil)
+			return
+		}
+
 		select {
 		case <-ctx.Done():
 			return
@@ -210,15 +254,33 @@ func (c *WebSocketClient) StartWithReconnect(ctx context.Context) {
 		}
 
 		if err := c.Connect(ctx); err != nil {
-			logger.Error("KIS WebSocket connect failed, retrying",
-				map[string]any{"error": err.Error(), "backoff": backoff.String()})
+			attempts++
+			logger.Error("KIS WebSocket connect failed",
+				map[string]any{"error": err.Error(), "attempt": attempts, "backoff": backoff.String()})
+
+			if attempts >= reconnectMaxAttempts {
+				logger.Error("KIS WebSocket reconnect gave up after max attempts",
+					map[string]any{"max_attempts": reconnectMaxAttempts})
+				return
+			}
+
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(backoff):
 			}
+
+			// 지수 백오프 (최대 5분)
+			backoff *= 2
+			if backoff > reconnectMaxBackoff {
+				backoff = reconnectMaxBackoff
+			}
 			continue
 		}
+
+		// 연결 성공 — 시도 횟수·백오프 초기화
+		attempts = 0
+		backoff = reconnectInitialBackoff
 
 		// Re-subscribe all previously registered subscriptions.
 		c.mu.RLock()
@@ -234,6 +296,15 @@ func (c *WebSocketClient) StartWithReconnect(ctx context.Context) {
 		}
 
 		c.StartReadLoop(ctx)
+
+		// ReadLoop 종료 후 intentionalStop 재확인
+		c.mu.RLock()
+		stopped = c.intentionalStop
+		c.mu.RUnlock()
+		if stopped {
+			logger.Info("KIS WebSocket reconnect cancelled after read loop (intentional disconnect)", nil)
+			return
+		}
 
 		select {
 		case <-ctx.Done():
