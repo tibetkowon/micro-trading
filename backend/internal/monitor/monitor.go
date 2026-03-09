@@ -392,6 +392,30 @@ func (m *Monitor) RecoverFromHoldings(ctx context.Context, soldCh chan<- string)
 	}
 }
 
+// ResubscribeAll sends WebSocket price subscriptions for every currently monitored position.
+// WS 연결 직후 호출 — LoadFromDB/RecoverFromHoldings 시점엔 WS 미연결이라
+// SubscribePrice 가 실패하므로, 연결 완료 후 이 함수로 일괄 재구독한다.
+func (m *Monitor) ResubscribeAll() {
+	if m.wsClient == nil {
+		return
+	}
+	m.mu.RLock()
+	codes := make([]string, 0, len(m.positions))
+	for code := range m.positions {
+		codes = append(codes, code)
+	}
+	m.mu.RUnlock()
+
+	for _, code := range codes {
+		if err := m.wsClient.SubscribePrice(code); err != nil {
+			logger.Error("ResubscribeAll: SubscribePrice failed",
+				map[string]any{"stock_code": code, "error": err.Error()})
+		} else {
+			logger.Info("ResubscribeAll: subscribed", map[string]any{"stock_code": code})
+		}
+	}
+}
+
 // LoadFromDB restores monitored positions from the database after a server restart.
 func (m *Monitor) LoadFromDB(ctx context.Context) error {
 	rows, err := m.db.QueryContext(ctx,
