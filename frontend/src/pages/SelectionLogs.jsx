@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useApi } from '../hooks/useApi'
 
 function fmtDate(s) {
@@ -16,18 +15,8 @@ function parseJSON(str) {
 
 export default function SelectionLogs() {
   const { data, loading, error, refetch } = useApi('/api/logs/selection?limit=20')
-  const [expandedIds, setExpandedIds] = useState(new Set())
 
   const logs = data?.logs || []
-
-  function toggleExpand(id) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
 
   return (
     <div>
@@ -56,7 +45,6 @@ export default function SelectionLogs() {
           {logs.map((log) => {
             const llmResult = parseJSON(log.llm_result) || []
             const candidates = parseJSON(log.candidates) || []
-            const isExpanded = expandedIds.has(log.id)
             const hasSelected = log.selected_code !== ''
 
             return (
@@ -107,10 +95,7 @@ export default function SelectionLogs() {
                 {/* 전달 종목 전체 (펼치기) */}
                 {candidates.length > 0 && (
                   <details className="mt-3">
-                    <summary
-                      className="text-xs text-gray-500 cursor-pointer hover:text-gray-300"
-                      onClick={() => toggleExpand(log.id)}
-                    >
+                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300">
                       전달 종목 전체 ({candidates.length}개) 보기
                     </summary>
                     <div className="mt-2 overflow-x-auto">

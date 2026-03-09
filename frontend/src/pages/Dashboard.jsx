@@ -160,7 +160,7 @@ export default function Dashboard() {
       {!balLoading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card title="총 평가금액" value={fmt(balance?.total_eval)} />
-          <Card title="출금가능금액" value={fmt(balance?.withdrawable_amount)} sub="예수금" />
+          <Card title="출금가능금액" value={fmt(balance?.withdrawable_amount)} sub="출금가능" />
           <Card
             title="자산증감액"
             value={fmt(changeAmt)}

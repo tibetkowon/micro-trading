@@ -14,11 +14,13 @@ import (
 // Source: TTTC8434R (inquire-balance) — single API call, no 주문가능금액.
 //
 //   - WithdrawableAmount: 출금가능금액 (dnca_tot_amt / 예수금) — KIS 앱 "출금가능"과 동일
+//   - OrderableAmt      : 주문가능금액 근사값 (prvs_rcdl_excc_amt / D+2 예수금)
 //   - AssetChangeAmt    : 자산증감액 (asst_icdc_amt) — 전일 대비 자산 변동금액
 //   - AssetChangeRate   : 자산증감수익률 (계산값: asst_icdc_amt / bfdy_tot_asst_evlu_amt × 100)
 type AccountBalance struct {
 	TotalEval          float64 `json:"total_eval"`
 	WithdrawableAmount float64 `json:"withdrawable_amount"` // 출금가능금액 (dnca_tot_amt)
+	OrderableAmt       float64 `json:"orderable_amt"`       // 주문가능금액 근사값 (prvs_rcdl_excc_amt)
 	AssetChangeAmt     float64 `json:"asset_change_amt"`    // 자산증감액
 	AssetChangeRate    string  `json:"asset_change_rate"`   // 자산증감수익률 (%)
 }
@@ -32,7 +34,8 @@ func GetAccountBalance(ctx context.Context, client *kis.Client, db *database.DB)
 	}
 
 	totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
-	withdrawable, _ := strconv.ParseFloat(summary.DepositAmt, 64) // dnca_tot_amt = 출금가능금액
+	withdrawable, _ := strconv.ParseFloat(summary.DepositAmt, 64)   // dnca_tot_amt = 출금가능금액
+	orderableAmt, _ := strconv.ParseFloat(summary.OrderableAmt, 64) // prvs_rcdl_excc_amt = 주문가능금액 근사값
 	assetChangeAmt, _ := strconv.ParseFloat(summary.AssetChangeAmt, 64)
 	prevTotal, _ := strconv.ParseFloat(summary.PrevTotalAsset, 64)
 
@@ -52,6 +55,7 @@ func GetAccountBalance(ctx context.Context, client *kis.Client, db *database.DB)
 	return &AccountBalance{
 		TotalEval:          totalEval,
 		WithdrawableAmount: withdrawable,
+		OrderableAmt:       orderableAmt,
 		AssetChangeAmt:     assetChangeAmt,
 		AssetChangeRate:    assetChangeRate,
 	}, nil

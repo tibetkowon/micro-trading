@@ -70,6 +70,8 @@ type AvailableOrderResponse struct {
 type InquireBalanceOutput2 struct {
 	TotalEval      string `json:"tot_evlu_amt"`           // 총평가금액
 	DepositAmt     string `json:"dnca_tot_amt"`           // 예수금총금액 = 출금가능금액
+	OrderableAmt   string `json:"prvs_rcdl_excc_amt"`    // D+2 예수금 = 주문가능금액 근사값
+	StockEvalAmt   string `json:"scts_evlu_amt"`          // 유가증권 평가금액
 	AssetChangeAmt string `json:"asst_icdc_amt"`          // 자산증감액
 	PrevTotalAsset string `json:"bfdy_tot_asst_evlu_amt"` // 전일총자산평가금액 (수익률 계산용)
 }
