@@ -83,6 +83,17 @@ type KISAPILog struct {
 	Timestamp   time.Time `json:"timestamp"`
 }
 
+// TraderSelectionLog records each LLM stock selection attempt for UI display.
+type TraderSelectionLog struct {
+	ID             int64  `json:"id"`
+	Timestamp      string `json:"timestamp"`
+	SentCount      int    `json:"sent_count"`
+	Candidates     string `json:"candidates"`    // JSON string — full ranking list sent to LLM
+	LLMResult      string `json:"llm_result"`    // JSON string — ordered StockCandidate list
+	SelectedCode   string `json:"selected_code"` // empty if no fill occurred
+	SelectedReason string `json:"selected_reason"`
+}
+
 // Report stores a daily AI-generated trading report.
 type Report struct {
 	ID         int64     `json:"id"`

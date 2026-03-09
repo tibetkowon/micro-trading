@@ -2,6 +2,7 @@ package trader
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -233,6 +234,19 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	logger.Info("engine: Claude ranked candidates",
 		map[string]any{"count": len(candidates)})
 
+	// Persist selection log to DB.
+	var selectionLogID int64
+	{
+		candidatesJSON, _ := json.Marshal(rankings)
+		llmResultJSON, _ := json.Marshal(candidates)
+		res, dbErr := e.db.ExecContext(ctx,
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result) VALUES (?,?,?)`,
+			len(rankings), string(candidatesJSON), string(llmResultJSON))
+		if dbErr == nil {
+			selectionLogID, _ = res.LastInsertId()
+		}
+	}
+
 	// Try candidates in order until one succeeds.
 	var (
 		stockCode   string
@@ -309,6 +323,20 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			"filled_price": filledPrice,
 			"filled_qty":   filledQty,
 		})
+
+	// Update selection log with the winning candidate's code and reason.
+	if selectionLogID > 0 {
+		chosenReason := ""
+		for _, cand := range candidates {
+			if cand.StockCode == stockCode {
+				chosenReason = cand.Reason
+				break
+			}
+		}
+		e.db.ExecContext(ctx, //nolint:errcheck
+			`UPDATE trader_selection_logs SET selected_code=?, selected_reason=? WHERE id=?`,
+			stockCode, chosenReason, selectionLogID)
+	}
 
 	// Update DB with fill.
 	e.db.ExecContext(ctx, //nolint:errcheck

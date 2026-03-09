@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-06 (rev 5 — reports 테이블 추가, settings 신규 키 12개, monitored_positions SoldCh)
+> Last updated: 2026-03-09 (rev 6 — trader_selection_logs 테이블 추가)
 
 ---
 
@@ -147,6 +147,29 @@
 | `created_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 생성/갱신 시각 |
 
 **생성 방식:** 매일 15:20 KST에 `Engine.GenerateDailyReport()` → `Claude.GenerateReport()` → `db.SaveReport()`. 같은 날 재생성 시 ON CONFLICT DO UPDATE (덮어쓰기).
+
+---
+
+## Table: `trader_selection_logs`
+
+**Purpose:** 트레이딩 엔진이 Claude API를 호출해 종목을 선정할 때마다 입력(후보 목록)과 출력(LLM 순위)을 영속화. UI `/selection-logs` 페이지에서 조회.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 대리 키 |
+| `timestamp` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 선정 시도 시각 |
+| `sent_count` | INTEGER | NOT NULL, DEFAULT 0 | LLM에 전달한 후보 종목 수 |
+| `candidates` | TEXT | NOT NULL, DEFAULT '' | LLM에 전달한 `[]RankItem` JSON 배열 (기술지표 포함) |
+| `llm_result` | TEXT | NOT NULL, DEFAULT '' | Claude가 반환한 `[]StockCandidate` JSON 배열 (우선순위 순) |
+| `selected_code` | TEXT | NOT NULL, DEFAULT '' | 최종 체결된 종목코드; 미체결 시 빈 문자열 |
+| `selected_reason` | TEXT | NOT NULL, DEFAULT '' | 체결 종목에 대한 Claude의 선정 이유 (한국어 1문장) |
+
+**보존 정책:** `GET /api/logs/selection` 호출 시 30일 이상 된 로그 자동 삭제.
+
+**생애주기:**
+1. `selectAndBuy()` — Claude 응답 직후 INSERT (selected_code='', selected_reason='')
+2. 체결 성공 시 — `UPDATE ... SET selected_code=?, selected_reason=? WHERE id=?`
+3. 모든 후보 실패 시 — 해당 로그는 selected_code='' 로 유지
 
 ---
 

@@ -127,6 +127,16 @@ func (db *DB) migrate() error {
 			content     TEXT    NOT NULL DEFAULT '',
 			created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS trader_selection_logs (
+			id              INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp       DATETIME NOT NULL DEFAULT (datetime('now')),
+			sent_count      INTEGER  NOT NULL DEFAULT 0,
+			candidates      TEXT     NOT NULL DEFAULT '',
+			llm_result      TEXT     NOT NULL DEFAULT '',
+			selected_code   TEXT     NOT NULL DEFAULT '',
+			selected_reason TEXT     NOT NULL DEFAULT ''
+		)`,
 	}
 
 	for _, s := range stmts {

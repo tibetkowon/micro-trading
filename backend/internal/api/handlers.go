@@ -260,7 +260,7 @@ func (h *Handler) GetServerStatus(c *gin.Context) {
 	// Available cash from balance
 	availableCash := float64(0)
 	if bal, err := h.client.GetInquireBalance(c.Request.Context()); err == nil {
-		availableCash = parseFloat(bal.DepositAmt)
+		availableCash = parseFloat(bal.OrderableAmt) // prvs_rcdl_excc_amt = D+2 주문가능금액 근사값
 	}
 
 	tradingEnabled := h.db.GetSetting(c.Request.Context(), "trading_enabled") != "false"
@@ -357,6 +357,41 @@ func (h *Handler) GetKISLogs(c *gin.Context) {
 	}
 	if logs == nil {
 		logs = []models.KISAPILog{}
+	}
+	c.JSON(http.StatusOK, gin.H{"logs": logs})
+}
+
+// GET /api/logs/selection?limit=20 — LLM 종목 선정 로그 조회 (최신 순)
+// 30일 이상 된 로그는 자동 삭제됨
+func (h *Handler) GetSelectionLogs(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	h.db.ExecContext(c.Request.Context(), //nolint:errcheck
+		`DELETE FROM trader_selection_logs WHERE timestamp < datetime('now', '-30 days')`)
+
+	rows, err := h.db.QueryContext(c.Request.Context(),
+		`SELECT id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason
+		 FROM trader_selection_logs ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var logs []models.TraderSelectionLog
+	for rows.Next() {
+		var l models.TraderSelectionLog
+		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.Candidates, &l.LLMResult, &l.SelectedCode, &l.SelectedReason); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		logs = append(logs, l)
+	}
+	if logs == nil {
+		logs = []models.TraderSelectionLog{}
 	}
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }

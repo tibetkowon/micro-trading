@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-09 — LLM 종목 선정 로그 화면 표시 기능 추가
+
+- **database/db.go**: `trader_selection_logs` 테이블 마이그레이션 추가 (id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason)
+- **models/models.go**: `TraderSelectionLog` 구조체 추가
+- **trader/engine.go**: `selectAndBuy()` — Claude 호출 직후 선정 로그 DB INSERT, 체결 성공 후 selected_code·selected_reason UPDATE
+- **api/handlers.go**: `GetSelectionLogs` 핸들러 추가 (`GET /api/logs/selection?limit=20`, 30일 이상 자동 삭제)
+- **api/router.go**: `/api/logs/selection` 라우트 등록
+- **SelectionLogs.jsx**: 신규 페이지 — Claude 순위 결과 목록, 전달 종목 펼치기 테이블
+- **App.jsx**: `/selection-logs` 라우트 및 "선정 로그" 네비게이션 링크 추가
+
+## 2026-03-09 — 대시보드 잔고 필드 정확도 개선
+
+- **kis/client.go**: `InquireBalanceOutput2`에 `OrderableAmt`(`prvs_rcdl_excc_amt`), `StockEvalAmt`(`scts_evlu_amt`) 필드 추가
+- **agent/balance.go**: `AccountBalance`에 `OrderableAmt` 필드 추가 및 파싱 로직 반영
+- **api/handlers.go**: `GetServerStatus`의 `available_cash` 소스를 `dnca_tot_amt` → `prvs_rcdl_excc_amt`(D+2 주문가능금액 근사값)으로 변경
+- **Dashboard.jsx**: 출금가능금액 카드 sub 레이블 "예수금" → "출금가능"으로 정리
+
 ## 2026-03-08 — WebSocket 재연결 안정화 & 매도 종목 정리
 
 - **kis/websocket.go**: `reconnectMaxAttempts` 제한 제거 → 무제한 재연결 시도

@@ -203,6 +203,7 @@ Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
 |--------|------|-------------|
 | GET | `/api/logs/kis` | KIS API 에러 로그 (`?summary=true` raw 제외) |
 | DELETE | `/api/logs/kis/:id` | 에러 로그 단건 삭제 |
+| GET | `/api/logs/selection` | LLM 종목 선정 로그 (`?limit=20`, 최신 순, 30일 자동 삭제) |
 
 ### 헬스 체크
 

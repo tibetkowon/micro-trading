@@ -3,6 +3,7 @@ import Dashboard from './pages/Dashboard'
 import Orders from './pages/Orders'
 import Monitor from './pages/Monitor'
 import KISLogs from './pages/KISLogs'
+import SelectionLogs from './pages/SelectionLogs'
 import Settings from './pages/Settings'
 import Reports from './pages/Reports'
 
@@ -22,6 +23,7 @@ export default function App() {
         <NavLink to="/monitor" className={navClass}>모니터</NavLink>
         <NavLink to="/orders" className={navClass}>주문 내역</NavLink>
         <NavLink to="/logs" className={navClass}>KIS 에러 로그</NavLink>
+        <NavLink to="/selection-logs" className={navClass}>선정 로그</NavLink>
         <NavLink to="/settings" className={navClass}>설정</NavLink>
         <NavLink to="/reports" className={navClass}>리포트</NavLink>
       </nav>
@@ -31,6 +33,7 @@ export default function App() {
           <Route path="/monitor" element={<Monitor />} />
           <Route path="/orders" element={<Orders />} />
           <Route path="/logs" element={<KISLogs />} />
+          <Route path="/selection-logs" element={<SelectionLogs />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/reports" element={<Reports />} />
         </Routes>
