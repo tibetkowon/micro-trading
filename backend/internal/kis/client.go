@@ -321,7 +321,14 @@ func (c *Client) GetHoldings(ctx context.Context) ([]HoldingItem, error) {
 	if result.Output1 == nil {
 		return []HoldingItem{}, nil
 	}
-	return result.Output1, nil
+	// hldg_qty == 0 항목 제외 (매도 후 T+2 결제 전까지 KIS가 반환하는 잔여 항목)
+	filtered := result.Output1[:0]
+	for _, h := range result.Output1 {
+		if h.HoldingQty != "0" && h.HoldingQty != "" {
+			filtered = append(filtered, h)
+		}
+	}
+	return filtered, nil
 }
 
 // GetRawBalance returns the raw JSON response from the inquire-balance endpoint.
