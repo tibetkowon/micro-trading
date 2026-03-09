@@ -223,6 +223,12 @@ func (c *WebSocketClient) StartReadLoop(ctx context.Context) {
 			} else {
 				logger.Error("KIS WebSocket read error", map[string]any{"error": err.Error()})
 			}
+			// conn을 nil로 정리 — IsConnected()가 dead connection을 alive로 오판하지 않도록
+			c.mu.Lock()
+			if c.conn == conn {
+				c.conn = nil
+			}
+			c.mu.Unlock()
 			return
 		}
 
