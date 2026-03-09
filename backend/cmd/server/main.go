@@ -94,7 +94,6 @@ func main() {
 			map[string]any{"error": err.Error()})
 	}
 
-
 	// --- Order sync scheduler (폴링 폴백) ---
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" {
 		agent.StartOrderSyncScheduler(ctx, kisClient, db, 5*time.Minute)
