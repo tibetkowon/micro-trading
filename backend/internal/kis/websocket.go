@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	kisWSURL = "wss://openapiwss.koreainvestment.com:21000"
+	kisWSURL = "ws://ops.koreainvestment.com:21000"
 
 	// TrIDPrice is the TR_ID for real-time stock execution price (국내주식 실시간체결가).
 	TrIDPrice = "H0STCNT0"
