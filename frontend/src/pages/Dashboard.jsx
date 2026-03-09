@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import PropTypes from 'prop-types'
 import { useApi } from '../hooks/useApi'
 import Card from '../components/Card'
@@ -31,11 +32,28 @@ export default function Dashboard() {
   const { data: status, loading: statusLoading, refetch: refetchStatus } = useApi('/api/server/status')
   const { data: balance, loading: balLoading, error: balError, refetch: refetchBal } = useApi('/api/balance')
   const { data: posData, loading: posLoading, refetch: refetchPos } = useApi('/api/positions')
+  const [wsLoading, setWsLoading] = useState(false)
+  const [wsMsg, setWsMsg] = useState(null)
 
   function refetchAll() {
     refetchStatus()
     refetchBal()
     refetchPos()
+  }
+
+  async function handleWs(action) {
+    setWsLoading(true)
+    setWsMsg(null)
+    try {
+      const res = await fetch(`/api/ws/${action}`, { method: 'POST' })
+      const text = await res.text()
+      setWsMsg({ ok: res.ok, text })
+      setTimeout(() => { refetchStatus(); setWsMsg(null) }, 1000)
+    } catch (e) {
+      setWsMsg({ ok: false, text: e.message })
+    } finally {
+      setWsLoading(false)
+    }
   }
 
   const changeRate = balance?.asset_change_rate
@@ -78,10 +96,32 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-xs text-gray-500 mb-1">WebSocket</p>
-              <p className="flex items-center text-sm font-semibold">
-                <StatusDot ok={status.ws_connected} />
-                {status.ws_connected ? '연결됨' : '미연결'}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="flex items-center text-sm font-semibold">
+                  <StatusDot ok={status.ws_connected} />
+                  {status.ws_connected ? '연결됨' : '미연결'}
+                </p>
+                {status.ws_connected ? (
+                  <button
+                    onClick={() => handleWs('disconnect')}
+                    disabled={wsLoading}
+                    className="text-xs px-2 py-0.5 rounded bg-gray-700 hover:bg-red-800 disabled:opacity-40"
+                  >
+                    해제
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleWs('connect')}
+                    disabled={wsLoading}
+                    className="text-xs px-2 py-0.5 rounded bg-gray-700 hover:bg-green-800 disabled:opacity-40"
+                  >
+                    연결
+                  </button>
+                )}
+              </div>
+              {wsMsg && (
+                <p className={`text-xs mt-1 ${wsMsg.ok ? 'text-green-400' : 'text-red-400'}`}>{wsMsg.text}</p>
+              )}
             </div>
             <div>
               <p className="text-xs text-gray-500 mb-1">모니터링 포지션</p>
