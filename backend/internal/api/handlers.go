@@ -806,6 +806,8 @@ func (h *Handler) ConnectWebSocket(c *gin.Context) {
 		// non-fatal: log only
 		_ = err
 	}
+	// 이미 매도된 종목을 monitored_positions에서 제거 후 재구독.
+	h.monitor.PurgeStalePositions(c.Request.Context())
 	h.monitor.ResubscribeAll()
 
 	c.JSON(http.StatusOK, gin.H{"message": "WebSocket connected", "subscribed": h.monitor.Count()})

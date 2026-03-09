@@ -23,10 +23,13 @@ const (
 	// TrIDExecNotice is the TR_ID for real-time execution notice (국내주식 실시간체결통보).
 	TrIDExecNotice = "H0STCNI0"
 
-	// reconnect backoff limits
+	// reconnect backoff limits — 재연결은 포기하지 않고 무제한 시도.
 	reconnectInitialBackoff = 10 * time.Second
 	reconnectMaxBackoff     = 5 * time.Minute
-	reconnectMaxAttempts    = 10 // 최대 재연결 시도 횟수 (초과 시 중단)
+
+	// keepalive
+	wsPingPeriod = 30 * time.Second
+	wsPongWait   = 70 * time.Second // pong 미수신 시 read deadline 만료 → 재연결 트리거
 )
 
 // PriceEvent carries a real-time price update from KIS WebSocket.
@@ -201,19 +204,55 @@ func (c *WebSocketClient) sendSubscription(trType, trID, trKey string) error {
 
 // StartReadLoop reads messages from the WebSocket and dispatches events.
 // Blocks until the connection is closed or ctx is cancelled.
+// ping/pong keepalive로 유휴 연결 끊김을 자동 감지합니다.
 func (c *WebSocketClient) StartReadLoop(ctx context.Context) {
+	c.mu.RLock()
+	conn := c.conn
+	c.mu.RUnlock()
+	if conn == nil {
+		return
+	}
+
+	// pong 수신 시 read deadline 연장.
+	conn.SetReadDeadline(time.Now().Add(wsPongWait)) //nolint:errcheck
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(wsPongWait)) //nolint:errcheck
+		return nil
+	})
+
+	// ping 고루틴: 30초마다 서버에 ping 전송.
+	stopPing := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(wsPingPeriod)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				c.mu.RLock()
+				pingConn := c.conn
+				c.mu.RUnlock()
+				if pingConn == nil {
+					return
+				}
+				deadline := time.Now().Add(10 * time.Second)
+				if err := pingConn.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+					logger.Warn("KIS WebSocket ping failed", map[string]any{"error": err.Error()})
+					return
+				}
+			case <-stopPing:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	defer close(stopPing)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-		}
-
-		c.mu.RLock()
-		conn := c.conn
-		c.mu.RUnlock()
-		if conn == nil {
-			return
 		}
 
 		_, msg, err := conn.ReadMessage()
@@ -232,16 +271,17 @@ func (c *WebSocketClient) StartReadLoop(ctx context.Context) {
 			return
 		}
 
+		// 메시지 수신 시 read deadline 갱신 (pong 외 일반 데이터도 포함).
+		conn.SetReadDeadline(time.Now().Add(wsPongWait)) //nolint:errcheck
 		c.handleMessage(msg)
 	}
 }
 
 // StartWithReconnect runs the WebSocket lifecycle (connect → subscribe → read loop)
-// and automatically reconnects on failure with exponential backoff.
-// 재연결은 최대 reconnectMaxAttempts 회까지만 시도하며, Disconnect() 호출 시 즉시 중단합니다.
+// and automatically reconnects on failure with exponential backoff (무제한 재시도).
+// Disconnect() 호출 시 즉시 중단합니다.
 func (c *WebSocketClient) StartWithReconnect(ctx context.Context) {
 	backoff := reconnectInitialBackoff
-	attempts := 0
 
 	for {
 		// intentionalStop 체크 — Disconnect()가 호출된 경우 재연결 금지
@@ -260,15 +300,8 @@ func (c *WebSocketClient) StartWithReconnect(ctx context.Context) {
 		}
 
 		if err := c.Connect(ctx); err != nil {
-			attempts++
 			logger.Error("KIS WebSocket connect failed",
-				map[string]any{"error": err.Error(), "attempt": attempts, "backoff": backoff.String()})
-
-			if attempts >= reconnectMaxAttempts {
-				logger.Error("KIS WebSocket reconnect gave up after max attempts",
-					map[string]any{"max_attempts": reconnectMaxAttempts})
-				return
-			}
+				map[string]any{"error": err.Error(), "backoff": backoff.String()})
 
 			select {
 			case <-ctx.Done():
@@ -276,7 +309,7 @@ func (c *WebSocketClient) StartWithReconnect(ctx context.Context) {
 			case <-time.After(backoff):
 			}
 
-			// 지수 백오프 (최대 5분)
+			// 지수 백오프 (최대 5분) — 포기하지 않고 계속 재시도
 			backoff *= 2
 			if backoff > reconnectMaxBackoff {
 				backoff = reconnectMaxBackoff
@@ -284,8 +317,7 @@ func (c *WebSocketClient) StartWithReconnect(ctx context.Context) {
 			continue
 		}
 
-		// 연결 성공 — 시도 횟수·백오프 초기화
-		attempts = 0
+		// 연결 성공 — 백오프 초기화
 		backoff = reconnectInitialBackoff
 
 		// Re-subscribe all previously registered subscriptions.

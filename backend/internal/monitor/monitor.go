@@ -392,6 +392,41 @@ func (m *Monitor) RecoverFromHoldings(ctx context.Context, soldCh chan<- string)
 	}
 }
 
+// PurgeStalePositions compares monitored positions against actual KIS holdings
+// and removes any position that is no longer held (qty == 0).
+// WebSocket 재연결 후 또는 주기적으로 호출하여 매도 완료 종목을 정리합니다.
+func (m *Monitor) PurgeStalePositions(ctx context.Context) {
+	holdings, err := m.kisClient.GetHoldings(ctx)
+	if err != nil {
+		logger.Error("PurgeStalePositions: GetHoldings failed", map[string]any{"error": err.Error()})
+		return
+	}
+
+	held := make(map[string]bool, len(holdings))
+	for _, h := range holdings {
+		var qty int
+		fmt.Sscanf(h.HoldingQty, "%d", &qty)
+		if qty > 0 {
+			held[h.StockCode] = true
+		}
+	}
+
+	m.mu.RLock()
+	monitored := make([]string, 0, len(m.positions))
+	for code := range m.positions {
+		monitored = append(monitored, code)
+	}
+	m.mu.RUnlock()
+
+	for _, code := range monitored {
+		if !held[code] {
+			logger.Info("PurgeStalePositions: removing position no longer held",
+				map[string]any{"stock_code": code})
+			m.Remove(ctx, code)
+		}
+	}
+}
+
 // ResubscribeAll sends WebSocket price subscriptions for every currently monitored position.
 // WS 연결 직후 호출 — LoadFromDB/RecoverFromHoldings 시점엔 WS 미연결이라
 // SubscribePrice 가 실패하므로, 연결 완료 후 이 함수로 일괄 재구독한다.

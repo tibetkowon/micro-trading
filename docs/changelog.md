@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-03-08 — WebSocket 재연결 안정화 & 매도 종목 정리
+
+- **kis/websocket.go**: `reconnectMaxAttempts` 제한 제거 → 무제한 재연결 시도
+- **kis/websocket.go**: ping/pong keepalive 추가 (30초 ping, 70초 pong wait) — 유휴 연결 끊김 자동 감지 후 재연결 트리거
+- **monitor/monitor.go**: `PurgeStalePositions()` 추가 — KIS 실제 보유 종목과 비교해 이미 매도된 종목을 `monitored_positions`에서 제거
+- **cmd/server/main.go**: WebSocket 연결 후 `PurgeStalePositions` 호출
+- **api/handlers.go**: 수동 WS 연결 핸들러에서도 `PurgeStalePositions` 호출
+
 ## 2026-03-06 — 순위별 필터 설정 (거래량증가율/체결강도/순매수/이격도)
 
 - **database/db.go**: `TradingSettings`에 순위 필터 필드 5개 추가, 기본값 자동 삽입

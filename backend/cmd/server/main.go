@@ -227,7 +227,8 @@ func runMarketScheduler(ctx context.Context,
 				if err := wsClient.SubscribeExecNotice(); err != nil {
 					logger.Warn("exec notice subscribe failed", map[string]any{"error": err.Error()})
 				}
-				// DB/KIS 복구로 등록된 포지션 재구독 (서버 시작 시 WS 미연결 상태였으므로).
+				// 이미 매도된 종목을 monitored_positions에서 제거 후 재구독.
+				mon.PurgeStalePositions(ctx)
 				mon.ResubscribeAll()
 				logger.Info("market scheduler: WebSocket connected", map[string]any{"hhmm": hhmm})
 
