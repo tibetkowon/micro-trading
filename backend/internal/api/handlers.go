@@ -787,7 +787,20 @@ func (h *Handler) ConnectWebSocket(c *gin.Context) {
 	h.wsClient.SetApprovalKey(approvalKey)
 	go h.wsClient.StartWithReconnect(ctx2)
 
-	time.Sleep(2 * time.Second)
+	// 최대 4초 대기하며 실제 연결 여부 확인 (500ms 간격)
+	connected := false
+	for i := 0; i < 8; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if h.wsClient.IsConnected() {
+			connected = true
+			break
+		}
+	}
+
+	if !connected {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "WebSocket 연결 실패 — KIS 서버가 연결을 거부했습니다. 로그를 확인하세요."})
+		return
+	}
 
 	if err := h.wsClient.SubscribeExecNotice(); err != nil {
 		// non-fatal: log only
