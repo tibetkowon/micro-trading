@@ -343,28 +343,98 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	return nil
 }
 
-// waitForFill drains ExecCh looking for a fill event matching kisOrderID.
+// waitForFill waits for a buy order to be filled.
+// - WebSocket 연결 시: 실시간 ExecCh 이벤트 사용 (즉시 감지).
+// - WebSocket 미연결 시: KIS API 폴링 폴백 (10초 간격).
 // Returns (filledPrice, filledQty, true) on fill, or (0, 0, false) on timeout.
 func (e *Engine) waitForFill(ctx context.Context, kisOrderID string) (float64, int, bool) {
-	if e.wsClient == nil {
-		// No WebSocket — cannot wait for fill.
-		return 0, 0, false
+	// WebSocket이 연결된 경우 실시간 체결 이벤트 대기.
+	if e.wsClient != nil && e.wsClient.IsConnected() {
+		for {
+			select {
+			case <-ctx.Done():
+				return 0, 0, false
+			case ev, ok := <-e.wsClient.ExecCh:
+				if !ok {
+					return 0, 0, false
+				}
+				// Match: same KIS order ID, filled (CntgYN=="2"), buy side (SellBuyDiv=="02").
+				if ev.KISOrderID == kisOrderID && ev.CntgYN == "2" && ev.SellBuyDiv == "02" {
+					return ev.FilledPrice, ev.FilledQty, true
+				}
+			}
+		}
 	}
 
+	// WebSocket 미연결 — KIS API 폴링으로 체결 여부 확인 (10초 간격).
+	// 이 경로는 서버가 장중에 시작되어 WebSocket이 아직 연결 안 됐을 때 사용됨.
+	logger.Info("waitForFill: WebSocket not connected, falling back to KIS API polling",
+		map[string]any{"kis_order_id": kisOrderID})
+
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return 0, 0, false
-		case ev, ok := <-e.wsClient.ExecCh:
-			if !ok {
-				return 0, 0, false
-			}
-			// Match: same KIS order ID, filled (CntgYN=="2"), buy side (SellBuyDiv=="02").
-			if ev.KISOrderID == kisOrderID && ev.CntgYN == "2" && ev.SellBuyDiv == "02" {
-				return ev.FilledPrice, ev.FilledQty, true
+		case <-ticker.C:
+			if fp, fq, ok := e.pollOrderFill(ctx, kisOrderID); ok {
+				return fp, fq, true
 			}
 		}
 	}
+}
+
+// pollOrderFill checks whether a buy order has been filled using KIS REST API.
+// 1) GetCancellableOrders: 아직 미체결이면 false 반환.
+// 2) GetOrderHistory: 체결 내역에서 체결가/수량 조회.
+func (e *Engine) pollOrderFill(ctx context.Context, kisOrderID string) (float64, int, bool) {
+	// 미체결 주문 목록 조회 — 해당 주문이 있으면 아직 체결 안 됨.
+	pending, err := e.kisClient.GetCancellableOrders(ctx)
+	if err != nil {
+		logger.Warn("pollOrderFill: GetCancellableOrders failed",
+			map[string]any{"error": err.Error()})
+		return 0, 0, false
+	}
+	for _, o := range pending {
+		if o.Odno == kisOrderID {
+			return 0, 0, false // 아직 미체결
+		}
+	}
+
+	// 미체결 목록에 없음 → 체결됐거나 취소됨. 체결 내역에서 상세 조회.
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	today := time.Now().In(kst).Format("20060102")
+	history, err := e.kisClient.GetOrderHistory(ctx, today, today)
+	if err != nil {
+		logger.Warn("pollOrderFill: GetOrderHistory failed",
+			map[string]any{"error": err.Error()})
+		return 0, 0, false
+	}
+	for _, rec := range history {
+		odno, _ := rec["odno"].(string)
+		if odno != kisOrderID {
+			continue
+		}
+		// 매수 체결만 처리 (sll_buy_dvsn_cd: "02"=매수).
+		sllBuy, _ := rec["sll_buy_dvsn_cd"].(string)
+		if sllBuy != "02" {
+			continue
+		}
+		qtyStr, _ := rec["tot_ccld_qty"].(string)
+		priceStr, _ := rec["avg_prvs"].(string)
+		var qty int
+		var price float64
+		fmt.Sscanf(qtyStr, "%d", &qty)
+		fmt.Sscanf(priceStr, "%f", &price)
+		if qty > 0 && price > 0 {
+			logger.Info("pollOrderFill: fill confirmed via KIS API",
+				map[string]any{"kis_order_id": kisOrderID, "price": price, "qty": qty})
+			return price, qty, true
+		}
+	}
+	// 아직 체결 내역에 반영 안 됨 (전파 지연) — 다음 폴링까지 대기.
+	return 0, 0, false
 }
 
 // getTodayTradedCodes returns stock codes that have been traded today from DB.

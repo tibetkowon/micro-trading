@@ -303,6 +303,95 @@ func (m *Monitor) Count() int {
 	return len(m.positions)
 }
 
+// RecoverFromHoldings compares KIS actual holdings with the current monitored positions map
+// and registers any holding that is not yet being monitored.
+// 서버 재시작 시 호출 — DB에 등록 안 된 포지션(버그·장애로 누락된 경우)도 자동 복구.
+//
+// 체결가: KIS 잔고의 매입평균가(pchs_avg_pric) 사용.
+// 목표가/손절가: DB trading settings의 take_profit_pct / stop_loss_pct 적용.
+// OrderID: DB orders 테이블에서 해당 종목의 오늘 마지막 매수 체결 주문 조회 (없으면 0).
+func (m *Monitor) RecoverFromHoldings(ctx context.Context, soldCh chan<- string) {
+	holdings, err := m.kisClient.GetHoldings(ctx)
+	if err != nil {
+		logger.Error("RecoverFromHoldings: GetHoldings failed", map[string]any{"error": err.Error()})
+		return
+	}
+	if len(holdings) == 0 {
+		return
+	}
+
+	settings, err := m.db.GetTradingSettings(ctx)
+	if err != nil {
+		logger.Error("RecoverFromHoldings: GetTradingSettings failed", map[string]any{"error": err.Error()})
+		return
+	}
+
+	registered := 0
+	for _, h := range holdings {
+		var qty int
+		fmt.Sscanf(h.HoldingQty, "%d", &qty)
+		if qty <= 0 {
+			continue
+		}
+
+		// 이미 모니터링 중이면 건너뜀.
+		m.mu.RLock()
+		_, alreadyMonitored := m.positions[h.StockCode]
+		m.mu.RUnlock()
+		if alreadyMonitored {
+			continue
+		}
+
+		var filledPrice float64
+		fmt.Sscanf(h.AvgPrice, "%f", &filledPrice)
+		if filledPrice <= 0 {
+			logger.Warn("RecoverFromHoldings: avg price is 0, skipping",
+				map[string]any{"stock_code": h.StockCode})
+			continue
+		}
+
+		// DB에서 해당 종목의 오늘 마지막 매수 주문 ID 조회.
+		var orderID int64
+		m.db.QueryRowContext(ctx, //nolint:errcheck
+			`SELECT id FROM orders
+			 WHERE stock_code = ? AND order_type = 'BUY' AND status = 'FILLED'
+			   AND source = 'AGENT'
+			 ORDER BY id DESC LIMIT 1`,
+			h.StockCode,
+		).Scan(&orderID)
+
+		entry := MonitoredEntry{
+			StockCode:   h.StockCode,
+			StockName:   h.StockName,
+			FilledPrice: filledPrice,
+			TargetPrice: filledPrice * (1 + settings.TakeProfitPct/100),
+			StopPrice:   filledPrice * (1 - settings.StopLossPct/100),
+			OrderID:     orderID,
+			SoldCh:      soldCh,
+		}
+
+		if err := m.Register(ctx, entry); err != nil {
+			logger.Error("RecoverFromHoldings: Register failed",
+				map[string]any{"stock_code": h.StockCode, "error": err.Error()})
+			continue
+		}
+		registered++
+		logger.Info("RecoverFromHoldings: position recovered from KIS holdings",
+			map[string]any{
+				"stock_code":   h.StockCode,
+				"stock_name":   h.StockName,
+				"filled_price": filledPrice,
+				"target_price": entry.TargetPrice,
+				"stop_price":   entry.StopPrice,
+			})
+	}
+
+	if registered > 0 {
+		logger.Info("RecoverFromHoldings: recovery complete",
+			map[string]any{"recovered": registered})
+	}
+}
+
 // LoadFromDB restores monitored positions from the database after a server restart.
 func (m *Monitor) LoadFromDB(ctx context.Context) error {
 	rows, err := m.db.QueryContext(ctx,
