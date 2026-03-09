@@ -197,12 +197,13 @@ func runMarketScheduler(ctx context.Context,
 			hhmm := now.Hour()*100 + now.Minute()
 
 			switch {
-			case hhmm == 850 && !wsRunning:
-				// 08:50 — issue fresh token + connect WebSocket
+			case !wsRunning && hhmm >= 850 && hhmm < 1600:
+				// 08:50 또는 장중 서버 재시작 시 WebSocket 연결.
+				// hhmm == 850 에만 의존하면 서버가 08:50 이후 시작될 때 영구 미연결됨.
 				if _, err := tokenManager.IssueToken(ctx); err != nil {
-					logger.Error("08:50 token refresh failed", map[string]any{"error": err.Error()})
+					logger.Error("market scheduler: token refresh failed", map[string]any{"error": err.Error()})
 				} else {
-					logger.Info("market scheduler: KIS token refreshed at 08:50", nil)
+					logger.Info("market scheduler: KIS token refreshed", map[string]any{"hhmm": hhmm})
 				}
 				approvalKey, err := kisClient.GetApprovalKey(ctx)
 				if err != nil {
@@ -220,10 +221,11 @@ func runMarketScheduler(ctx context.Context,
 				if err := wsClient.SubscribeExecNotice(); err != nil {
 					logger.Warn("exec notice subscribe failed", map[string]any{"error": err.Error()})
 				}
-				logger.Info("market scheduler: WebSocket connected at 08:50", nil)
+				logger.Info("market scheduler: WebSocket connected", map[string]any{"hhmm": hhmm})
 
-			case hhmm == 900 && !tradingReady:
-				// 09:00 — verify trading is enabled and market is open
+			case wsRunning && !tradingReady && hhmm >= 900 && hhmm < 1515:
+				// 09:00 이후 — 트레이딩 활성화 여부 및 장 개장 확인.
+				// 서버가 09:00 이후 시작된 경우도 처리.
 				tradingEnabled := db.GetSetting(ctx, "trading_enabled") != "false"
 				if !tradingEnabled {
 					logger.Info("market scheduler: trading disabled — engine will not start", nil)
@@ -231,14 +233,14 @@ func runMarketScheduler(ctx context.Context,
 				}
 				isOpen, err := agent.IsMarketOpen(ctx, kisClient)
 				if err != nil || !isOpen {
-					logger.Info("market scheduler: market not open at 09:00 — engine will not start",
-						map[string]any{"is_open": isOpen})
+					logger.Info("market scheduler: market not open — engine will not start",
+						map[string]any{"is_open": isOpen, "hhmm": hhmm})
 					break
 				}
 				tradingReady = true
-				logger.Info("market scheduler: trading ready confirmed at 09:00", nil)
+				logger.Info("market scheduler: trading ready confirmed", map[string]any{"hhmm": hhmm})
 
-			case hhmm == 915 && tradingReady && !engineRunning:
+			case tradingReady && !engineRunning && hhmm >= 915 && hhmm < 1515:
 				// 09:15 — start autonomous trading engine
 				settings, err := db.GetTradingSettings(ctx)
 				if err != nil {
@@ -248,7 +250,7 @@ func runMarketScheduler(ctx context.Context,
 
 				stopEngine = eng.Start(ctx)
 				engineRunning = true
-				logger.Info("market scheduler: trading engine started at 09:15", nil)
+				logger.Info("market scheduler: trading engine started", map[string]any{"hhmm": hhmm})
 
 				// Start indicator checker
 				indCtx, indCancel := context.WithCancel(ctx)
