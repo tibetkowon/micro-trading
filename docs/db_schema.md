@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-10 (rev 7 — trader_ranking_logs 테이블 추가)
+> Last updated: 2026-03-10 (rev 8 — trader_selection_logs.fail_reason 컬럼 추가, settings.ranking_top_n 키 추가)
 
 ---
 
@@ -39,6 +39,7 @@
 | `ranking_execcount_net_buy_only` | `"true"` | 대량체결 순위 필터: 순매수체결량 > 0 종목만 허용 |
 | `ranking_disparity_d20_min` | `"0"` | 이격도 순위 필터: 20일 이격도 최솟값 (0=필터없음) |
 | `ranking_disparity_d20_max` | `"0"` | 이격도 순위 필터: 20일 이격도 최댓값 (0=필터없음) |
+| `ranking_top_n` | `"20"` | 각 순위 타입별 필터 통과 후 상위 N개만 AND 교집합 대상으로 사용 (0=전체) |
 
 ---
 
@@ -163,13 +164,16 @@
 | `llm_result` | TEXT | NOT NULL, DEFAULT '' | Claude가 반환한 `[]StockCandidate` JSON 배열 (우선순위 순) |
 | `selected_code` | TEXT | NOT NULL, DEFAULT '' | 최종 체결된 종목코드; 미체결 시 빈 문자열 |
 | `selected_reason` | TEXT | NOT NULL, DEFAULT '' | 체결 종목에 대한 Claude의 선정 이유 (한국어 1문장) |
+| `fail_reason` | TEXT | NOT NULL, DEFAULT '' | 선정 실패 사유 (LLM 오류, 주문 전체 실패 등); 정상 선정 시 빈 문자열 |
 
 **보존 정책:** `GET /api/logs/selection` 호출 시 30일 이상 된 로그 자동 삭제.
 
 **생애주기:**
-1. `selectAndBuy()` — Claude 응답 직후 INSERT (selected_code='', selected_reason='')
-2. 체결 성공 시 — `UPDATE ... SET selected_code=?, selected_reason=? WHERE id=?`
-3. 모든 후보 실패 시 — 해당 로그는 selected_code='' 로 유지
+1. `selectAndBuy()` — Claude 호출 **전** INSERT (sent_count, candidates만 저장)
+2. Claude 오류 시 — `UPDATE ... SET fail_reason='LLM 오류: ...' WHERE id=?` 후 반환
+3. Claude 응답 정상 — `UPDATE ... SET llm_result=? WHERE id=?`
+4. 체결 성공 시 — `UPDATE ... SET selected_code=?, selected_reason=? WHERE id=?`
+5. 모든 후보 주문 실패 시 — `UPDATE ... SET fail_reason='모든 후보 N개 주문 실패' WHERE id=?`
 
 ---
 

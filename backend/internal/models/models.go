@@ -92,6 +92,7 @@ type TraderSelectionLog struct {
 	LLMResult      string `json:"llm_result"`    // JSON string — ordered StockCandidate list
 	SelectedCode   string `json:"selected_code"` // empty if no fill occurred
 	SelectedReason string `json:"selected_reason"`
+	FailReason     string `json:"fail_reason"` // LLM 오류 또는 주문 실패 사유
 }
 
 // TraderRankingLog records each getRankings() attempt for UI display.

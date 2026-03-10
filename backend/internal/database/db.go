@@ -34,6 +34,7 @@ type TradingSettings struct {
 	RankingExecCountNetBuyOnly bool    // 대량체결: 순매수 우세 종목만
 	RankingDisparityD20Min     float64 // 20일 이격도 최솟값 (0=필터없음)
 	RankingDisparityD20Max     float64 // 20일 이격도 최댓값 (0=필터없음)
+	RankingTopN                int     // 각 순위별 상위 N개만 교집합 대상 (0=전체)
 }
 
 // DB wraps the sql.DB connection.
@@ -168,6 +169,7 @@ func (db *DB) migrate() error {
 		`ALTER TABLE orders ADD COLUMN source       TEXT NOT NULL DEFAULT 'AGENT'`,
 		`ALTER TABLE orders ADD COLUMN target_pct   REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE orders ADD COLUMN stop_pct     REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE trader_selection_logs ADD COLUMN fail_reason TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, s := range alterStmts {
 		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시
@@ -193,6 +195,7 @@ func (db *DB) migrate() error {
 		{"ranking_execcount_net_buy_only", "true"},
 		{"ranking_disparity_d20_min", "0"},
 		{"ranking_disparity_d20_max", "0"},
+		{"ranking_top_n", "20"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -219,7 +222,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'order_amount_pct','sell_conditions','indicator_check_interval_min',`+
 			`'indicator_rsi_sell_threshold','indicator_macd_bearish_sell','claude_model',`+
 			`'ranking_volume_min_incrrate','ranking_strength_min',`+
-			`'ranking_execcount_net_buy_only','ranking_disparity_d20_min','ranking_disparity_d20_max'`+
+			`'ranking_execcount_net_buy_only','ranking_disparity_d20_min','ranking_disparity_d20_max',`+
+			`'ranking_top_n'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -306,6 +310,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		RankingExecCountNetBuyOnly: vals["ranking_execcount_net_buy_only"] != "false",
 		RankingDisparityD20Min:     f64("ranking_disparity_d20_min"),
 		RankingDisparityD20Max:     f64("ranking_disparity_d20_max"),
+		RankingTopN:                i64("ranking_top_n"),
 	}, nil
 }
 

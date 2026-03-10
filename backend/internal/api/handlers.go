@@ -373,7 +373,7 @@ func (h *Handler) GetSelectionLogs(c *gin.Context) {
 		`DELETE FROM trader_selection_logs WHERE timestamp < datetime('now', '-30 days')`)
 
 	rows, err := h.db.QueryContext(c.Request.Context(),
-		`SELECT id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason
+		`SELECT id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason, fail_reason
 		 FROM trader_selection_logs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -384,7 +384,7 @@ func (h *Handler) GetSelectionLogs(c *gin.Context) {
 	var logs []models.TraderSelectionLog
 	for rows.Next() {
 		var l models.TraderSelectionLog
-		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.Candidates, &l.LLMResult, &l.SelectedCode, &l.SelectedReason); err != nil {
+		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.Candidates, &l.LLMResult, &l.SelectedCode, &l.SelectedReason, &l.FailReason); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -485,6 +485,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"ranking_execcount_net_buy_only": ts.RankingExecCountNetBuyOnly,
 		"ranking_disparity_d20_min":      ts.RankingDisparityD20Min,
 		"ranking_disparity_d20_max":      ts.RankingDisparityD20Max,
+		"ranking_top_n":                  ts.RankingTopN,
 	})
 }
 
@@ -511,6 +512,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		RankingExecCountNetBuyOnly *bool    `json:"ranking_execcount_net_buy_only"`
 		RankingDisparityD20Min     *float64 `json:"ranking_disparity_d20_min"`
 		RankingDisparityD20Max     *float64 `json:"ranking_disparity_d20_max"`
+		RankingTopN                *int     `json:"ranking_top_n"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -641,6 +643,11 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.RankingDisparityD20Max != nil {
 		if !save("ranking_disparity_d20_max", strconv.FormatFloat(*req.RankingDisparityD20Max, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RankingTopN != nil {
+		if !save("ranking_top_n", strconv.Itoa(*req.RankingTopN)) {
 			return
 		}
 	}
