@@ -53,6 +53,7 @@ export default function SelectionLogs() {
             const llmResult = parseJSON(log.llm_result) || []
             const candidates = parseJSON(log.candidates) || []
             const hasSelected = log.selected_code !== ''
+            const hasFailed = log.fail_reason !== ''
 
             return (
               <div
@@ -61,10 +62,14 @@ export default function SelectionLogs() {
               >
                 {/* 헤더 */}
                 <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {hasSelected ? (
                       <span className="text-xs bg-green-900/60 text-green-300 px-2 py-0.5 rounded font-mono">
-                        {log.selected_code}
+                        ✓ {log.selected_code}
+                      </span>
+                    ) : hasFailed ? (
+                      <span className="text-xs bg-red-900/50 text-red-400 px-2 py-0.5 rounded">
+                        선정 실패
                       </span>
                     ) : (
                       <span className="text-xs bg-amber-900/50 text-amber-400 px-2 py-0.5 rounded">
@@ -81,6 +86,11 @@ export default function SelectionLogs() {
                 {/* 선정 이유 */}
                 {hasSelected && log.selected_reason && (
                   <p className="text-sm text-gray-300 mt-2">{log.selected_reason}</p>
+                )}
+
+                {/* 실패 사유 */}
+                {hasFailed && (
+                  <p className="text-xs text-red-400 mt-1.5">{log.fail_reason}</p>
                 )}
 
                 {/* 요청: 전달한 후보 종목 */}

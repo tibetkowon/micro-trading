@@ -231,26 +231,38 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no available cash")
 	}
 
+	// Persist selection log to DB (Claude 호출 전 INSERT — 실패해도 로그 남김).
+	var selectionLogID int64
+	{
+		candidatesJSON, _ := json.Marshal(rankings)
+		res, dbErr := e.db.ExecContext(ctx,
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result) VALUES (?,?,?)`,
+			len(rankings), string(candidatesJSON), "")
+		if dbErr == nil {
+			selectionLogID, _ = res.LastInsertId()
+		}
+	}
+
 	// Ask Claude to rank all viable candidates (single API call).
 	candidates, err := e.claude.SelectStocks(ctx, rankings, availableCash, excludedCodes)
 	if err != nil {
+		if selectionLogID > 0 {
+			e.db.ExecContext(ctx, //nolint:errcheck
+				`UPDATE trader_selection_logs SET fail_reason=? WHERE id=?`,
+				"LLM 오류: "+err.Error(), selectionLogID)
+		}
 		e.setState(StateMonitoring)
 		return fmt.Errorf("SelectStocks: %w", err)
 	}
 	logger.Info("engine: Claude ranked candidates",
 		map[string]any{"count": len(candidates)})
 
-	// Persist selection log to DB.
-	var selectionLogID int64
-	{
-		candidatesJSON, _ := json.Marshal(rankings)
+	// LLM 응답 저장.
+	if selectionLogID > 0 {
 		llmResultJSON, _ := json.Marshal(candidates)
-		res, dbErr := e.db.ExecContext(ctx,
-			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result) VALUES (?,?,?)`,
-			len(rankings), string(candidatesJSON), string(llmResultJSON))
-		if dbErr == nil {
-			selectionLogID, _ = res.LastInsertId()
-		}
+		e.db.ExecContext(ctx, //nolint:errcheck
+			`UPDATE trader_selection_logs SET llm_result=? WHERE id=?`,
+			string(llmResultJSON), selectionLogID)
 	}
 
 	// Try candidates in order until one succeeds.
@@ -329,6 +341,11 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	}
 
 	if result == nil {
+		if selectionLogID > 0 {
+			e.db.ExecContext(ctx, //nolint:errcheck
+				`UPDATE trader_selection_logs SET fail_reason=? WHERE id=?`,
+				fmt.Sprintf("모든 후보 %d개 주문 실패", len(candidates)), selectionLogID)
+		}
 		e.setState(StateMonitoring)
 		return fmt.Errorf("all %d candidates failed", len(candidates))
 	}
@@ -541,7 +558,11 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				logger.Warn("engine: GetVolumeRank failed", map[string]any{"error": err.Error()})
 				continue
 			}
+			count := 0
 			for _, item := range items {
+				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
+					break
+				}
 				if settings.RankingVolumeMinIncrRate > 0 {
 					rate, _ := strconv.ParseFloat(item.VolIncrRate, 64)
 					if rate < settings.RankingVolumeMinIncrRate {
@@ -553,6 +574,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
 					Volume: item.Volume, VolIncrRate: item.VolIncrRate,
 				}
+				count++
 			}
 
 		case "strength":
@@ -561,7 +583,11 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				logger.Warn("engine: GetStrengthRank failed", map[string]any{"error": err.Error()})
 				continue
 			}
+			count := 0
 			for _, item := range items {
+				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
+					break
+				}
 				if settings.RankingStrengthMin > 0 {
 					str, _ := strconv.ParseFloat(item.Strength, 64)
 					if str < settings.RankingStrengthMin {
@@ -573,6 +599,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
 					Volume: item.Volume, Strength: item.Strength,
 				}
+				count++
 			}
 
 		case "exec_count":
@@ -581,7 +608,11 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				logger.Warn("engine: GetExecCountRank failed", map[string]any{"error": err.Error()})
 				continue
 			}
+			count := 0
 			for _, item := range items {
+				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
+					break
+				}
 				if settings.RankingExecCountNetBuyOnly {
 					netBuy, _ := strconv.ParseFloat(item.NetBuyQty, 64)
 					if netBuy <= 0 {
@@ -593,6 +624,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
 					Volume: item.Volume, NetBuyQty: item.NetBuyQty,
 				}
+				count++
 			}
 
 		case "disparity":
@@ -601,7 +633,11 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				logger.Warn("engine: GetDisparityRank failed", map[string]any{"error": err.Error()})
 				continue
 			}
+			count := 0
 			for _, item := range items {
+				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
+					break
+				}
 				if settings.RankingDisparityD20Min > 0 || settings.RankingDisparityD20Max > 0 {
 					d20, _ := strconv.ParseFloat(item.D20, 64)
 					if settings.RankingDisparityD20Min > 0 && d20 < settings.RankingDisparityD20Min {
@@ -616,6 +652,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
 					Volume: item.Volume, DisparityD20: item.D20,
 				}
+				count++
 			}
 		}
 	}

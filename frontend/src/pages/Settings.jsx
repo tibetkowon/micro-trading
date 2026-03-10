@@ -80,6 +80,7 @@ export default function Settings() {
   const [execCountNetBuyOnly, setExecCountNetBuyOnly] = useState(true)
   const [disparityD20Min, setDisparityD20Min] = useState('0')
   const [disparityD20Max, setDisparityD20Max] = useState('0')
+  const [rankingTopN, setRankingTopN] = useState('20')
 
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
@@ -108,6 +109,7 @@ export default function Settings() {
     if (data.ranking_execcount_net_buy_only != null) setExecCountNetBuyOnly(data.ranking_execcount_net_buy_only)
     if (data.ranking_disparity_d20_min != null) setDisparityD20Min(String(data.ranking_disparity_d20_min))
     if (data.ranking_disparity_d20_max != null) setDisparityD20Max(String(data.ranking_disparity_d20_max))
+    if (data.ranking_top_n != null) setRankingTopN(String(data.ranking_top_n))
   }, [data])
 
   function toggleBit(i) {
@@ -164,6 +166,7 @@ export default function Settings() {
       ranking_execcount_net_buy_only: execCountNetBuyOnly,
       ranking_disparity_d20_min: parseFloat(disparityD20Min) || 0,
       ranking_disparity_d20_max: parseFloat(disparityD20Max) || 0,
+      ranking_top_n: parseInt(rankingTopN) || 20,
     }
 
     try {
@@ -321,6 +324,17 @@ export default function Settings() {
               />
             </label>
           </div>
+
+          {/* 상위 N개 설정 */}
+          <label className="space-y-1">
+            <span className="text-xs text-gray-400">각 순위별 상위 종목 수 (필터 통과 기준, 최대 30)</span>
+            <input
+              type="number" step="1" min="1" max="30"
+              value={rankingTopN}
+              onChange={(e) => setRankingTopN(e.target.value)}
+              className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+            />
+          </label>
 
           {/* 거래량 순위 */}
           <div className="space-y-2">
