@@ -621,6 +621,18 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	}
 
 	if len(byType) == 0 {
+		typesJSON, _ := json.Marshal(settings.RankingTypes)
+		e.db.InsertRankingLog(ctx, models.TraderRankingLog{ //nolint:errcheck
+			RankingTypes:      string(typesJSON),
+			PriceMin:          settings.RankingPriceMin,
+			PriceMax:          settings.RankingPriceMax,
+			VolumeCount:       -1,
+			StrengthCount:     -1,
+			ExecCountCount:    -1,
+			DisparityCount:    -1,
+			IntersectionCount: 0,
+			ErrorMessage:      "no ranking types configured",
+		})
 		return nil, fmt.Errorf("no ranking types configured")
 	}
 
@@ -676,6 +688,28 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		"types": settings.RankingTypes,
 		"count": len(result),
 	})
+
+	// countFor returns the filtered result count for a type, or -1 if not enabled.
+	countFor := func(rt string) int {
+		m, ok := byType[rt]
+		if !ok {
+			return -1
+		}
+		return len(m)
+	}
+	typesJSON, _ := json.Marshal(settings.RankingTypes)
+	if err := e.db.InsertRankingLog(ctx, models.TraderRankingLog{
+		RankingTypes:      string(typesJSON),
+		PriceMin:          settings.RankingPriceMin,
+		PriceMax:          settings.RankingPriceMax,
+		VolumeCount:       countFor("volume"),
+		StrengthCount:     countFor("strength"),
+		ExecCountCount:    countFor("exec_count"),
+		DisparityCount:    countFor("disparity"),
+		IntersectionCount: len(result),
+	}); err != nil {
+		logger.Warn("engine: InsertRankingLog failed", map[string]any{"error": err.Error()})
+	}
 
 	return result, nil
 }

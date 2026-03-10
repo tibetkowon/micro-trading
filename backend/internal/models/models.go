@@ -94,6 +94,21 @@ type TraderSelectionLog struct {
 	SelectedReason string `json:"selected_reason"`
 }
 
+// TraderRankingLog records each getRankings() attempt for UI display.
+type TraderRankingLog struct {
+	ID                int64     `json:"id"`
+	Timestamp         time.Time `json:"timestamp"`
+	RankingTypes      string    `json:"ranking_types"` // JSON string: ["volume","strength"]
+	PriceMin          string    `json:"price_min"`
+	PriceMax          string    `json:"price_max"`
+	VolumeCount       int       `json:"volume_count"` // -1 = 타입 미사용
+	StrengthCount     int       `json:"strength_count"`
+	ExecCountCount    int       `json:"exec_count_count"`
+	DisparityCount    int       `json:"disparity_count"`
+	IntersectionCount int       `json:"intersection_count"` // AND 교집합 결과
+	ErrorMessage      string    `json:"error_message"`
+}
+
 // Report stores a daily AI-generated trading report.
 type Report struct {
 	ID         int64     `json:"id"`

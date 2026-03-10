@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-09 (rev 6 — trader_selection_logs 테이블 추가)
+> Last updated: 2026-03-10 (rev 7 — trader_ranking_logs 테이블 추가)
 
 ---
 
@@ -170,6 +170,34 @@
 1. `selectAndBuy()` — Claude 응답 직후 INSERT (selected_code='', selected_reason='')
 2. 체결 성공 시 — `UPDATE ... SET selected_code=?, selected_reason=? WHERE id=?`
 3. 모든 후보 실패 시 — 해당 로그는 selected_code='' 로 유지
+
+---
+
+---
+
+## Table: `trader_ranking_logs`
+
+**Purpose:** 트레이딩 엔진의 `getRankings()` 호출 기록. 언제/어떤 조건으로 순위를 조회했고 타입별/교집합 결과가 몇 개였는지 추적. UI `/ranking-logs` 페이지에서 조회.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 대리 키 |
+| `timestamp` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 조회 시각 |
+| `ranking_types` | TEXT | NOT NULL, DEFAULT '' | 활성화된 순위 타입 JSON 배열 (e.g., `["volume","strength"]`) |
+| `price_min` | TEXT | NOT NULL, DEFAULT '' | 최소 주가 필터 (원) |
+| `price_max` | TEXT | NOT NULL, DEFAULT '' | 최대 주가 필터 (원) |
+| `volume_count` | INTEGER | NOT NULL, DEFAULT -1 | 거래량 순위 필터 통과 종목 수; -1 = 타입 미사용 |
+| `strength_count` | INTEGER | NOT NULL, DEFAULT -1 | 체결강도 순위 필터 통과 종목 수; -1 = 타입 미사용 |
+| `exec_count_count` | INTEGER | NOT NULL, DEFAULT -1 | 대량체결 순위 필터 통과 종목 수; -1 = 타입 미사용 |
+| `disparity_count` | INTEGER | NOT NULL, DEFAULT -1 | 이격도 순위 필터 통과 종목 수; -1 = 타입 미사용 |
+| `intersection_count` | INTEGER | NOT NULL, DEFAULT 0 | AND 교집합 결과 종목 수 (Claude에 전달되는 후보 수) |
+| `error_message` | TEXT | NOT NULL, DEFAULT '' | 오류 발생 시 메시지; 정상이면 빈 문자열 |
+
+**보존 정책:** `GET /api/logs/ranking` 호출 시 30일 이상 된 로그 자동 삭제.
+
+**생애주기:**
+1. `getRankings()` — 각 타입 API 호출 및 AND 교집합 계산 완료 후 INSERT
+2. `no ranking types configured` 오류 시에도 error_message 포함 INSERT
 
 ---
 

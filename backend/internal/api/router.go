@@ -29,6 +29,7 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		api.GET("/logs/kis", h.GetKISLogs)
 		api.DELETE("/logs/kis/:id", h.DeleteKISLog)
 		api.GET("/logs/selection", h.GetSelectionLogs)
+		api.GET("/logs/ranking", h.GetRankingLogs)
 		api.GET("/settings", h.GetSettings)
 		api.PATCH("/settings", h.UpdateSettings)
 
