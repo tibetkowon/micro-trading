@@ -10,6 +10,8 @@ import (
 	"strconv"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/micro-trading-for-agent/backend/internal/models"
 )
 
 // TradingSettings holds all autonomous trading configuration values.
@@ -136,6 +138,20 @@ func (db *DB) migrate() error {
 			llm_result      TEXT     NOT NULL DEFAULT '',
 			selected_code   TEXT     NOT NULL DEFAULT '',
 			selected_reason TEXT     NOT NULL DEFAULT ''
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS trader_ranking_logs (
+			id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp          DATETIME NOT NULL DEFAULT (datetime('now')),
+			ranking_types      TEXT     NOT NULL DEFAULT '',
+			price_min          TEXT     NOT NULL DEFAULT '',
+			price_max          TEXT     NOT NULL DEFAULT '',
+			volume_count       INTEGER  NOT NULL DEFAULT -1,
+			strength_count     INTEGER  NOT NULL DEFAULT -1,
+			exec_count_count   INTEGER  NOT NULL DEFAULT -1,
+			disparity_count    INTEGER  NOT NULL DEFAULT -1,
+			intersection_count INTEGER  NOT NULL DEFAULT 0,
+			error_message      TEXT     NOT NULL DEFAULT ''
 		)`,
 	}
 
@@ -317,4 +333,52 @@ func (db *DB) SetSetting(ctx context.Context, key, value string) error {
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 		key, value)
 	return err
+}
+
+// InsertRankingLog saves a single getRankings() attempt record.
+func (db *DB) InsertRankingLog(ctx context.Context, log models.TraderRankingLog) error {
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO trader_ranking_logs
+		 (timestamp, ranking_types, price_min, price_max,
+		  volume_count, strength_count, exec_count_count, disparity_count,
+		  intersection_count, error_message)
+		 VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		log.RankingTypes, log.PriceMin, log.PriceMax,
+		log.VolumeCount, log.StrengthCount, log.ExecCountCount, log.DisparityCount,
+		log.IntersectionCount, log.ErrorMessage)
+	return err
+}
+
+// GetRankingLogs returns the most recent ranking attempt logs (newest first).
+// Logs older than 30 days are automatically purged on each call.
+func (db *DB) GetRankingLogs(ctx context.Context, limit int) ([]models.TraderRankingLog, error) {
+	db.ExecContext(ctx, //nolint:errcheck
+		`DELETE FROM trader_ranking_logs WHERE timestamp < datetime('now', '-30 days')`)
+
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, timestamp, ranking_types, price_min, price_max,
+		        volume_count, strength_count, exec_count_count, disparity_count,
+		        intersection_count, error_message
+		 FROM trader_ranking_logs ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []models.TraderRankingLog
+	for rows.Next() {
+		var l models.TraderRankingLog
+		if err := rows.Scan(
+			&l.ID, &l.Timestamp, &l.RankingTypes, &l.PriceMin, &l.PriceMax,
+			&l.VolumeCount, &l.StrengthCount, &l.ExecCountCount, &l.DisparityCount,
+			&l.IntersectionCount, &l.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	if logs == nil {
+		logs = []models.TraderRankingLog{}
+	}
+	return logs, nil
 }

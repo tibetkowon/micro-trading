@@ -396,6 +396,22 @@ func (h *Handler) GetSelectionLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
 
+// GET /api/logs/ranking?limit=50 — 순위 조회 시도 로그 (최신 순)
+// 30일 이상 된 로그는 자동 삭제됨
+func (h *Handler) GetRankingLogs(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	logs, err := h.db.GetRankingLogs(c.Request.Context(), limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"logs": logs})
+}
+
 // GET /api/stock/:code — 현재가 + MA5 + MA20
 func (h *Handler) GetStock(c *gin.Context) {
 	code := c.Param("code")
