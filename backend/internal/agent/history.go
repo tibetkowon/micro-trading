@@ -46,18 +46,20 @@ func GetOrderHistory(ctx context.Context, client *kis.Client, db *database.DB, s
 		).Scan(&existing)
 
 		if existing > 0 {
-			// --- 기존 레코드: 상태 / 종목명 / 체결가 업데이트 ---
+			// --- 기존 레코드: 종목명이 비어있으면 항상 업데이트 (상태 무관) ---
+			if stockName != "" {
+				_, _ = db.ExecContext(ctx,
+					`UPDATE orders SET stock_name = ? WHERE CAST(kis_order_id AS INTEGER) = CAST(? AS INTEGER) AND stock_name = ''`,
+					stockName, kisOrderID,
+				)
+			}
+
 			if ccldQty == "" || ccldQty == "0" {
-				// 미체결 — 종목명만 업데이트
-				if stockName != "" {
-					_, _ = db.ExecContext(ctx,
-						`UPDATE orders SET stock_name = ? WHERE CAST(kis_order_id AS INTEGER) = CAST(? AS INTEGER) AND stock_name = ''`,
-						stockName, kisOrderID,
-					)
-				}
+				// 미체결 — 종목명만 업데이트 완료
 				continue
 			}
 
+			// 체결 — 상태/체결가 업데이트 (PENDING/PARTIALLY_FILLED인 경우)
 			newStatus := models.OrderStatusFilled
 			if ordQty != "" && ordQty != ccldQty {
 				newStatus = models.OrderStatusPartiallyFilled
@@ -65,9 +67,9 @@ func GetOrderHistory(ctx context.Context, client *kis.Client, db *database.DB, s
 			filledPrice, _ := strconv.ParseFloat(avgPrvs, 64)
 
 			_, _ = db.ExecContext(ctx,
-				`UPDATE orders SET status = ?, filled_price = ?, stock_name = ?
+				`UPDATE orders SET status = ?, filled_price = ?
 				 WHERE CAST(kis_order_id AS INTEGER) = CAST(? AS INTEGER) AND status IN ('PENDING','PARTIALLY_FILLED')`,
-				string(newStatus), filledPrice, stockName, kisOrderID,
+				string(newStatus), filledPrice, kisOrderID,
 			)
 			continue
 		}

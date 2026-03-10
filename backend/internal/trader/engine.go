@@ -279,8 +279,18 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			qty = 1
 		}
 
+		// 종목명을 rankings에서 조회하여 주문 시 함께 저장
+		candidateName := code
+		for _, r := range rankings {
+			if r.StockCode == code {
+				candidateName = r.StockName
+				break
+			}
+		}
+
 		res, perr := agent.PlaceOrder(ctx, e.kisClient, e.db, agent.PlaceOrderRequest{
 			StockCode: code,
+			StockName: candidateName,
 			OrderType: models.OrderTypeBuy,
 			Qty:       qty,
 			Price:     0,
@@ -344,11 +354,6 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			stockCode, chosenReason, selectionLogID)
 	}
 
-	// Update DB with fill.
-	e.db.ExecContext(ctx, //nolint:errcheck
-		`UPDATE orders SET filled_price = ?, status = ? WHERE id = ?`,
-		filledPrice, string(models.OrderStatusFilled), result.OrderID)
-
 	// Determine stock name from ranking list.
 	stockName := stockCode
 	for _, r := range rankings {
@@ -357,6 +362,11 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			break
 		}
 	}
+
+	// Update DB with fill (stock_name도 함께 갱신).
+	e.db.ExecContext(ctx, //nolint:errcheck
+		`UPDATE orders SET filled_price = ?, status = ?, stock_name = CASE WHEN stock_name = '' THEN ? ELSE stock_name END WHERE id = ?`,
+		filledPrice, string(models.OrderStatusFilled), stockName, result.OrderID)
 
 	// Register with monitor.
 	entry := monitor.MonitoredEntry{
