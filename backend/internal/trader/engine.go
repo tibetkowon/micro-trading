@@ -27,6 +27,7 @@ const (
 	StateOrdering    EngineState = "ORDERING"
 	StateWaitingFill EngineState = "WAITING_FILL"
 	StateMonitoring  EngineState = "MONITORING"
+	StateSearching   EngineState = "SEARCHING" // 포지션 없음 — 매수 종목 탐색 중
 )
 
 // Engine runs autonomous trading cycles: select → order → monitor → repeat.
@@ -117,8 +118,6 @@ func retryBackoff(failures int) time.Duration {
 }
 
 func (e *Engine) runCycle(ctx context.Context) {
-	e.setState(StateMonitoring)
-
 	consecutiveFailures := 0
 
 	for {
@@ -140,9 +139,12 @@ func (e *Engine) runCycle(ctx context.Context) {
 			continue
 		}
 
-		currentCount := e.mon.Count()
+		// 포지션 수 = 모니터링 중인 포지션 + 오늘 접수한 미체결(PENDING) 매수 주문.
+		// 재시작 시 PENDING 주문이 남아있는 경우 이중 주문을 방지한다.
+		currentCount := e.mon.Count() + e.countPendingOrders(ctx)
 		if currentCount >= settings.MaxPositions {
 			consecutiveFailures = 0 // 포지션 보유 중 = 정상 상태
+			e.setState(StateMonitoring)
 			select {
 			case <-ctx.Done():
 				e.setState(StateIdle)
@@ -154,6 +156,9 @@ func (e *Engine) runCycle(ctx context.Context) {
 			}
 			continue
 		}
+
+		// 포지션 여유 있음 — 매수 종목 탐색 단계
+		e.setState(StateSearching)
 
 		if e.claude == nil {
 			logger.Error("engine: claude client not configured (ANTHROPIC_API_KEY missing)", nil)
@@ -170,6 +175,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 			wait := retryBackoff(consecutiveFailures)
 			logger.Error("engine: selectAndBuy failed",
 				map[string]any{"error": err.Error(), "failures": consecutiveFailures, "retry_in": wait.String()})
+			e.setState(StateSearching)
 			select {
 			case <-ctx.Done():
 				return
@@ -463,6 +469,22 @@ func (e *Engine) pollOrderFill(ctx context.Context, kisOrderID string) (float64,
 	}
 	// 아직 체결 내역에 반영 안 됨 (전파 지연) — 다음 폴링까지 대기.
 	return 0, 0, false
+}
+
+// countPendingOrders returns the number of today's AGENT buy orders still in PENDING status.
+// Used to prevent double-ordering on server restart: if an order was placed but the server
+// restarted before the fill, mon.Count() would be 0 but the order is still active in KIS.
+func (e *Engine) countPendingOrders(ctx context.Context) int {
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	today := time.Now().In(kst).Format("2006-01-02")
+
+	var count int
+	e.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM orders
+		 WHERE date(created_at) = date(?) AND source = 'AGENT'
+		   AND order_type = 'BUY' AND status = 'PENDING'`, today,
+	).Scan(&count)
+	return count
 }
 
 // getTodayTradedCodes returns stock codes that have been traded today from DB.
