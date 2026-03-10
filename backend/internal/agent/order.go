@@ -20,6 +20,7 @@ type CancelOrderResult struct {
 // PlaceOrderRequest contains the parameters for a new order.
 type PlaceOrderRequest struct {
 	StockCode string
+	StockName string // 종목명 — 알고 있으면 전달, 없으면 빈 문자열(KIS 동기화로 보완)
 	OrderType models.OrderType
 	Qty       int
 	Price     float64 // 0 for market order
@@ -96,9 +97,9 @@ func PlaceOrder(ctx context.Context, client *kis.Client, db *database.DB, req Pl
 
 	// Persist order regardless of outcome for full audit trail.
 	result, dbErr := db.ExecContext(ctx,
-		`INSERT INTO orders (stock_code, order_type, qty, price, status, kis_order_id, target_pct, stop_pct, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		req.StockCode, string(req.OrderType), req.Qty, req.Price, string(status), kisOrderID,
+		`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, target_pct, stop_pct, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		req.StockCode, req.StockName, string(req.OrderType), req.Qty, req.Price, string(status), kisOrderID,
 		req.TargetPct, req.StopPct, time.Now().UTC(),
 	)
 	if dbErr != nil {
