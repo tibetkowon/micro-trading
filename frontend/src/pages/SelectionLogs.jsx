@@ -13,6 +13,13 @@ function parseJSON(str) {
   }
 }
 
+function fmt(val, digits = 0) {
+  if (val == null || val === '' || val === '0') return '-'
+  const n = Number(val)
+  if (isNaN(n)) return val
+  return digits > 0 ? n.toFixed(digits) : n.toLocaleString()
+}
+
 export default function SelectionLogs() {
   const { data, loading, error, refetch } = useApi('/api/logs/selection?limit=20')
 
@@ -60,8 +67,8 @@ export default function SelectionLogs() {
                         {log.selected_code}
                       </span>
                     ) : (
-                      <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded">
-                        미체결
+                      <span className="text-xs bg-amber-900/50 text-amber-400 px-2 py-0.5 rounded">
+                        적합 종목 없음
                       </span>
                     )}
                     <span className="text-xs text-gray-400">
@@ -76,27 +83,11 @@ export default function SelectionLogs() {
                   <p className="text-sm text-gray-300 mt-2">{log.selected_reason}</p>
                 )}
 
-                {/* LLM 순위 결과 */}
-                {llmResult.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-xs text-gray-500 mb-1">Claude 순위 결과</p>
-                    <div className="space-y-1">
-                      {llmResult.map((item, idx) => (
-                        <div key={item.stock_code} className="flex items-start gap-2 text-xs">
-                          <span className="text-gray-600 w-4 shrink-0">{idx + 1}.</span>
-                          <span className="font-mono text-blue-400 shrink-0">{item.stock_code}</span>
-                          <span className="text-gray-400">{item.reason}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 전달 종목 전체 (펼치기) */}
+                {/* 요청: 전달한 후보 종목 */}
                 {candidates.length > 0 && (
-                  <details className="mt-3">
-                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300">
-                      전달 종목 전체 ({candidates.length}개) 보기
+                  <details className="mt-3" open={!hasSelected}>
+                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 select-none">
+                      ▶ 요청: 전달한 후보 종목 ({candidates.length}개)
                     </summary>
                     <div className="mt-2 overflow-x-auto">
                       <table className="text-xs w-full border-collapse">
@@ -106,8 +97,13 @@ export default function SelectionLogs() {
                             <th className="text-left py-1 pr-3">코드</th>
                             <th className="text-left py-1 pr-3">종목명</th>
                             <th className="text-right py-1 pr-3">현재가</th>
+                            <th className="text-right py-1 pr-3">MA5</th>
+                            <th className="text-right py-1 pr-3">MA20</th>
                             <th className="text-right py-1 pr-3">RSI</th>
-                            <th className="text-right py-1">MACD</th>
+                            <th className="text-right py-1 pr-3">MACD</th>
+                            <th className="text-right py-1 pr-3">체결강도</th>
+                            <th className="text-right py-1 pr-3">거래량증가율</th>
+                            <th className="text-right py-1">이격도D20</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -116,17 +112,43 @@ export default function SelectionLogs() {
                               <td className="py-1 pr-3">{c.data_rank}</td>
                               <td className="py-1 pr-3 font-mono text-gray-300">{c.stock_code}</td>
                               <td className="py-1 pr-3">{c.stock_name}</td>
-                              <td className="py-1 pr-3 text-right">{Number(c.current_price).toLocaleString()}</td>
-                              <td className="py-1 pr-3 text-right">{c.rsi14 ? c.rsi14.toFixed(1) : '-'}</td>
-                              <td className="py-1 text-right">
-                                {c.macd_line != null ? c.macd_line.toFixed(2) : '-'}
-                              </td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.current_price)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.ma5)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.ma20)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.rsi14, 1)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.macd_line, 2)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.strength)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.vol_incr_rate)}</td>
+                              <td className="py-1 text-right">{fmt(c.disparity_d20)}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   </details>
+                )}
+
+                {/* 응답: LLM 순위 결과 */}
+                {llmResult.length > 0 && (
+                  <details className="mt-3" open>
+                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 select-none">
+                      ▶ 응답: Claude 순위 결과 ({llmResult.length}종목)
+                    </summary>
+                    <div className="mt-2 space-y-1.5">
+                      {llmResult.map((item, idx) => (
+                        <div key={item.stock_code} className="flex items-start gap-2 text-xs">
+                          <span className="text-gray-600 w-4 shrink-0">{idx + 1}.</span>
+                          <span className="font-mono text-blue-400 shrink-0">{item.stock_code}</span>
+                          <span className="text-gray-400 leading-relaxed">{item.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
+                {/* LLM 응답이 비어 있는 경우 */}
+                {llmResult.length === 0 && candidates.length > 0 && (
+                  <p className="mt-3 text-xs text-gray-600">응답: 선정된 종목 없음</p>
                 )}
               </div>
             )
