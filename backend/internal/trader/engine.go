@@ -27,6 +27,7 @@ const (
 	StateOrdering    EngineState = "ORDERING"
 	StateWaitingFill EngineState = "WAITING_FILL"
 	StateMonitoring  EngineState = "MONITORING"
+	StateSearching   EngineState = "SEARCHING" // 포지션 없음 — 매수 종목 탐색 중
 )
 
 // Engine runs autonomous trading cycles: select → order → monitor → repeat.
@@ -117,8 +118,6 @@ func retryBackoff(failures int) time.Duration {
 }
 
 func (e *Engine) runCycle(ctx context.Context) {
-	e.setState(StateMonitoring)
-
 	consecutiveFailures := 0
 
 	for {
@@ -143,6 +142,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 		currentCount := e.mon.Count()
 		if currentCount >= settings.MaxPositions {
 			consecutiveFailures = 0 // 포지션 보유 중 = 정상 상태
+			e.setState(StateMonitoring)
 			select {
 			case <-ctx.Done():
 				e.setState(StateIdle)
@@ -154,6 +154,9 @@ func (e *Engine) runCycle(ctx context.Context) {
 			}
 			continue
 		}
+
+		// 포지션 여유 있음 — 매수 종목 탐색 단계
+		e.setState(StateSearching)
 
 		if e.claude == nil {
 			logger.Error("engine: claude client not configured (ANTHROPIC_API_KEY missing)", nil)
@@ -170,6 +173,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 			wait := retryBackoff(consecutiveFailures)
 			logger.Error("engine: selectAndBuy failed",
 				map[string]any{"error": err.Error(), "failures": consecutiveFailures, "retry_in": wait.String()})
+			e.setState(StateSearching)
 			select {
 			case <-ctx.Done():
 				return

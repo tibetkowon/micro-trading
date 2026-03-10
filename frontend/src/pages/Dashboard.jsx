@@ -141,9 +141,10 @@ export default function Dashboard() {
                 <span className={
                   status.trader_state === 'IDLE' ? 'text-gray-400' :
                   status.trader_state === 'MONITORING' ? 'text-blue-400' :
+                  status.trader_state === 'SEARCHING' ? 'text-green-400' :
                   'text-yellow-400'
                 }>
-                  {status.trader_state || 'IDLE'}
+                  {status.trader_state === 'SEARCHING' ? 'SEARCHING (종목탐색)' : (status.trader_state || 'IDLE')}
                 </span>
               </p>
             </div>
