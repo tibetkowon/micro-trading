@@ -20,7 +20,7 @@ type CancelOrderResult struct {
 // PlaceOrderRequest contains the parameters for a new order.
 type PlaceOrderRequest struct {
 	StockCode string
-	StockName string           // 종목명 — 알고 있으면 전달, 없으면 빈 문자열(KIS 동기화로 보완)
+	StockName string // 종목명 — 알고 있으면 전달, 없으면 빈 문자열(KIS 동기화로 보완)
 	OrderType models.OrderType
 	Qty       int
 	Price     float64 // 0 for market order
