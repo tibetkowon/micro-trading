@@ -219,8 +219,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		if len(filtered) < len(rankings) {
 			logger.Info("engine: excluded already-traded stocks from candidates",
 				map[string]any{
-					"before": len(rankings),
-					"after":  len(filtered),
+					"before":         len(rankings),
+					"after":          len(filtered),
 					"excluded_codes": excludedCodes,
 				})
 		}
