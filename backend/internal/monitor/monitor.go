@@ -44,21 +44,21 @@ type Monitor struct {
 	db        *database.DB
 
 	// 횡보 감지
-	stagnMu               sync.Mutex
-	stagnantSince         map[string]*time.Time // stockCode → 횡보 시작 시각
-	stagnationThresholdPct float64              // 횡보 판단 기준 변동폭 (%, 0=비활성)
-	stagnationDurationMin  int                  // 횡보 지속 기준 시간 (분, 0=비활성)
+	stagnMu                sync.Mutex
+	stagnantSince          map[string]*time.Time // stockCode → 횡보 시작 시각
+	stagnationThresholdPct float64               // 횡보 판단 기준 변동폭 (%, 0=비활성)
+	stagnationDurationMin  int                   // 횡보 지속 기준 시간 (분, 0=비활성)
 }
 
 // New creates a Monitor. mqttPub may be nil (alerts are only logged).
 func New(db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mqttPub *mqttpkg.Publisher) *Monitor {
 	return &Monitor{
-		positions:    make(map[string]*MonitoredEntry),
+		positions:     make(map[string]*MonitoredEntry),
 		stagnantSince: make(map[string]*time.Time),
-		mqttPub:      mqttPub,
-		kisClient:    kisClient,
-		wsClient:     wsClient,
-		db:           db,
+		mqttPub:       mqttPub,
+		kisClient:     kisClient,
+		wsClient:      wsClient,
+		db:            db,
 	}
 }
 
