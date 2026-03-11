@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-03-11 — 이미 거래한 종목 서버 필터링 + 종목선정 UI 화살표 중복 수정
+
+- **trader/engine.go**: AND 교집합 이후, 지표 조회 전에 `excludedCodes`로 서버 측 필터링 추가. Claude API 호출 전에 이미 오늘 거래한 종목을 미리 제거하여 불필요한 API 토큰 낭비 방지
+- **trader/claude.go**: `SelectStocks()`의 Claude 프롬프트에서 `excluded stocks` 섹션 제거 (서버 필터링으로 완전 대체). 프롬프트 간결화로 토큰 절약
+- **SelectionLogs.jsx**: `<details><summary>` 브라우저 기본 삼각형 마커와 직접 삽입한 `▶` 문자가 중복 표시되던 버그 수정 → `list-none [&::-webkit-details-marker]:hidden` CSS 적용
+
 ## 2026-03-11 — 거래 시간 설정 + 횡보 감지 자동 매도 + 설정 화면 재구성
 
 - **database/db.go**: `TradingSettings` 구조체에 4개 필드 추가 (`TradingStartTime`, `TradingEndTime`, `StagnationThresholdPct`, `StagnationDurationMin`); 기본값 설정 (`09:15`, `15:15`, `1.0`, `30`)

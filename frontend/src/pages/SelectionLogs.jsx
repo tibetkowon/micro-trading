@@ -96,7 +96,7 @@ export default function SelectionLogs() {
                 {/* 요청: 전달한 후보 종목 */}
                 {candidates.length > 0 && (
                   <details className="mt-3" open={!hasSelected}>
-                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 select-none">
+                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 select-none list-none [&::-webkit-details-marker]:hidden">
                       ▶ 요청: 전달한 후보 종목 ({candidates.length}개)
                     </summary>
                     <div className="mt-2 overflow-x-auto">
@@ -141,7 +141,7 @@ export default function SelectionLogs() {
                 {/* 응답: LLM 순위 결과 */}
                 {llmResult.length > 0 && (
                   <details className="mt-3" open>
-                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 select-none">
+                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 select-none list-none [&::-webkit-details-marker]:hidden">
                       ▶ 응답: Claude 순위 결과 ({llmResult.length}종목)
                     </summary>
                     <div className="mt-2 space-y-1.5">

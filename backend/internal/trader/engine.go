@@ -204,6 +204,33 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no ranking results after intersection filter")
 	}
 
+	// Filter out already-traded stocks server-side before indicator fetch and Claude call.
+	if len(excludedCodes) > 0 {
+		excludeSet := make(map[string]bool, len(excludedCodes))
+		for _, code := range excludedCodes {
+			excludeSet[code] = true
+		}
+		filtered := make([]RankItem, 0, len(rankings))
+		for _, r := range rankings {
+			if !excludeSet[r.StockCode] {
+				filtered = append(filtered, r)
+			}
+		}
+		if len(filtered) < len(rankings) {
+			logger.Info("engine: excluded already-traded stocks from candidates",
+				map[string]any{
+					"before": len(rankings),
+					"after":  len(filtered),
+					"excluded_codes": excludedCodes,
+				})
+		}
+		rankings = filtered
+	}
+	if len(rankings) == 0 {
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no ranking results after excluding already-traded stocks")
+	}
+
 	// Enrich each candidate with technical indicators (MA5/MA20/RSI/MACD).
 	for i, r := range rankings {
 		info, err := agent.GetStockInfo(ctx, e.kisClient, r.StockCode)
@@ -244,7 +271,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	}
 
 	// Ask Claude to rank all viable candidates (single API call).
-	candidates, err := e.claude.SelectStocks(ctx, rankings, availableCash, excludedCodes)
+	// excludedCodes are already filtered server-side above; pass nil here.
+	candidates, err := e.claude.SelectStocks(ctx, rankings, availableCash, nil)
 	if err != nil {
 		if selectionLogID > 0 {
 			e.db.ExecContext(ctx, //nolint:errcheck
