@@ -567,7 +567,7 @@ export default function Settings() {
                 <label className="space-y-1">
                   <span className="text-xs text-gray-400">횡보 지속 기준 (분)</span>
                   <input
-                    type="number" step="5" min="1"
+                    type="number" step="5" min="5"
                     value={stagnationDurationMin}
                     onChange={(e) => setStagnationDurationMin(e.target.value)}
                     className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
