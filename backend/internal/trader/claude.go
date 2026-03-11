@@ -55,31 +55,26 @@ type StockCandidate struct {
 }
 
 // SelectStocks asks Claude to rank all viable candidates from the ranking list.
+// Already-traded stocks are filtered server-side before this call.
 // Returns an ordered slice — index 0 is the top pick. Engine tries them in order.
 func (c *ClaudeClient) SelectStocks(
 	ctx context.Context,
 	rankings []RankItem,
 	availableCash float64,
-	excludedCodes []string,
+	_ []string, // excludedCodes: filtered server-side, kept for API compatibility
 ) ([]StockCandidate, error) {
 	if len(rankings) == 0 {
 		return nil, fmt.Errorf("ranking list is empty")
 	}
 
 	rankJSON, _ := json.Marshal(rankings)
-	excludeStr := strings.Join(excludedCodes, ", ")
-	if excludeStr == "" {
-		excludeStr = "none"
-	}
 
 	prompt := fmt.Sprintf(`You are a Korean stock intraday trading AI.
 
 Analyze the ranking data below and rank ALL viable stocks for same-day trading, best first.
-Exclude any stock in the excluded list.
 
 Constraints:
 - Available cash: %.0f KRW
-- Excluded stocks (already traded today): %s
 - Goal: maximize intraday return
 - Consider: MA trend (price vs MA5/MA20), RSI (avoid >70), MACD direction, volume momentum
 
@@ -89,7 +84,7 @@ Ranking data (JSON):
 Respond with ONLY a JSON array — no explanation, no markdown.
 Order from best to worst. Include only stocks worth buying (skip clearly bad ones):
 [{"stock_code":"6-digit code","reason":"한국어로 1문장"},...]`,
-		availableCash, excludeStr, string(rankJSON))
+		availableCash, string(rankJSON))
 
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.model),
