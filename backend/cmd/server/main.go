@@ -167,6 +167,19 @@ func main() {
 	logger.Info("server exited", nil)
 }
 
+// parseHHMM parses a "HH:MM" string into an integer (e.g. "09:15" → 915).
+// Returns def if the string is empty or malformed.
+func parseHHMM(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	t, err := time.Parse("15:04", s)
+	if err != nil {
+		return def
+	}
+	return t.Hour()*100 + t.Minute()
+}
+
 // runMarketScheduler manages WebSocket lifecycle and trading engine based on KST market hours:
 //
 //	08:50 → issue fresh token → fetch approval_key → connect → subscribe
@@ -201,6 +214,8 @@ func runMarketScheduler(ctx context.Context,
 				continue
 			}
 			hhmm := now.Hour()*100 + now.Minute()
+			startHHMM := parseHHMM(db.GetSetting(ctx, "trading_start_time"), 915)
+			endHHMM := parseHHMM(db.GetSetting(ctx, "trading_end_time"), 1515)
 
 			switch {
 			case !wsRunning && hhmm >= 850 && hhmm < 1600:
@@ -232,7 +247,7 @@ func runMarketScheduler(ctx context.Context,
 				mon.ResubscribeAll()
 				logger.Info("market scheduler: WebSocket connected", map[string]any{"hhmm": hhmm})
 
-			case wsRunning && !tradingReady && hhmm >= 900 && hhmm < 1515:
+			case wsRunning && !tradingReady && hhmm >= 900 && hhmm < endHHMM:
 				// 09:00 이후 — 트레이딩 활성화 여부 및 장 개장 확인.
 				// 서버가 09:00 이후 시작된 경우도 처리.
 				tradingEnabled := db.GetSetting(ctx, "trading_enabled") != "false"
@@ -249,8 +264,8 @@ func runMarketScheduler(ctx context.Context,
 				tradingReady = true
 				logger.Info("market scheduler: trading ready confirmed", map[string]any{"hhmm": hhmm})
 
-			case tradingReady && !engineRunning && hhmm >= 915 && hhmm < 1515:
-				// 09:15 — start autonomous trading engine
+			case tradingReady && !engineRunning && hhmm >= startHHMM && hhmm < endHHMM:
+				// 거래 시작 시간 — start autonomous trading engine
 				settings, err := db.GetTradingSettings(ctx)
 				if err != nil {
 					logger.Error("market scheduler: GetTradingSettings failed", map[string]any{"error": err.Error()})
@@ -259,9 +274,10 @@ func runMarketScheduler(ctx context.Context,
 
 				stopEngine = eng.Start(ctx)
 				engineRunning = true
-				logger.Info("market scheduler: trading engine started", map[string]any{"hhmm": hhmm})
+				logger.Info("market scheduler: trading engine started", map[string]any{"hhmm": hhmm, "start": startHHMM, "end": endHHMM})
 
-				// Start indicator checker
+				// Start indicator checker (횡보 감지 설정 포함)
+				mon.SetStagnationConfig(settings.StagnationThresholdPct, settings.StagnationDurationMin)
 				indCtx, indCancel := context.WithCancel(ctx)
 				stopIndicator = indCancel
 				go mon.StartIndicatorChecker(
@@ -284,9 +300,9 @@ func runMarketScheduler(ctx context.Context,
 				)
 				logger.Info("market scheduler: indicator checker started", nil)
 
-			case hhmm == 1515:
-				// 15:15 — stop engine, stop indicator checker, liquidate all
-				if engineRunning && stopEngine != nil {
+			case engineRunning && hhmm >= endHHMM && hhmm < 1600:
+				// 거래 종료 시간 — stop engine, stop indicator checker, liquidate all
+				if stopEngine != nil {
 					stopEngine()
 					engineRunning = false
 				}
@@ -294,7 +310,7 @@ func runMarketScheduler(ctx context.Context,
 					stopIndicator()
 					stopIndicator = nil
 				}
-				logger.Info("market scheduler: 15:15 liquidation triggered", nil)
+				logger.Info("market scheduler: end-time liquidation triggered", map[string]any{"hhmm": hhmm, "end": endHHMM})
 				mon.LiquidateAll(ctx)
 
 			case hhmm == 1520:

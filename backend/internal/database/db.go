@@ -35,6 +35,12 @@ type TradingSettings struct {
 	RankingDisparityD20Min     float64 // 20일 이격도 최솟값 (0=필터없음)
 	RankingDisparityD20Max     float64 // 20일 이격도 최댓값 (0=필터없음)
 	RankingTopN                int     // 각 순위별 상위 N개만 교집합 대상 (0=전체)
+	// 거래 시간
+	TradingStartTime string // 자율 거래 시작 시간 (HH:MM)
+	TradingEndTime   string // 자율 거래 종료 시간 (HH:MM)
+	// 횡보 감지
+	StagnationThresholdPct float64 // 횡보 판단 기준 변동폭 (%)
+	StagnationDurationMin  int     // 횡보 지속 시간 (분)
 }
 
 // DB wraps the sql.DB connection.
@@ -196,6 +202,10 @@ func (db *DB) migrate() error {
 		{"ranking_disparity_d20_min", "0"},
 		{"ranking_disparity_d20_max", "0"},
 		{"ranking_top_n", "20"},
+		{"trading_start_time", "09:15"},
+		{"trading_end_time", "15:15"},
+		{"stagnation_threshold_pct", "1.0"},
+		{"stagnation_duration_min", "30"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -223,7 +233,9 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'indicator_rsi_sell_threshold','indicator_macd_bearish_sell','claude_model',`+
 			`'ranking_volume_min_incrrate','ranking_strength_min',`+
 			`'ranking_execcount_net_buy_only','ranking_disparity_d20_min','ranking_disparity_d20_max',`+
-			`'ranking_top_n'`+
+			`'ranking_top_n',`+
+			`'trading_start_time','trading_end_time',`+
+			`'stagnation_threshold_pct','stagnation_duration_min'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -292,6 +304,23 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		sellConditions = []string{"target_pct", "stop_pct"}
 	}
 
+	tradingStartTime := vals["trading_start_time"]
+	if tradingStartTime == "" {
+		tradingStartTime = "09:15"
+	}
+	tradingEndTime := vals["trading_end_time"]
+	if tradingEndTime == "" {
+		tradingEndTime = "15:15"
+	}
+	stagnationThresholdPct := f64("stagnation_threshold_pct")
+	if stagnationThresholdPct == 0 {
+		stagnationThresholdPct = 1.0
+	}
+	stagnationDurationMin := i64("stagnation_duration_min")
+	if stagnationDurationMin == 0 {
+		stagnationDurationMin = 30
+	}
+
 	return TradingSettings{
 		TakeProfitPct:              takeProfitPct,
 		StopLossPct:                stopLossPct,
@@ -311,6 +340,10 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		RankingDisparityD20Min:     f64("ranking_disparity_d20_min"),
 		RankingDisparityD20Max:     f64("ranking_disparity_d20_max"),
 		RankingTopN:                i64("ranking_top_n"),
+		TradingStartTime:           tradingStartTime,
+		TradingEndTime:             tradingEndTime,
+		StagnationThresholdPct:     stagnationThresholdPct,
+		StagnationDurationMin:      stagnationDurationMin,
 	}, nil
 }
 
