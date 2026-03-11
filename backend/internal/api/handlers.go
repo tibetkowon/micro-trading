@@ -486,6 +486,10 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"ranking_disparity_d20_min":      ts.RankingDisparityD20Min,
 		"ranking_disparity_d20_max":      ts.RankingDisparityD20Max,
 		"ranking_top_n":                  ts.RankingTopN,
+		"trading_start_time":             ts.TradingStartTime,
+		"trading_end_time":               ts.TradingEndTime,
+		"stagnation_threshold_pct":       ts.StagnationThresholdPct,
+		"stagnation_duration_min":        ts.StagnationDurationMin,
 	})
 }
 
@@ -513,6 +517,10 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		RankingDisparityD20Min     *float64 `json:"ranking_disparity_d20_min"`
 		RankingDisparityD20Max     *float64 `json:"ranking_disparity_d20_max"`
 		RankingTopN                *int     `json:"ranking_top_n"`
+		TradingStartTime           string   `json:"trading_start_time"`
+		TradingEndTime             string   `json:"trading_end_time"`
+		StagnationThresholdPct     *float64 `json:"stagnation_threshold_pct"`
+		StagnationDurationMin      *int     `json:"stagnation_duration_min"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -648,6 +656,56 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.RankingTopN != nil {
 		if !save("ranking_top_n", strconv.Itoa(*req.RankingTopN)) {
+			return
+		}
+	}
+
+	// Validate trading time formats before saving
+	if req.TradingStartTime != "" {
+		if _, err := time.Parse("15:04", req.TradingStartTime); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "trading_start_time 형식이 잘못되었습니다 (HH:MM)"})
+			return
+		}
+	}
+	if req.TradingEndTime != "" {
+		if _, err := time.Parse("15:04", req.TradingEndTime); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "trading_end_time 형식이 잘못되었습니다 (HH:MM)"})
+			return
+		}
+	}
+	if req.TradingStartTime != "" && req.TradingEndTime != "" {
+		startT, _ := time.Parse("15:04", req.TradingStartTime)
+		endT, _ := time.Parse("15:04", req.TradingEndTime)
+		if !startT.Before(endT) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "거래 시작 시간이 종료 시간보다 앞서야 합니다"})
+			return
+		}
+	}
+	if req.TradingStartTime != "" {
+		if !save("trading_start_time", req.TradingStartTime) {
+			return
+		}
+	}
+	if req.TradingEndTime != "" {
+		if !save("trading_end_time", req.TradingEndTime) {
+			return
+		}
+	}
+	if req.StagnationThresholdPct != nil {
+		if *req.StagnationThresholdPct <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "stagnation_threshold_pct는 0보다 커야 합니다"})
+			return
+		}
+		if !save("stagnation_threshold_pct", strconv.FormatFloat(*req.StagnationThresholdPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.StagnationDurationMin != nil {
+		if *req.StagnationDurationMin < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "stagnation_duration_min은 1 이상이어야 합니다"})
+			return
+		}
+		if !save("stagnation_duration_min", strconv.Itoa(*req.StagnationDurationMin)) {
 			return
 		}
 	}

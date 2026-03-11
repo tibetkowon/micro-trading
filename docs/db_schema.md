@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-10 (rev 8 — trader_selection_logs.fail_reason 컬럼 추가, settings.ranking_top_n 키 추가)
+> Last updated: 2026-03-11 (rev 9 — settings에 거래 시간 및 횡보 감지 키 4개 추가)
 
 ---
 
@@ -29,7 +29,7 @@
 | `ranking_price_max` | `"100000"` | 순위 조회 최대 주가 (원) |
 | `max_positions` | `"1"` | 동시 보유 최대 종목 수 |
 | `order_amount_pct` | `"95"` | 주문가능금액 대비 실제 주문 비율 (%) |
-| `sell_conditions` | `["target_pct","stop_pct"]` | 매도 조건 우선순위 배열 (JSON). 가능한 값: `target_pct`, `stop_pct`, `rsi_overbought`, `macd_bearish` |
+| `sell_conditions` | `["target_pct","stop_pct"]` | 매도 조건 우선순위 배열 (JSON). 가능한 값: `target_pct`, `stop_pct`, `rsi_overbought`, `macd_bearish`, `stagnation` |
 | `indicator_check_interval_min` | `"5"` | 지표 확인 주기 (분) |
 | `indicator_rsi_sell_threshold` | `"70"` | RSI 과매수 기준값 (이상이면 매도) |
 | `indicator_macd_bearish_sell` | `"false"` | MACD 데드크로스 시 매도 여부 |
@@ -40,6 +40,10 @@
 | `ranking_disparity_d20_min` | `"0"` | 이격도 순위 필터: 20일 이격도 최솟값 (0=필터없음) |
 | `ranking_disparity_d20_max` | `"0"` | 이격도 순위 필터: 20일 이격도 최댓값 (0=필터없음) |
 | `ranking_top_n` | `"20"` | 각 순위 타입별 필터 통과 후 상위 N개만 AND 교집합 대상으로 사용 (0=전체) |
+| `trading_start_time` | `"09:15"` | 자율 거래 엔진 시작 시간 (`HH:MM` 형식, KST) |
+| `trading_end_time` | `"15:15"` | 자율 거래 엔진 종료 시간 및 전량 청산 트리거 (`HH:MM` 형식, KST) |
+| `stagnation_threshold_pct` | `"1.0"` | 횡보 감지 기준 변동폭 (%). 진입가 대비 ±이 값 이내이면 횡보로 판단 |
+| `stagnation_duration_min` | `"30"` | 횡보 지속 기준 시간 (분). 이 시간 이상 지속 시 `stagnation` 매도 조건 트리거 |
 
 ---
 
@@ -130,7 +134,7 @@
 **생애주기:**
 1. 트레이딩 엔진: 체결 확인 후 `Monitor.Register()` → INSERT
 2. `HandlePrice()`: 목표가/손절가 도달 → `executeSell()` → `SoldCh <- code` → `Remove()` → DELETE
-3. `StartIndicatorChecker()`: RSI/MACD 조건 충족 → `executeSell()` → `SoldCh <- code` → `Remove()` → DELETE
+3. `StartIndicatorChecker()`: RSI/MACD/횡보 감지 조건 충족 → `executeSell()` → `SoldCh <- code` → `Remove()` → DELETE
 4. 15:15 `LiquidateAll()` → DELETE
 5. `DELETE /api/monitor/positions/:code` → DELETE
 

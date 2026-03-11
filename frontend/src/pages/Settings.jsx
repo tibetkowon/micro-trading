@@ -45,42 +45,51 @@ const EXCL_LABELS = [
   'ETN',
 ]
 
-
 const SELL_CONDITIONS = [
   { value: 'target_pct', label: '목표가 도달 (WebSocket 실시간)' },
   { value: 'stop_pct', label: '손절가 도달 (WebSocket 실시간)' },
   { value: 'rsi_overbought', label: 'RSI 과매수' },
   { value: 'macd_bearish', label: 'MACD 데드크로스' },
+  { value: 'stagnation', label: '횡보 감지 (가격 정체 자동 매도)' },
 ]
 
 export default function Settings() {
   const { data, loading, error, refetch } = useApi('/api/settings')
 
-  // Trading ON/OFF
+  // ── 거래 제어 ──
   const [tradingEnabled, setTradingEnabled] = useState(true)
+  const [tradingStartTime, setTradingStartTime] = useState('09:15')
+  const [tradingEndTime, setTradingEndTime] = useState('15:15')
+
+  // ── 종목 선정 (순위 조회) ──
   // 10개 체크박스 (각 index = 해당 비트, true = 제외)
   const [exclBits, setExclBits] = useState(Array(10).fill(true))
-
-  // Autonomous trading settings
-  const [takeProfitPct, setTakeProfitPct] = useState('3.0')
-  const [stopLossPct, setStopLossPct] = useState('2.0')
   const [rankingTypes, setRankingTypes] = useState(['volume', 'strength', 'exec_count', 'disparity'])
   const [rankingPriceMin, setRankingPriceMin] = useState('5000')
   const [rankingPriceMax, setRankingPriceMax] = useState('100000')
-  const [maxPositions, setMaxPositions] = useState('1')
-  const [orderAmountPct, setOrderAmountPct] = useState('95')
-  const [sellConditions, setSellConditions] = useState(['target_pct', 'stop_pct'])
-  const [indicatorIntervalMin, setIndicatorIntervalMin] = useState('5')
-  const [rsiThreshold, setRsiThreshold] = useState('70')
-  const [macdBearish, setMacdBearish] = useState(false)
-  const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
-  // 순위별 필터
+  const [rankingTopN, setRankingTopN] = useState('20')
   const [volumeMinIncrRate, setVolumeMinIncrRate] = useState('0')
   const [strengthMin, setStrengthMin] = useState('100')
   const [execCountNetBuyOnly, setExecCountNetBuyOnly] = useState(true)
   const [disparityD20Min, setDisparityD20Min] = useState('0')
   const [disparityD20Max, setDisparityD20Max] = useState('0')
-  const [rankingTopN, setRankingTopN] = useState('20')
+
+  // ── 매수 설정 ──
+  const [maxPositions, setMaxPositions] = useState('1')
+  const [orderAmountPct, setOrderAmountPct] = useState('95')
+
+  // ── 매도 설정 ──
+  const [takeProfitPct, setTakeProfitPct] = useState('3.0')
+  const [stopLossPct, setStopLossPct] = useState('2.0')
+  const [sellConditions, setSellConditions] = useState(['target_pct', 'stop_pct'])
+  const [indicatorIntervalMin, setIndicatorIntervalMin] = useState('5')
+  const [rsiThreshold, setRsiThreshold] = useState('70')
+  const [macdBearish, setMacdBearish] = useState(false)
+  const [stagnationThresholdPct, setStagnationThresholdPct] = useState('1.0')
+  const [stagnationDurationMin, setStagnationDurationMin] = useState('30')
+
+  // ── AI 설정 ──
+  const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
 
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
@@ -92,24 +101,32 @@ export default function Settings() {
     const cls = data.ranking_excl_cls || '1111111111'
     setExclBits(cls.split('').map((ch) => ch === '1'))
 
-    if (data.take_profit_pct != null) setTakeProfitPct(String(data.take_profit_pct))
-    if (data.stop_loss_pct != null) setStopLossPct(String(data.stop_loss_pct))
+    if (data.trading_start_time) setTradingStartTime(data.trading_start_time)
+    if (data.trading_end_time) setTradingEndTime(data.trading_end_time)
+
     if (Array.isArray(data.ranking_types)) setRankingTypes(data.ranking_types)
     if (data.ranking_price_min) setRankingPriceMin(data.ranking_price_min)
     if (data.ranking_price_max) setRankingPriceMax(data.ranking_price_max)
-    if (data.max_positions != null) setMaxPositions(String(data.max_positions))
-    if (data.order_amount_pct != null) setOrderAmountPct(String(data.order_amount_pct))
-    if (Array.isArray(data.sell_conditions)) setSellConditions(data.sell_conditions)
-    if (data.indicator_check_interval_min != null) setIndicatorIntervalMin(String(data.indicator_check_interval_min))
-    if (data.indicator_rsi_sell_threshold != null) setRsiThreshold(String(data.indicator_rsi_sell_threshold))
-    if (data.indicator_macd_bearish_sell != null) setMacdBearish(data.indicator_macd_bearish_sell)
-    if (data.claude_model) setClaudeModel(data.claude_model)
+    if (data.ranking_top_n != null) setRankingTopN(String(data.ranking_top_n))
     if (data.ranking_volume_min_incrrate != null) setVolumeMinIncrRate(String(data.ranking_volume_min_incrrate))
     if (data.ranking_strength_min != null) setStrengthMin(String(data.ranking_strength_min))
     if (data.ranking_execcount_net_buy_only != null) setExecCountNetBuyOnly(data.ranking_execcount_net_buy_only)
     if (data.ranking_disparity_d20_min != null) setDisparityD20Min(String(data.ranking_disparity_d20_min))
     if (data.ranking_disparity_d20_max != null) setDisparityD20Max(String(data.ranking_disparity_d20_max))
-    if (data.ranking_top_n != null) setRankingTopN(String(data.ranking_top_n))
+
+    if (data.max_positions != null) setMaxPositions(String(data.max_positions))
+    if (data.order_amount_pct != null) setOrderAmountPct(String(data.order_amount_pct))
+
+    if (data.take_profit_pct != null) setTakeProfitPct(String(data.take_profit_pct))
+    if (data.stop_loss_pct != null) setStopLossPct(String(data.stop_loss_pct))
+    if (Array.isArray(data.sell_conditions)) setSellConditions(data.sell_conditions)
+    if (data.indicator_check_interval_min != null) setIndicatorIntervalMin(String(data.indicator_check_interval_min))
+    if (data.indicator_rsi_sell_threshold != null) setRsiThreshold(String(data.indicator_rsi_sell_threshold))
+    if (data.indicator_macd_bearish_sell != null) setMacdBearish(data.indicator_macd_bearish_sell)
+    if (data.stagnation_threshold_pct != null) setStagnationThresholdPct(String(data.stagnation_threshold_pct))
+    if (data.stagnation_duration_min != null) setStagnationDurationMin(String(data.stagnation_duration_min))
+
+    if (data.claude_model) setClaudeModel(data.claude_model)
   }, [data])
 
   function toggleBit(i) {
@@ -148,25 +165,29 @@ export default function Settings() {
     const rankingExclCls = exclBits.map((b) => (b ? '1' : '0')).join('')
     const body = {
       trading_enabled: tradingEnabled,
+      trading_start_time: tradingStartTime,
+      trading_end_time: tradingEndTime,
       ranking_excl_cls: rankingExclCls,
-      take_profit_pct: parseFloat(takeProfitPct) || 3.0,
-      stop_loss_pct: parseFloat(stopLossPct) || 2.0,
       ranking_types: rankingTypes,
       ranking_price_min: rankingPriceMin,
       ranking_price_max: rankingPriceMax,
-      max_positions: parseInt(maxPositions) || 1,
-      order_amount_pct: parseFloat(orderAmountPct) || 95,
-      sell_conditions: sellConditions,
-      indicator_check_interval_min: parseInt(indicatorIntervalMin) || 5,
-      indicator_rsi_sell_threshold: parseFloat(rsiThreshold) || 70,
-      indicator_macd_bearish_sell: macdBearish,
-      claude_model: claudeModel,
+      ranking_top_n: parseInt(rankingTopN) || 20,
       ranking_volume_min_incrrate: parseFloat(volumeMinIncrRate) || 0,
       ranking_strength_min: parseFloat(strengthMin) || 0,
       ranking_execcount_net_buy_only: execCountNetBuyOnly,
       ranking_disparity_d20_min: parseFloat(disparityD20Min) || 0,
       ranking_disparity_d20_max: parseFloat(disparityD20Max) || 0,
-      ranking_top_n: parseInt(rankingTopN) || 20,
+      max_positions: parseInt(maxPositions) || 1,
+      order_amount_pct: parseFloat(orderAmountPct) || 95,
+      take_profit_pct: parseFloat(takeProfitPct) || 3.0,
+      stop_loss_pct: parseFloat(stopLossPct) || 2.0,
+      sell_conditions: sellConditions,
+      indicator_check_interval_min: parseInt(indicatorIntervalMin) || 5,
+      indicator_rsi_sell_threshold: parseFloat(rsiThreshold) || 70,
+      indicator_macd_bearish_sell: macdBearish,
+      stagnation_threshold_pct: parseFloat(stagnationThresholdPct) || 1.0,
+      stagnation_duration_min: parseInt(stagnationDurationMin) || 30,
+      claude_model: claudeModel,
     }
 
     try {
@@ -189,6 +210,8 @@ export default function Settings() {
     }
   }
 
+  const stagnationActive = sellConditions.includes('stagnation')
+
   return (
     <div className="max-w-lg space-y-6">
       <h1 className="text-xl font-bold">설정</h1>
@@ -203,10 +226,11 @@ export default function Settings() {
       {/* ── 편집 폼 ── */}
       <form onSubmit={handleSave} className="space-y-5">
 
-        {/* Trading ON/OFF */}
+        {/* ── 섹션 1: 거래 제어 ── */}
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
           <p className="text-xs text-gray-500 uppercase tracking-wider">거래 제어</p>
 
+          {/* ON/OFF 토글 */}
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-200">Trading</p>
@@ -228,57 +252,194 @@ export default function Settings() {
               : <span className="text-red-400">거래 비활성화 (OFF)</span>
             }
           </p>
+
+          {/* 거래 시간 */}
+          <div className="grid grid-cols-2 gap-4 pt-1 border-t border-gray-800">
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">거래 시작 시간</span>
+              <input
+                type="time"
+                value={tradingStartTime}
+                onChange={(e) => setTradingStartTime(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">거래 종료 시간</span>
+              <input
+                type="time"
+                value={tradingEndTime}
+                onChange={(e) => setTradingEndTime(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+          </div>
+          <p className="text-xs text-gray-600">기본값: 09:15 ~ 15:15. 변경 시 다음 거래일부터 적용됩니다.</p>
         </div>
 
-        {/* 순위조회 종목 제외 필터 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
-          <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wider">순위조회 제외 종목</p>
-            <p className="text-xs text-gray-600 mt-1">체크된 항목은 순위조회 결과에서 제외됩니다 (FID_TRGT_EXLS_CLS_CODE)</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            {EXCL_LABELS.map((label, i) => (
-              <label key={i} className="flex items-center gap-2 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={exclBits[i]}
-                  onChange={() => toggleBit(i)}
-                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
-                />
-                <span className="text-sm text-gray-300 group-hover:text-white transition-colors">{label}</span>
-              </label>
-            ))}
-          </div>
-
-          <p className="text-xs text-gray-600 font-mono">
-            현재 값: {exclBits.map((b) => (b ? '1' : '0')).join('')}
-          </p>
-        </div>
-
-        {/* 거래 파라미터 */}
+        {/* ── 섹션 2: 종목 선정 (순위 조회) ── */}
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider">거래 파라미터</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wider">종목 선정 (순위 조회)</p>
+
+          {/* 제외 종목 필터 */}
+          <div className="space-y-2">
+            <p className="text-xs text-gray-400">순위조회 제외 종목 <span className="text-gray-600">(FID_TRGT_EXLS_CLS_CODE)</span></p>
+            <p className="text-xs text-gray-600">체크된 항목은 순위조회 결과에서 제외됩니다</p>
+            <div className="grid grid-cols-2 gap-2">
+              {EXCL_LABELS.map((label, i) => (
+                <label key={i} className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={exclBits[i]}
+                    onChange={() => toggleBit(i)}
+                    className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+                  />
+                  <span className="text-sm text-gray-300 group-hover:text-white transition-colors">{label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-600 font-mono">현재 값: {exclBits.map((b) => (b ? '1' : '0')).join('')}</p>
+          </div>
+
+          {/* 가격 범위 */}
+          <div className="space-y-3 pt-3 border-t border-gray-800">
+            <div className="grid grid-cols-2 gap-4">
+              <label className="space-y-1">
+                <span className="text-xs text-gray-400">최소 주가 (원)</span>
+                <input
+                  type="number" step="1000" min="0"
+                  value={rankingPriceMin}
+                  onChange={(e) => setRankingPriceMin(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-gray-400">최대 주가 (원)</span>
+                <input
+                  type="number" step="1000" min="0"
+                  value={rankingPriceMax}
+                  onChange={(e) => setRankingPriceMax(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                />
+              </label>
+            </div>
+
+            {/* 상위 N개 */}
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">각 순위별 상위 종목 수 (필터 통과 기준, 최대 30)</span>
+              <input
+                type="number" step="1" min="1" max="30"
+                value={rankingTopN}
+                onChange={(e) => setRankingTopN(e.target.value)}
+                className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+          </div>
+
+          {/* 순위 유형 선택 */}
+          <div className="space-y-3 pt-3 border-t border-gray-800">
+            {/* 거래량 순위 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" checked={rankingTypes.includes('volume')}
+                  onChange={() => toggleRankingType('volume')}
+                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+                <span className="text-sm text-gray-300 font-medium">거래량 순위</span>
+              </div>
+              {rankingTypes.includes('volume') && (
+                <div className="ml-6">
+                  <label className="space-y-1">
+                    <span className="text-xs text-gray-400">전일대비 거래량 증가율 최솟값 (%, 0=필터없음)</span>
+                    <input type="number" step="10" min="0"
+                      value={volumeMinIncrRate}
+                      onChange={(e) => setVolumeMinIncrRate(e.target.value)}
+                      className="w-40 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* 체결강도 순위 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" checked={rankingTypes.includes('strength')}
+                  onChange={() => toggleRankingType('strength')}
+                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+                <span className="text-sm text-gray-300 font-medium">체결강도 순위</span>
+              </div>
+              {rankingTypes.includes('strength') && (
+                <div className="ml-6">
+                  <label className="space-y-1">
+                    <span className="text-xs text-gray-400">최소 체결강도 (%, 100=매수우세 이상, 0=필터없음)</span>
+                    <input type="number" step="5" min="0"
+                      value={strengthMin}
+                      onChange={(e) => setStrengthMin(e.target.value)}
+                      className="w-40 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* 대량체결 순위 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" checked={rankingTypes.includes('exec_count')}
+                  onChange={() => toggleRankingType('exec_count')}
+                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+                <span className="text-sm text-gray-300 font-medium">대량체결 순위</span>
+              </div>
+              {rankingTypes.includes('exec_count') && (
+                <div className="ml-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={execCountNetBuyOnly}
+                      onChange={(e) => setExecCountNetBuyOnly(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+                    <span className="text-sm text-gray-300">순매수 우세 종목만 (순매수체결량 &gt; 0)</span>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* 이격도 순위 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" checked={rankingTypes.includes('disparity')}
+                  onChange={() => toggleRankingType('disparity')}
+                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+                <span className="text-sm text-gray-300 font-medium">이격도 순위</span>
+              </div>
+              {rankingTypes.includes('disparity') && (
+                <div className="ml-6 flex items-center gap-3">
+                  <label className="space-y-1">
+                    <span className="text-xs text-gray-400">20일 이격도 최솟값 (0=필터없음)</span>
+                    <input type="number" step="1" min="0"
+                      value={disparityD20Min}
+                      onChange={(e) => setDisparityD20Min(e.target.value)}
+                      className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                    />
+                  </label>
+                  <span className="text-gray-500 mt-4">~</span>
+                  <label className="space-y-1">
+                    <span className="text-xs text-gray-400">최댓값 (0=필터없음)</span>
+                    <input type="number" step="1" min="0"
+                      value={disparityD20Max}
+                      onChange={(e) => setDisparityD20Max(e.target.value)}
+                      className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── 섹션 3: 매수 설정 ── */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider">매수 설정</p>
 
           <div className="grid grid-cols-2 gap-4">
-            <label className="space-y-1">
-              <span className="text-xs text-gray-400">익절 기준 (%)</span>
-              <input
-                type="number" step="0.1" min="0.1"
-                value={takeProfitPct}
-                onChange={(e) => setTakeProfitPct(e.target.value)}
-                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-gray-400">손절 기준 (%)</span>
-              <input
-                type="number" step="0.1" min="0.1"
-                value={stopLossPct}
-                onChange={(e) => setStopLossPct(e.target.value)}
-                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
-              />
-            </label>
             <label className="space-y-1">
               <span className="text-xs text-gray-400">최대 동시 보유 종목</span>
               <input
@@ -300,226 +461,126 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* 순위 조회 설정 */}
+        {/* ── 섹션 4: 매도 설정 ── */}
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider">순위 조회 설정</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wider">매도 설정</p>
 
+          {/* 익절/손절 기준 */}
           <div className="grid grid-cols-2 gap-4">
             <label className="space-y-1">
-              <span className="text-xs text-gray-400">최소 주가 (원)</span>
+              <span className="text-xs text-gray-400">익절 기준 (%)</span>
               <input
-                type="number" step="1000" min="0"
-                value={rankingPriceMin}
-                onChange={(e) => setRankingPriceMin(e.target.value)}
+                type="number" step="0.1" min="0.1"
+                value={takeProfitPct}
+                onChange={(e) => setTakeProfitPct(e.target.value)}
                 className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
               />
             </label>
             <label className="space-y-1">
-              <span className="text-xs text-gray-400">최대 주가 (원)</span>
+              <span className="text-xs text-gray-400">손절 기준 (%)</span>
               <input
-                type="number" step="1000" min="0"
-                value={rankingPriceMax}
-                onChange={(e) => setRankingPriceMax(e.target.value)}
+                type="number" step="0.1" min="0.1"
+                value={stopLossPct}
+                onChange={(e) => setStopLossPct(e.target.value)}
                 className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
               />
             </label>
           </div>
 
-          {/* 상위 N개 설정 */}
-          <label className="space-y-1">
-            <span className="text-xs text-gray-400">각 순위별 상위 종목 수 (필터 통과 기준, 최대 30)</span>
-            <input
-              type="number" step="1" min="1" max="30"
-              value={rankingTopN}
-              onChange={(e) => setRankingTopN(e.target.value)}
-              className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
-            />
-          </label>
-
-          {/* 거래량 순위 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <input type="checkbox" checked={rankingTypes.includes('volume')}
-                onChange={() => toggleRankingType('volume')}
-                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
-              <span className="text-sm text-gray-300 font-medium">거래량 순위</span>
-            </div>
-            {rankingTypes.includes('volume') && (
-              <div className="ml-6">
-                <label className="space-y-1">
-                  <span className="text-xs text-gray-400">전일대비 거래량 증가율 최솟값 (%, 0=필터없음)</span>
-                  <input type="number" step="10" min="0"
-                    value={volumeMinIncrRate}
-                    onChange={(e) => setVolumeMinIncrRate(e.target.value)}
-                    className="w-40 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
-                  />
-                </label>
-              </div>
-            )}
-          </div>
-
-          {/* 체결강도 순위 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <input type="checkbox" checked={rankingTypes.includes('strength')}
-                onChange={() => toggleRankingType('strength')}
-                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
-              <span className="text-sm text-gray-300 font-medium">체결강도 순위</span>
-            </div>
-            {rankingTypes.includes('strength') && (
-              <div className="ml-6">
-                <label className="space-y-1">
-                  <span className="text-xs text-gray-400">최소 체결강도 (%, 100=매수우세 이상, 0=필터없음)</span>
-                  <input type="number" step="5" min="0"
-                    value={strengthMin}
-                    onChange={(e) => setStrengthMin(e.target.value)}
-                    className="w-40 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
-                  />
-                </label>
-              </div>
-            )}
-          </div>
-
-          {/* 대량체결 순위 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <input type="checkbox" checked={rankingTypes.includes('exec_count')}
-                onChange={() => toggleRankingType('exec_count')}
-                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
-              <span className="text-sm text-gray-300 font-medium">대량체결 순위</span>
-            </div>
-            {rankingTypes.includes('exec_count') && (
-              <div className="ml-6">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={execCountNetBuyOnly}
-                    onChange={(e) => setExecCountNetBuyOnly(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
-                  <span className="text-sm text-gray-300">순매수 우세 종목만 (순매수체결량 &gt; 0)</span>
-                </label>
-              </div>
-            )}
-          </div>
-
-          {/* 이격도 순위 */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <input type="checkbox" checked={rankingTypes.includes('disparity')}
-                onChange={() => toggleRankingType('disparity')}
-                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
-              <span className="text-sm text-gray-300 font-medium">이격도 순위</span>
-            </div>
-            {rankingTypes.includes('disparity') && (
-              <div className="ml-6 flex items-center gap-3">
-                <label className="space-y-1">
-                  <span className="text-xs text-gray-400">20일 이격도 최솟값 (0=필터없음)</span>
-                  <input type="number" step="1" min="0"
-                    value={disparityD20Min}
-                    onChange={(e) => setDisparityD20Min(e.target.value)}
-                    className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
-                  />
-                </label>
-                <span className="text-gray-500 mt-4">~</span>
-                <label className="space-y-1">
-                  <span className="text-xs text-gray-400">최댓값 (0=필터없음)</span>
-                  <input type="number" step="1" min="0"
-                    value={disparityD20Max}
-                    onChange={(e) => setDisparityD20Max(e.target.value)}
-                    className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
-                  />
-                </label>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 매도 조건 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
-          <p className="text-xs text-gray-500 uppercase tracking-wider">매도 조건</p>
-          <p className="text-xs text-gray-600">위에서부터 순서대로 평가됩니다. 화살표로 우선순위를 변경하세요.</p>
-
-          <div className="space-y-1">
-            {/* 활성화된 조건 — 순서 변경 가능 */}
-            {sellConditions.map((val, idx) => {
-              const item = SELL_CONDITIONS.find(c => c.value === val)
-              if (!item) return null
-              return (
-                <div key={val} className="flex items-center gap-2 bg-gray-800 rounded px-3 py-2">
-                  <span className="text-xs text-gray-500 w-4">{idx + 1}</span>
-                  <span className="flex-1 text-sm text-gray-200">{item.label}</span>
-                  <button
-                    type="button"
-                    onClick={() => moveSellCondition(val, -1)}
-                    disabled={idx === 0}
-                    className="text-gray-500 hover:text-gray-200 disabled:opacity-20 px-1"
-                  >▲</button>
-                  <button
-                    type="button"
-                    onClick={() => moveSellCondition(val, 1)}
-                    disabled={idx === sellConditions.length - 1}
-                    className="text-gray-500 hover:text-gray-200 disabled:opacity-20 px-1"
-                  >▼</button>
-                  <button
-                    type="button"
-                    onClick={() => toggleSellCondition(val)}
-                    className="text-gray-600 hover:text-red-400 px-1 text-xs"
-                  >✕</button>
+          {/* 매도 조건 우선순위 */}
+          <div className="space-y-2 pt-3 border-t border-gray-800">
+            <p className="text-xs text-gray-400">매도 조건 우선순위</p>
+            <p className="text-xs text-gray-600">위에서부터 순서대로 평가됩니다. 화살표로 우선순위를 변경하세요.</p>
+            <div className="space-y-1">
+              {sellConditions.map((val, idx) => {
+                const item = SELL_CONDITIONS.find(c => c.value === val)
+                if (!item) return null
+                return (
+                  <div key={val} className="flex items-center gap-2 bg-gray-800 rounded px-3 py-2">
+                    <span className="text-xs text-gray-500 w-4">{idx + 1}</span>
+                    <span className="flex-1 text-sm text-gray-200">{item.label}</span>
+                    <button type="button" onClick={() => moveSellCondition(val, -1)} disabled={idx === 0}
+                      className="text-gray-500 hover:text-gray-200 disabled:opacity-20 px-1">▲</button>
+                    <button type="button" onClick={() => moveSellCondition(val, 1)} disabled={idx === sellConditions.length - 1}
+                      className="text-gray-500 hover:text-gray-200 disabled:opacity-20 px-1">▼</button>
+                    <button type="button" onClick={() => toggleSellCondition(val)}
+                      className="text-gray-600 hover:text-red-400 px-1 text-xs">✕</button>
+                  </div>
+                )
+              })}
+              {SELL_CONDITIONS.filter(c => !sellConditions.includes(c.value)).map(({ value, label }) => (
+                <div key={value} className="flex items-center gap-2 rounded px-3 py-2 opacity-40">
+                  <span className="text-xs text-gray-500 w-4">-</span>
+                  <span className="flex-1 text-sm text-gray-500">{label}</span>
+                  <button type="button" onClick={() => toggleSellCondition(value)}
+                    className="text-gray-600 hover:text-green-400 px-1 text-xs">＋</button>
                 </div>
-              )
-            })}
-            {/* 비활성화된 조건 — 추가 버튼 */}
-            {SELL_CONDITIONS.filter(c => !sellConditions.includes(c.value)).map(({ value, label }) => (
-              <div key={value} className="flex items-center gap-2 rounded px-3 py-2 opacity-40">
-                <span className="text-xs text-gray-500 w-4">-</span>
-                <span className="flex-1 text-sm text-gray-500">{label}</span>
-                <button
-                  type="button"
-                  onClick={() => toggleSellCondition(value)}
-                  className="text-gray-600 hover:text-green-400 px-1 text-xs"
-                >＋</button>
+              ))}
+            </div>
+          </div>
+
+          {/* 지표 설정 */}
+          <div className="space-y-3 pt-3 border-t border-gray-800">
+            <p className="text-xs text-gray-400">지표 확인 설정</p>
+            <div className="grid grid-cols-2 gap-4">
+              <label className="space-y-1">
+                <span className="text-xs text-gray-400">지표 확인 주기 (분)</span>
+                <input
+                  type="number" step="1" min="1"
+                  value={indicatorIntervalMin}
+                  onChange={(e) => setIndicatorIntervalMin(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-gray-400">RSI 매도 기준값</span>
+                <input
+                  type="number" step="1" min="50" max="100"
+                  value={rsiThreshold}
+                  onChange={(e) => setRsiThreshold(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                />
+              </label>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={macdBearish} onChange={(e) => setMacdBearish(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+              <span className="text-sm text-gray-300">MACD 데드크로스 시 매도</span>
+            </label>
+          </div>
+
+          {/* 횡보 감지 설정 (stagnation 조건 활성 시에만 표시) */}
+          {stagnationActive && (
+            <div className="space-y-3 pt-3 border-t border-gray-800">
+              <p className="text-xs text-gray-400">횡보 감지 설정</p>
+              <p className="text-xs text-gray-600">진입가 기준 ±N% 이내 변동이 M분 이상 지속되면 매도합니다.</p>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-400">횡보 기준 변동폭 (%)</span>
+                  <input
+                    type="number" step="0.1" min="0.1"
+                    value={stagnationThresholdPct}
+                    onChange={(e) => setStagnationThresholdPct(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-400">횡보 지속 기준 (분)</span>
+                  <input
+                    type="number" step="5" min="1"
+                    value={stagnationDurationMin}
+                    onChange={(e) => setStagnationDurationMin(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                  />
+                </label>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* 지표 설정 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider">지표 설정</p>
-
-          <div className="grid grid-cols-2 gap-4">
-            <label className="space-y-1">
-              <span className="text-xs text-gray-400">지표 확인 주기 (분)</span>
-              <input
-                type="number" step="1" min="1"
-                value={indicatorIntervalMin}
-                onChange={(e) => setIndicatorIntervalMin(e.target.value)}
-                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-gray-400">RSI 매도 기준값</span>
-              <input
-                type="number" step="1" min="50" max="100"
-                value={rsiThreshold}
-                onChange={(e) => setRsiThreshold(e.target.value)}
-                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
-              />
-            </label>
-          </div>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={macdBearish}
-              onChange={(e) => setMacdBearish(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500"
-            />
-            <span className="text-sm text-gray-300">MACD 데드크로스 시 매도</span>
-          </label>
-        </div>
-
-        {/* Claude 모델 */}
+        {/* ── 섹션 5: AI 설정 ── */}
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
-          <p className="text-xs text-gray-500 uppercase tracking-wider">Claude AI 설정</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wider">AI 설정</p>
           <label className="space-y-1 block">
             <span className="text-xs text-gray-400">Claude 모델명</span>
             <input
@@ -541,7 +602,7 @@ export default function Settings() {
         </button>
       </form>
 
-      {/* ── 현재 상태 표시 ── */}
+      {/* ── 서버 정보 (읽기 전용) ── */}
       {error && (
         <div className="bg-red-900/30 border border-red-700 text-red-300 rounded p-4 text-sm">{error}</div>
       )}

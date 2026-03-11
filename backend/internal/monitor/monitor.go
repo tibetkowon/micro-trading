@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -41,17 +42,33 @@ type Monitor struct {
 	kisClient *kis.Client
 	wsClient  *kis.WebSocketClient
 	db        *database.DB
+
+	// 횡보 감지
+	stagnMu               sync.Mutex
+	stagnantSince         map[string]*time.Time // stockCode → 횡보 시작 시각
+	stagnationThresholdPct float64              // 횡보 판단 기준 변동폭 (%, 0=비활성)
+	stagnationDurationMin  int                  // 횡보 지속 기준 시간 (분, 0=비활성)
 }
 
 // New creates a Monitor. mqttPub may be nil (alerts are only logged).
 func New(db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mqttPub *mqttpkg.Publisher) *Monitor {
 	return &Monitor{
-		positions: make(map[string]*MonitoredEntry),
-		mqttPub:   mqttPub,
-		kisClient: kisClient,
-		wsClient:  wsClient,
-		db:        db,
+		positions:    make(map[string]*MonitoredEntry),
+		stagnantSince: make(map[string]*time.Time),
+		mqttPub:      mqttPub,
+		kisClient:    kisClient,
+		wsClient:     wsClient,
+		db:           db,
 	}
+}
+
+// SetStagnationConfig updates the stagnation detection parameters.
+// Call this before starting the indicator checker.
+func (m *Monitor) SetStagnationConfig(thresholdPct float64, durationMin int) {
+	m.stagnMu.Lock()
+	m.stagnationThresholdPct = thresholdPct
+	m.stagnationDurationMin = durationMin
+	m.stagnMu.Unlock()
 }
 
 // Register adds (or updates) a position to be monitored and persists it to DB.
@@ -103,6 +120,10 @@ func (m *Monitor) Remove(ctx context.Context, stockCode string) {
 	delete(m.positions, stockCode)
 	m.mu.Unlock()
 
+	m.stagnMu.Lock()
+	delete(m.stagnantSince, stockCode)
+	m.stagnMu.Unlock()
+
 	m.db.ExecContext(ctx, `DELETE FROM monitored_positions WHERE stock_code = ?`, stockCode)
 
 	if m.wsClient != nil {
@@ -151,6 +172,23 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, isTest)
 		}
 		m.Remove(context.Background(), stockCode)
+
+	default:
+		// 목표/손절 미도달 — 횡보 여부 추적
+		m.stagnMu.Lock()
+		threshold := m.stagnationThresholdPct
+		if threshold > 0 && pos.FilledPrice > 0 {
+			changePct := math.Abs(price-pos.FilledPrice) / pos.FilledPrice * 100
+			if changePct < threshold {
+				if _, exists := m.stagnantSince[stockCode]; !exists {
+					now := time.Now()
+					m.stagnantSince[stockCode] = &now
+				}
+			} else {
+				delete(m.stagnantSince, stockCode)
+			}
+		}
+		m.stagnMu.Unlock()
 	}
 }
 
@@ -556,6 +594,19 @@ func (m *Monitor) checkIndicators(
 				if macdBearish && snap.MACDLine != 0 && snap.MACDLine < snap.MACDSignal {
 					triggered = true
 					triggerReason = fmt.Sprintf("MACD bearish crossover: line=%.4f signal=%.4f", snap.MACDLine, snap.MACDSignal)
+				}
+			case "stagnation":
+				m.stagnMu.Lock()
+				since, hasSince := m.stagnantSince[code]
+				durationMin := m.stagnationDurationMin
+				thresholdPct := m.stagnationThresholdPct
+				m.stagnMu.Unlock()
+				if hasSince && since != nil && durationMin > 0 && thresholdPct > 0 {
+					elapsed := time.Since(*since)
+					if elapsed >= time.Duration(durationMin)*time.Minute {
+						triggered = true
+						triggerReason = fmt.Sprintf("횡보 감지: %.1f%% 이내 변동 %.0f분 지속", thresholdPct, elapsed.Minutes())
+					}
 				}
 			}
 			if triggered {
