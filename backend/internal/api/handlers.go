@@ -491,6 +491,17 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"stagnation_threshold_pct":       ts.StagnationThresholdPct,
 		"stagnation_duration_min":        ts.StagnationDurationMin,
 		"ranking_condition":              ts.RankingCondition,
+		// US market settings
+		"us_trading_enabled":    ts.USTradingEnabled,
+		"us_trading_start_time": ts.USTradingStartTime,
+		"us_trading_end_time":   ts.USTradingEndTime,
+		"us_dst_enabled":        ts.USDSTEnabled,
+		"us_ranking_types":      ts.USRankingTypes,
+		"us_ranking_exchange":   ts.USRankingExchange,
+		"us_ranking_price_min":  ts.USRankingPriceMin,
+		"us_ranking_price_max":  ts.USRankingPriceMax,
+		"us_ranking_vol_rang":   ts.USRankingVolRang,
+		"us_ranking_top_n":      ts.USRankingTopN,
 	})
 }
 
@@ -523,6 +534,17 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		StagnationThresholdPct     *float64 `json:"stagnation_threshold_pct"`
 		StagnationDurationMin      *int     `json:"stagnation_duration_min"`
 		RankingCondition           string   `json:"ranking_condition"`
+		// US market settings
+		USTradingEnabled   *bool    `json:"us_trading_enabled"`
+		USTradingStartTime string   `json:"us_trading_start_time"`
+		USTradingEndTime   string   `json:"us_trading_end_time"`
+		USDSTEnabled       *bool    `json:"us_dst_enabled"`
+		USRankingTypes     []string `json:"us_ranking_types"`
+		USRankingExchange  string   `json:"us_ranking_exchange"`
+		USRankingPriceMin  string   `json:"us_ranking_price_min"`
+		USRankingPriceMax  string   `json:"us_ranking_price_max"`
+		USRankingVolRang   string   `json:"us_ranking_vol_rang"`
+		USRankingTopN      *int     `json:"us_ranking_top_n"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -714,6 +736,75 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 
 	if req.RankingCondition == "AND" || req.RankingCondition == "OR" {
 		if !save("ranking_condition", req.RankingCondition) {
+			return
+		}
+	}
+
+	// US market settings
+	if req.USTradingEnabled != nil {
+		val := "false"
+		if *req.USTradingEnabled {
+			val = "true"
+		}
+		if !save("us_trading_enabled", val) {
+			return
+		}
+	}
+	if req.USTradingStartTime != "" {
+		if _, err := time.Parse("15:04", req.USTradingStartTime); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "us_trading_start_time 형식 오류 (HH:MM)"})
+			return
+		}
+		if !save("us_trading_start_time", req.USTradingStartTime) {
+			return
+		}
+	}
+	if req.USTradingEndTime != "" {
+		if _, err := time.Parse("15:04", req.USTradingEndTime); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "us_trading_end_time 형식 오류 (HH:MM)"})
+			return
+		}
+		if !save("us_trading_end_time", req.USTradingEndTime) {
+			return
+		}
+	}
+	if req.USDSTEnabled != nil {
+		val := "false"
+		if *req.USDSTEnabled {
+			val = "true"
+		}
+		if !save("us_dst_enabled", val) {
+			return
+		}
+	}
+	if len(req.USRankingTypes) > 0 {
+		b, _ := json.Marshal(req.USRankingTypes)
+		if !save("us_ranking_types", string(b)) {
+			return
+		}
+	}
+	if req.USRankingExchange != "" {
+		if !save("us_ranking_exchange", req.USRankingExchange) {
+			return
+		}
+	}
+	if req.USRankingPriceMin != "" {
+		if !save("us_ranking_price_min", req.USRankingPriceMin) {
+			return
+		}
+	}
+	if req.USRankingPriceMax != "" {
+		if !save("us_ranking_price_max", req.USRankingPriceMax) {
+			return
+		}
+	}
+	if req.USRankingVolRang != "" {
+		if !save("us_ranking_vol_rang", req.USRankingVolRang) {
+			return
+		}
+	}
+	if req.USRankingTopN != nil {
+		if !save("us_ranking_top_n", strconv.Itoa(*req.USRankingTopN)) {
 			return
 		}
 	}

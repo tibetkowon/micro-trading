@@ -43,6 +43,17 @@ type TradingSettings struct {
 	StagnationDurationMin  int     // 횡보 지속 시간 (분)
 	// 순위 조건
 	RankingCondition string // "AND" | "OR"
+	// 미장 설정
+	USTradingEnabled   bool
+	USTradingStartTime string // "HH:MM" KST
+	USTradingEndTime   string // "HH:MM" KST
+	USDSTEnabled       bool   // 서머타임 여부
+	USRankingTypes     []string
+	USRankingExchange  string // NAS/NYS/AMS
+	USRankingPriceMin  string // USD
+	USRankingPriceMax  string // USD
+	USRankingVolRang   string // 0=전체, 1=100주↑, ...
+	USRankingTopN      int
 }
 
 // DB wraps the sql.DB connection.
@@ -179,6 +190,8 @@ func (db *DB) migrate() error {
 		`ALTER TABLE orders ADD COLUMN stop_pct     REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE trader_selection_logs ADD COLUMN fail_reason TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE orders ADD COLUMN sell_reason TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE orders ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
+		`ALTER TABLE monitored_positions ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
 	}
 	for _, s := range alterStmts {
 		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시
@@ -210,6 +223,16 @@ func (db *DB) migrate() error {
 		{"stagnation_threshold_pct", "1.0"},
 		{"stagnation_duration_min", "30"},
 		{"ranking_condition", "AND"},
+		{"us_trading_enabled", "false"},
+		{"us_trading_start_time", "22:30"},
+		{"us_trading_end_time", "05:00"},
+		{"us_dst_enabled", "true"},
+		{"us_ranking_types", `["volume"]`},
+		{"us_ranking_exchange", "NAS"},
+		{"us_ranking_price_min", "10"},
+		{"us_ranking_price_max", "500"},
+		{"us_ranking_vol_rang", "0"},
+		{"us_ranking_top_n", "20"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -240,7 +263,10 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'ranking_top_n',`+
 			`'trading_start_time','trading_end_time',`+
 			`'stagnation_threshold_pct','stagnation_duration_min',`+
-			`'ranking_condition'`+
+			`'ranking_condition',`+
+			`'us_trading_enabled','us_trading_start_time','us_trading_end_time','us_dst_enabled',`+
+			`'us_ranking_types','us_ranking_exchange','us_ranking_price_min','us_ranking_price_max',`+
+			`'us_ranking_vol_rang','us_ranking_top_n'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -330,6 +356,27 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		rankingCondition = "AND"
 	}
 
+	usTradingStartTime := vals["us_trading_start_time"]
+	if usTradingStartTime == "" {
+		usTradingStartTime = "22:30"
+	}
+	usTradingEndTime := vals["us_trading_end_time"]
+	if usTradingEndTime == "" {
+		usTradingEndTime = "05:00"
+	}
+	usRankingExchange := vals["us_ranking_exchange"]
+	if usRankingExchange == "" {
+		usRankingExchange = "NAS"
+	}
+	usRankingTypes := strSlice("us_ranking_types")
+	if len(usRankingTypes) == 0 {
+		usRankingTypes = []string{"volume"}
+	}
+	usRankingTopN := i64("us_ranking_top_n")
+	if usRankingTopN == 0 {
+		usRankingTopN = 20
+	}
+
 	return TradingSettings{
 		TakeProfitPct:              takeProfitPct,
 		StopLossPct:                stopLossPct,
@@ -354,6 +401,16 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		StagnationThresholdPct:     stagnationThresholdPct,
 		StagnationDurationMin:      stagnationDurationMin,
 		RankingCondition:           rankingCondition,
+		USTradingEnabled:           vals["us_trading_enabled"] == "true",
+		USTradingStartTime:         usTradingStartTime,
+		USTradingEndTime:           usTradingEndTime,
+		USDSTEnabled:               vals["us_dst_enabled"] != "false",
+		USRankingTypes:             usRankingTypes,
+		USRankingExchange:          usRankingExchange,
+		USRankingPriceMin:          vals["us_ranking_price_min"],
+		USRankingPriceMax:          vals["us_ranking_price_max"],
+		USRankingVolRang:           vals["us_ranking_vol_rang"],
+		USRankingTopN:              usRankingTopN,
 	}, nil
 }
 

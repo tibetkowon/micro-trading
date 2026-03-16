@@ -51,6 +51,7 @@ type Order struct {
 	TargetPct   float64     `json:"target_pct"`  // 목표 수익률 (%)
 	StopPct     float64     `json:"stop_pct"`    // 손절 비율 (%)
 	SellReason  string      `json:"sell_reason"` // 매도 사유 (자동 매도 시만 값 있음)
+	Market      string      `json:"market"`      // "KR" | "US"
 	CreatedAt   time.Time   `json:"created_at"`
 }
 
@@ -63,6 +64,7 @@ type MonitoredPosition struct {
 	TargetPrice float64   `json:"target_price"` // FilledPrice × (1 + target_pct/100)
 	StopPrice   float64   `json:"stop_price"`   // FilledPrice × (1 - stop_pct/100)
 	OrderID     int64     `json:"order_id"`
+	Market      string    `json:"market"` // "KR" | "US"
 	CreatedAt   time.Time `json:"created_at"`
 }
 

@@ -93,6 +93,18 @@ export default function Settings() {
   // ── AI 설정 ──
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
 
+  // ── 미장 설정 ──
+  const [usTradingEnabled, setUsTradingEnabled] = useState(false)
+  const [usDstEnabled, setUsDstEnabled] = useState(true)
+  const [usTradingStartTime, setUsTradingStartTime] = useState('22:30')
+  const [usTradingEndTime, setUsTradingEndTime] = useState('05:00')
+  const [usRankingTypes, setUsRankingTypes] = useState(['volume'])
+  const [usRankingExchange, setUsRankingExchange] = useState('NAS')
+  const [usRankingPriceMin, setUsRankingPriceMin] = useState('10')
+  const [usRankingPriceMax, setUsRankingPriceMax] = useState('500')
+  const [usRankingVolRang, setUsRankingVolRang] = useState('0')
+  const [usRankingTopN, setUsRankingTopN] = useState('20')
+
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
 
@@ -130,6 +142,17 @@ export default function Settings() {
     if (data.stagnation_duration_min != null) setStagnationDurationMin(String(data.stagnation_duration_min))
 
     if (data.claude_model) setClaudeModel(data.claude_model)
+
+    if (data.us_trading_enabled != null) setUsTradingEnabled(data.us_trading_enabled)
+    if (data.us_dst_enabled != null) setUsDstEnabled(data.us_dst_enabled)
+    if (data.us_trading_start_time) setUsTradingStartTime(data.us_trading_start_time)
+    if (data.us_trading_end_time) setUsTradingEndTime(data.us_trading_end_time)
+    if (Array.isArray(data.us_ranking_types)) setUsRankingTypes(data.us_ranking_types)
+    if (data.us_ranking_exchange) setUsRankingExchange(data.us_ranking_exchange)
+    if (data.us_ranking_price_min) setUsRankingPriceMin(data.us_ranking_price_min)
+    if (data.us_ranking_price_max) setUsRankingPriceMax(data.us_ranking_price_max)
+    if (data.us_ranking_vol_rang != null) setUsRankingVolRang(String(data.us_ranking_vol_rang))
+    if (data.us_ranking_top_n != null) setUsRankingTopN(String(data.us_ranking_top_n))
   }, [data])
 
   function toggleBit(i) {
@@ -192,6 +215,16 @@ export default function Settings() {
       stagnation_threshold_pct: parseFloat(stagnationThresholdPct) || 1.0,
       stagnation_duration_min: parseInt(stagnationDurationMin) || 30,
       claude_model: claudeModel,
+      us_trading_enabled: usTradingEnabled,
+      us_dst_enabled: usDstEnabled,
+      us_trading_start_time: usTradingStartTime,
+      us_trading_end_time: usTradingEndTime,
+      us_ranking_types: usRankingTypes,
+      us_ranking_exchange: usRankingExchange,
+      us_ranking_price_min: usRankingPriceMin,
+      us_ranking_price_max: usRankingPriceMax,
+      us_ranking_vol_rang: usRankingVolRang,
+      us_ranking_top_n: parseInt(usRankingTopN) || 20,
     }
 
     try {
@@ -617,6 +650,127 @@ export default function Settings() {
               placeholder="claude-sonnet-4-6"
             />
           </label>
+        </div>
+
+        {/* ── 섹션 6: 미장 (미국주식) 설정 ── */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider">미장 (미국주식) 자동매매</p>
+
+          {/* ON/OFF 토글 */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-200">미장 자동매매</p>
+              <p className="text-xs text-gray-500 mt-0.5">미국 주식 시장 자동 거래 활성화</p>
+            </div>
+            <button type="button" onClick={() => setUsTradingEnabled(v => !v)}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${usTradingEnabled ? 'bg-green-600' : 'bg-gray-700'}`}>
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${usTradingEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+
+          {usTradingEnabled && (
+            <div className="space-y-4">
+              {/* 서머타임 토글 */}
+              <div className="flex items-center justify-between pt-2 border-t border-gray-800">
+                <div>
+                  <p className="text-sm text-gray-200">서머타임 (DST)</p>
+                  <p className="text-xs text-gray-500 mt-0.5">ON: 22:30~05:00 / OFF: 23:30~06:00</p>
+                </div>
+                <button type="button" onClick={() => setUsDstEnabled(v => !v)}
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${usDstEnabled ? 'bg-blue-600' : 'bg-gray-700'}`}>
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${usDstEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              {/* 거래 시간 */}
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-800">
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-400">미장 시작 시간 (KST)</span>
+                  <input type="time" value={usTradingStartTime} onChange={e => setUsTradingStartTime(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-400">미장 종료 시간 (KST)</span>
+                  <input type="time" value={usTradingEndTime} onChange={e => setUsTradingEndTime(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200" />
+                </label>
+              </div>
+
+              {/* 거래소 선택 */}
+              <div className="pt-2 border-t border-gray-800">
+                <p className="text-xs text-gray-400 mb-2">거래소</p>
+                <div className="flex gap-2">
+                  {['NAS', 'NYS', 'AMS'].map(exch => (
+                    <button key={exch} type="button" onClick={() => setUsRankingExchange(exch)}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${usRankingExchange === exch ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                      {exch === 'NAS' ? 'NASDAQ' : exch === 'NYS' ? 'NYSE' : 'AMEX'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 가격 범위 (USD) */}
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-800">
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-400">최소 주가 (USD)</span>
+                  <input type="number" step="1" min="0" value={usRankingPriceMin}
+                    onChange={e => setUsRankingPriceMin(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-400">최대 주가 (USD)</span>
+                  <input type="number" step="1" min="0" value={usRankingPriceMax}
+                    onChange={e => setUsRankingPriceMax(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200" />
+                </label>
+              </div>
+
+              {/* 순위 유형 */}
+              <div className="space-y-2 pt-2 border-t border-gray-800">
+                <p className="text-xs text-gray-400">순위 조회 유형</p>
+                {[
+                  { value: 'volume', label: '거래량 순위' },
+                ].map(({ value, label }) => (
+                  <label key={value} className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox"
+                      checked={usRankingTypes.includes(value)}
+                      onChange={() => setUsRankingTypes(prev =>
+                        prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
+                      )}
+                      className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+                    <span className="text-sm text-gray-300">{label}</span>
+                  </label>
+                ))}
+              </div>
+
+              {/* 거래량 필터 */}
+              <div className="pt-2 border-t border-gray-800">
+                <p className="text-xs text-gray-400 mb-2">거래량 필터</p>
+                <div className="flex gap-2 flex-wrap">
+                  {[
+                    { value: '0', label: '전체' },
+                    { value: '1', label: '100주↑' },
+                    { value: '2', label: '1000주↑' },
+                    { value: '3', label: '10000주↑' },
+                  ].map(({ value, label }) => (
+                    <button key={value} type="button" onClick={() => setUsRankingVolRang(value)}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-colors ${usRankingVolRang === value ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 상위 N개 */}
+              <label className="space-y-1 pt-2 border-t border-gray-800 block">
+                <span className="text-xs text-gray-400">상위 종목 수</span>
+                <input type="number" step="1" min="1" max="50"
+                  value={usRankingTopN}
+                  onChange={e => setUsRankingTopN(e.target.value)}
+                  className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200" />
+              </label>
+            </div>
+          )}
         </div>
 
         <button

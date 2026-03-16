@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-16 — 미장(미국주식) 듀얼 엔진 구현
+
+- **models/models.go**: `Order.Market`, `MonitoredPosition.Market` 필드 추가 (`"KR"` / `"US"`)
+- **database/db.go**: `TradingSettings`에 US 설정 10개 필드 추가, `alterStmts`에 `orders.market` / `monitored_positions.market` 컬럼 추가 마이그레이션, `defaultSettings`에 US 기본값 추가, `GetTradingSettings` 쿼리·파싱·반환 확장
+- **kis/client.go**: 해외 주문 API (TTTT1002U/1006U), 잔고 (TTTS3012R), 가격 (HHDFS00000300), 거래량 순위 (HHDFS76310010), 주문가능 조회 (TTTS3007R) 7개 함수 및 관련 타입 추가
+- **kis/websocket.go**: `TrIDOverseasPrice` / `TrIDOverseasExecNotice` 상수 추가, `SubscribeOverseasPrice` / `UnsubscribeOverseasPrice` 함수 추가, `parseOverseasPriceData` 구현, `handleMessage` switch에 해외 가격/체결통보 케이스 추가
+- **monitor/monitor.go**: `MonitoredEntry`에 `Market` / `ExchCode` 필드 추가, `Register` / `Remove` / `LiquidateAll` / `LoadFromDB` / `ResubscribeAll`을 US 시장 분기 처리로 개선, `executeOverseasSell` 신규 함수, `LiquidateAll` 시그니처를 variadic으로 변경 (market 필터 지원), `exchCodeToEXCD` 헬퍼 추가
+- **trader/engine.go**: `Engine.market` 필드 추가, `NewEngine` 시그니처에 `market string` 파라미터 추가, `countPendingOrders` / `getTodayTradedCodes` market 필터 적용, `getRankings` US 분기 추가, `getRankingsUS` / `excdToExchCode` / `selectAndBuyUS` 신규 함수
+- **cmd/server/main.go**: KR/US 엔진 동시 생성, `runMarketScheduler`에 US 엔진 스케줄링 추가 (`isActiveUSTrading` 자정 크로스오버 처리), `LiquidateAll` 호출에 market 인자 전달
+- **api/handlers.go**: `GetSettings` / `UpdateSettings`에 US 설정 10개 항목 추가
+- **agent/history.go**: `GetLocalOrderHistory` SELECT에 `market` 컬럼 추가
+- **frontend/Settings.jsx**: 미장 설정 섹션 (ON/OFF, DST, 거래소, 가격범위, 순위유형, 거래량필터, 상위N) UI 추가
+
 ## 2026-03-16 — KIS API 명세 업데이트 + 국내·미장 동시 트레이딩 아키텍처 설계
 
 - **docs/kis-api/주문계좌.md**: 현재 사용 중인 TR_ID 중심으로 전면 재작성 (TTTC0012U/0011U/0013U/0084R/0081R/8434R/8908R)

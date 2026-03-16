@@ -29,6 +29,8 @@ type MonitoredEntry struct {
 	TargetPrice float64
 	StopPrice   float64
 	OrderID     int64
+	Market      string    // "KR" or "US" (empty defaults to "KR")
+	ExchCode    string    // 거래소코드 for US: NASD/NYSE/AMEX (empty for KR)
 	SoldCh      chan<- string // optional: engine receives sold signal (may be nil)
 }
 
@@ -81,17 +83,18 @@ func (m *Monitor) Register(ctx context.Context, pos MonitoredEntry) error {
 	// Persist for server-restart recovery.
 	_, err := m.db.ExecContext(ctx,
 		`INSERT INTO monitored_positions
-		  (stock_code, stock_name, filled_price, target_price, stop_price, order_id)
-		 VALUES (?, ?, ?, ?, ?, ?)
+		  (stock_code, stock_name, filled_price, target_price, stop_price, order_id, market)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(stock_code) DO UPDATE SET
 		   stock_name=excluded.stock_name,
 		   filled_price=excluded.filled_price,
 		   target_price=excluded.target_price,
 		   stop_price=excluded.stop_price,
 		   order_id=excluded.order_id,
+		   market=excluded.market,
 		   created_at=CURRENT_TIMESTAMP`,
 		pos.StockCode, pos.StockName, pos.FilledPrice,
-		pos.TargetPrice, pos.StopPrice, pos.OrderID,
+		pos.TargetPrice, pos.StopPrice, pos.OrderID, pos.Market,
 	)
 	if err != nil {
 		return fmt.Errorf("persist monitored_position: %w", err)
@@ -99,9 +102,17 @@ func (m *Monitor) Register(ctx context.Context, pos MonitoredEntry) error {
 
 	// Subscribe to real-time price stream.
 	if m.wsClient != nil {
-		if err := m.wsClient.SubscribePrice(pos.StockCode); err != nil {
-			logger.Error("ws subscribe price failed",
-				map[string]any{"stock_code": pos.StockCode, "error": err.Error()})
+		if pos.Market == "US" && pos.ExchCode != "" {
+			excd := exchCodeToEXCD(pos.ExchCode)
+			if err := m.wsClient.SubscribeOverseasPrice(excd, pos.StockCode); err != nil {
+				logger.Error("ws subscribe overseas price failed",
+					map[string]any{"stock_code": pos.StockCode, "error": err.Error()})
+			}
+		} else {
+			if err := m.wsClient.SubscribePrice(pos.StockCode); err != nil {
+				logger.Error("ws subscribe price failed",
+					map[string]any{"stock_code": pos.StockCode, "error": err.Error()})
+			}
 		}
 	}
 
@@ -117,6 +128,7 @@ func (m *Monitor) Register(ctx context.Context, pos MonitoredEntry) error {
 // Remove removes a position from monitoring and deletes it from DB.
 func (m *Monitor) Remove(ctx context.Context, stockCode string) {
 	m.mu.Lock()
+	pos := m.positions[stockCode]
 	delete(m.positions, stockCode)
 	m.mu.Unlock()
 
@@ -127,7 +139,11 @@ func (m *Monitor) Remove(ctx context.Context, stockCode string) {
 	m.db.ExecContext(ctx, `DELETE FROM monitored_positions WHERE stock_code = ?`, stockCode)
 
 	if m.wsClient != nil {
-		m.wsClient.UnsubscribePrice(stockCode) //nolint:errcheck
+		if pos != nil && pos.Market == "US" && pos.ExchCode != "" {
+			m.wsClient.UnsubscribeOverseasPrice(exchCodeToEXCD(pos.ExchCode), stockCode) //nolint:errcheck
+		} else {
+			m.wsClient.UnsubscribePrice(stockCode) //nolint:errcheck
+		}
 	}
 
 	logger.Info("monitor: position removed", map[string]any{"stock_code": stockCode})
@@ -197,6 +213,11 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason string) int {
 	ctx := context.Background()
 
+	// US positions: use overseas sell API
+	if pos.Market == "US" && pos.ExchCode != "" {
+		return m.executeOverseasSell(stockCode, pos, reason)
+	}
+
 	holdings, err := m.kisClient.GetHoldings(ctx)
 	if err != nil {
 		logger.Error("auto-sell: GetHoldings failed",
@@ -236,8 +257,8 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 		kisOrderID = resp.KISOrderID
 	}
 	_, _ = m.db.ExecContext(ctx,
-		`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, created_at)
-		 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, ?)`,
+		`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
+		 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
 		stockCode, pos.StockName, qty, pos.FilledPrice, kisOrderID, reason, time.Now().UTC())
 
 	// Notify engine that this position was sold.
@@ -251,12 +272,71 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	return qty
 }
 
-// LiquidateAll places market sell orders for all monitored positions (15:15 장마감).
-func (m *Monitor) LiquidateAll(ctx context.Context) {
+// executeOverseasSell places a sell order for a US position.
+func (m *Monitor) executeOverseasSell(stockCode string, pos *MonitoredEntry, reason string) int {
+	ctx := context.Background()
+
+	holdings, err := m.kisClient.GetOverseasHoldings(ctx, pos.ExchCode, "USD")
+	if err != nil {
+		logger.Error("auto-sell US: GetOverseasHoldings failed",
+			map[string]any{"stock_code": stockCode, "error": err.Error()})
+		return 0
+	}
+
+	qty := 0
+	for _, h := range holdings {
+		if h.StockCode == stockCode {
+			fmt.Sscanf(h.OrderablQty, "%d", &qty)
+			break
+		}
+	}
+	if qty <= 0 {
+		logger.Info("auto-sell US: no holdings found", map[string]any{"stock_code": stockCode})
+		return 0
+	}
+
+	resp, err := m.kisClient.PlaceOverseasSellOrder(ctx, pos.ExchCode, stockCode, qty)
+	if err != nil {
+		logger.Error("auto-sell US: PlaceOverseasSellOrder failed",
+			map[string]any{"stock_code": stockCode, "qty": qty, "error": err.Error()})
+		return 0
+	}
+
+	kisOrderID := ""
+	if resp != nil {
+		kisOrderID = resp.KISOrderID
+	}
+	_, _ = m.db.ExecContext(ctx,
+		`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
+		 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'US', ?)`,
+		stockCode, pos.StockName, qty, pos.FilledPrice, kisOrderID, reason, time.Now().UTC())
+
+	if pos.SoldCh != nil {
+		select {
+		case pos.SoldCh <- stockCode:
+		default:
+		}
+	}
+
+	logger.Info("auto-sell US: sell order placed",
+		map[string]any{"stock_code": stockCode, "qty": qty, "reason": reason})
+	return qty
+}
+
+// LiquidateAll places market sell orders for all monitored positions (장마감).
+// market: optional filter — "KR" or "US". Empty means all positions.
+func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
+	filterMarket := ""
+	if len(market) > 0 {
+		filterMarket = market[0]
+	}
+
 	m.mu.RLock()
 	codes := make([]string, 0, len(m.positions))
-	for code := range m.positions {
-		codes = append(codes, code)
+	for code, pos := range m.positions {
+		if filterMarket == "" || pos.Market == filterMarket || (filterMarket == "KR" && pos.Market == "") {
+			codes = append(codes, code)
+		}
 	}
 	m.mu.RUnlock()
 
@@ -264,7 +344,7 @@ func (m *Monitor) LiquidateAll(ctx context.Context) {
 		return
 	}
 
-	logger.Info("monitor: liquidating all positions", map[string]any{"count": len(codes)})
+	logger.Info("monitor: liquidating all positions", map[string]any{"count": len(codes), "filter": filterMarket})
 
 	for _, code := range codes {
 		m.mu.RLock()
@@ -274,7 +354,45 @@ func (m *Monitor) LiquidateAll(ctx context.Context) {
 			continue
 		}
 
-		// Get holdings to find sellable qty.
+		// US positions use overseas API
+		if pos.Market == "US" {
+			usHoldings, usErr := m.kisClient.GetOverseasHoldings(ctx, pos.ExchCode, "USD")
+			if usErr != nil {
+				logger.Error("liquidate US: GetOverseasHoldings failed",
+					map[string]any{"stock_code": code, "error": usErr.Error()})
+				continue
+			}
+			usQty := 0
+			for _, h := range usHoldings {
+				if h.StockCode == code {
+					fmt.Sscanf(h.OrderablQty, "%d", &usQty)
+					break
+				}
+			}
+			if usQty <= 0 {
+				m.Remove(ctx, code)
+				continue
+			}
+			usResp, usErr := m.kisClient.PlaceOverseasSellOrder(ctx, pos.ExchCode, code, usQty)
+			if usErr != nil {
+				logger.Error("liquidate US: PlaceOverseasSellOrder failed",
+					map[string]any{"stock_code": code, "error": usErr.Error()})
+			} else {
+				kisOrderID := ""
+				if usResp != nil {
+					kisOrderID = usResp.KISOrderID
+				}
+				_, _ = m.db.ExecContext(ctx,
+					`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
+					 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'US', ?)`,
+					code, pos.StockName, usQty, pos.FilledPrice, kisOrderID, "일일 자동 청산", time.Now().UTC())
+				logger.Info("liquidate US: sell order placed", map[string]any{"stock_code": code, "qty": usQty})
+			}
+			m.Remove(ctx, code)
+			continue
+		}
+
+		// KR positions
 		holdings, err := m.kisClient.GetHoldings(ctx)
 		if err != nil {
 			logger.Error("liquidate: GetHoldings failed",
@@ -315,13 +433,12 @@ func (m *Monitor) LiquidateAll(ctx context.Context) {
 				kisOrderID = liqResp.KISOrderID
 			}
 			_, _ = m.db.ExecContext(ctx,
-				`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, created_at)
-				 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, ?)`,
+				`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
+				 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
 				code, pos.StockName, qty, pos.FilledPrice, kisOrderID, "일일 자동 청산", time.Now().UTC())
 		}
 
 		if m.mqttPub != nil {
-			// triggerPrice = 청산 시점 현재가 (시장가 매도의 근사 체결가)
 			m.mqttPub.PublishAlert(mqttpkg.EventLiquidation,
 				pos.StockCode, pos.StockName, currentPrice,
 				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, false)
@@ -497,19 +614,44 @@ func (m *Monitor) ResubscribeAll() {
 	m.mu.RUnlock()
 
 	for _, code := range codes {
-		if err := m.wsClient.SubscribePrice(code); err != nil {
-			logger.Error("ResubscribeAll: SubscribePrice failed",
-				map[string]any{"stock_code": code, "error": err.Error()})
+		m.mu.RLock()
+		pos := m.positions[code]
+		m.mu.RUnlock()
+		if pos != nil && pos.Market == "US" && pos.ExchCode != "" {
+			if err := m.wsClient.SubscribeOverseasPrice(exchCodeToEXCD(pos.ExchCode), code); err != nil {
+				logger.Error("ResubscribeAll: SubscribeOverseasPrice failed",
+					map[string]any{"stock_code": code, "error": err.Error()})
+			} else {
+				logger.Info("ResubscribeAll: subscribed overseas", map[string]any{"stock_code": code})
+			}
 		} else {
-			logger.Info("ResubscribeAll: subscribed", map[string]any{"stock_code": code})
+			if err := m.wsClient.SubscribePrice(code); err != nil {
+				logger.Error("ResubscribeAll: SubscribePrice failed",
+					map[string]any{"stock_code": code, "error": err.Error()})
+			} else {
+				logger.Info("ResubscribeAll: subscribed", map[string]any{"stock_code": code})
+			}
 		}
 	}
+}
+
+// exchCodeToEXCD converts order exchange code to WebSocket/quote EXCD.
+// NASD→NAS, NYSE→NYS, AMEX→AMS, SEHK→HKS, SHAA→SHS, SZAA→SZS, TKSE→TSE
+func exchCodeToEXCD(exchCode string) string {
+	m := map[string]string{
+		"NASD": "NAS", "NYSE": "NYS", "AMEX": "AMS",
+		"SEHK": "HKS", "SHAA": "SHS", "SZAA": "SZS", "TKSE": "TSE",
+	}
+	if excd, ok := m[exchCode]; ok {
+		return excd
+	}
+	return exchCode
 }
 
 // LoadFromDB restores monitored positions from the database after a server restart.
 func (m *Monitor) LoadFromDB(ctx context.Context) error {
 	rows, err := m.db.QueryContext(ctx,
-		`SELECT stock_code, stock_name, filled_price, target_price, stop_price, order_id
+		`SELECT stock_code, stock_name, filled_price, target_price, stop_price, order_id, COALESCE(market, 'KR')
 		 FROM monitored_positions`)
 	if err != nil {
 		return fmt.Errorf("load monitored_positions: %w", err)
@@ -518,12 +660,14 @@ func (m *Monitor) LoadFromDB(ctx context.Context) error {
 
 	for rows.Next() {
 		var pos MonitoredEntry
+		var market string
 		if err := rows.Scan(
 			&pos.StockCode, &pos.StockName,
-			&pos.FilledPrice, &pos.TargetPrice, &pos.StopPrice, &pos.OrderID,
+			&pos.FilledPrice, &pos.TargetPrice, &pos.StopPrice, &pos.OrderID, &market,
 		); err != nil {
 			continue
 		}
+		pos.Market = market
 		m.mu.Lock()
 		m.positions[pos.StockCode] = &pos
 		m.mu.Unlock()

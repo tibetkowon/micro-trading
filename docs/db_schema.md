@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-15 (rev 10 — orders에 sell_reason 컬럼 추가)
+> Last updated: 2026-03-16 (rev 11 — orders/monitored_positions에 market 컬럼 추가)
 
 ---
 

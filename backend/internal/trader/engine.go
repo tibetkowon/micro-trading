@@ -32,6 +32,7 @@ const (
 
 // Engine runs autonomous trading cycles: select → order → monitor → repeat.
 type Engine struct {
+	market    string // "KR" or "US"
 	db        *database.DB
 	kisClient *kis.Client
 	wsClient  *kis.WebSocketClient
@@ -47,6 +48,7 @@ type Engine struct {
 
 // NewEngine creates a new Engine with all required dependencies.
 // claude may be nil if ANTHROPIC_API_KEY is not configured (engine will log an error and sleep).
+// market: "KR" (default) or "US".
 func NewEngine(
 	db *database.DB,
 	kisClient *kis.Client,
@@ -54,8 +56,13 @@ func NewEngine(
 	mon *monitor.Monitor,
 	mqttPub *mqttpkg.Publisher,
 	claude *ClaudeClient,
+	market string,
 ) *Engine {
+	if market == "" {
+		market = "KR"
+	}
 	return &Engine{
+		market:    market,
 		db:        db,
 		kisClient: kisClient,
 		wsClient:  wsClient,
@@ -188,6 +195,9 @@ func (e *Engine) runCycle(ctx context.Context) {
 }
 
 func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSettings) error {
+	if e.market == "US" {
+		return e.selectAndBuyUS(ctx, settings)
+	}
 	e.setState(StateSelecting)
 
 	// Build today's exclusion list from DB orders.
@@ -537,7 +547,7 @@ func (e *Engine) countPendingOrders(ctx context.Context) int {
 	e.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM orders
 		 WHERE date(created_at) = date(?) AND source = 'AGENT'
-		   AND order_type = 'BUY' AND status = 'PENDING'`, today,
+		   AND order_type = 'BUY' AND status = 'PENDING' AND market = ?`, today, e.market,
 	).Scan(&count)
 	return count
 }
@@ -549,7 +559,7 @@ func (e *Engine) getTodayTradedCodes(ctx context.Context) []string {
 
 	rows, err := e.db.QueryContext(ctx,
 		`SELECT DISTINCT stock_code FROM orders
-		 WHERE date(created_at) = date(?) AND source = 'AGENT'`, today)
+		 WHERE date(created_at) = date(?) AND source = 'AGENT' AND market = ?`, today, e.market)
 	if err != nil {
 		return nil
 	}
@@ -569,6 +579,9 @@ func (e *Engine) getTodayTradedCodes(ctx context.Context) []string {
 // then returns only stocks that passed ALL enabled ranking types (AND logic).
 // Fields from each ranking type are merged into a single RankItem per stock.
 func (e *Engine) getRankings(ctx context.Context, settings database.TradingSettings) ([]RankItem, error) {
+	if e.market == "US" {
+		return e.getRankingsUS(ctx, settings)
+	}
 	excludeCls := e.db.GetSetting(ctx, "ranking_excl_cls")
 	priceMin := settings.RankingPriceMin
 	priceMax := settings.RankingPriceMax
@@ -808,4 +821,313 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	}
 
 	return result, nil
+}
+
+// getRankingsUS fetches overseas volume ranking for US market.
+func (e *Engine) getRankingsUS(ctx context.Context, settings database.TradingSettings) ([]RankItem, error) {
+	excd := settings.USRankingExchange
+	if excd == "" {
+		excd = "NAS"
+	}
+	prc1 := settings.USRankingPriceMin
+	prc2 := settings.USRankingPriceMax
+	volRang := settings.USRankingVolRang
+	if volRang == "" {
+		volRang = "0"
+	}
+	topN := settings.USRankingTopN
+	if topN == 0 {
+		topN = 20
+	}
+
+	items, err := e.kisClient.GetOverseasVolumeRank(ctx, excd, prc1, prc2, volRang)
+	if err != nil {
+		return nil, fmt.Errorf("GetOverseasVolumeRank: %w", err)
+	}
+
+	result := make([]RankItem, 0, len(items))
+	for i, item := range items {
+		if topN > 0 && i >= topN {
+			break
+		}
+		result = append(result, RankItem{
+			DataRank:     item.Rank,
+			StockCode:    item.Symb,
+			StockName:    item.Ename,
+			CurrentPrice: item.Last,
+			Volume:       item.TVol,
+			RankingType:  "us_volume",
+		})
+	}
+
+	typesJSON, _ := json.Marshal(settings.USRankingTypes)
+	e.db.InsertRankingLog(ctx, models.TraderRankingLog{ //nolint:errcheck
+		RankingTypes:      string(typesJSON),
+		PriceMin:          prc1,
+		PriceMax:          prc2,
+		VolumeCount:       len(result),
+		IntersectionCount: len(result),
+	})
+
+	return result, nil
+}
+
+// excdToExchCode converts WebSocket EXCD to order OVRS_EXCG_CD.
+func excdToExchCode(excd string) string {
+	m := map[string]string{
+		"NAS": "NASD", "NYS": "NYSE", "AMS": "AMEX",
+		"HKS": "SEHK", "SHS": "SHAA", "SZS": "SZAA", "TSE": "TKSE",
+	}
+	if code, ok := m[excd]; ok {
+		return code
+	}
+	return excd
+}
+
+// selectAndBuyUS is the US market version of selectAndBuy.
+// Uses overseas KIS APIs for ranking, price, and order placement.
+func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSettings) error {
+	e.setState(StateSelecting)
+
+	excludedCodes := e.getTodayTradedCodes(ctx)
+
+	rankings, err := e.getRankings(ctx, settings)
+	if err != nil {
+		e.setState(StateMonitoring)
+		return fmt.Errorf("getRankings US: %w", err)
+	}
+	if len(rankings) == 0 {
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no US ranking results")
+	}
+
+	if len(excludedCodes) > 0 {
+		excludeSet := make(map[string]bool, len(excludedCodes))
+		for _, code := range excludedCodes {
+			excludeSet[code] = true
+		}
+		filtered := make([]RankItem, 0, len(rankings))
+		for _, r := range rankings {
+			if !excludeSet[r.StockCode] {
+				filtered = append(filtered, r)
+			}
+		}
+		rankings = filtered
+	}
+	if len(rankings) == 0 {
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no US ranking results after excluding already-traded stocks")
+	}
+
+	excd := settings.USRankingExchange
+	if excd == "" {
+		excd = "NAS"
+	}
+	exchCode := excdToExchCode(excd)
+
+	// Persist selection log
+	var selectionLogID int64
+	{
+		candidatesJSON, _ := json.Marshal(rankings)
+		res, dbErr := e.db.ExecContext(ctx,
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result) VALUES (?,?,?)`,
+			len(rankings), string(candidatesJSON), "")
+		if dbErr == nil {
+			selectionLogID, _ = res.LastInsertId()
+		}
+	}
+
+	// Ask Claude to rank US candidates
+	// Get available USD amount (use first candidate's price for estimate)
+	availableUSD := float64(10000) // fallback default
+	if len(rankings) > 0 {
+		priceResp, priceErr := e.kisClient.GetOverseasPrice(ctx, excd, rankings[0].StockCode)
+		if priceErr == nil && priceResp.Last != "" {
+			availStr, avErr := e.kisClient.GetOverseasAvailableOrder(ctx, exchCode, rankings[0].StockCode, priceResp.Last)
+			if avErr == nil {
+				if v, pErr := strconv.ParseFloat(availStr, 64); pErr == nil && v > 0 {
+					availableUSD = v
+				}
+			}
+		}
+	}
+
+	candidates, err := e.claude.SelectStocks(ctx, rankings, availableUSD, nil)
+	if err != nil {
+		if selectionLogID > 0 {
+			e.db.ExecContext(ctx, //nolint:errcheck
+				`UPDATE trader_selection_logs SET fail_reason=? WHERE id=?`,
+				"LLM 오류: "+err.Error(), selectionLogID)
+		}
+		e.setState(StateMonitoring)
+		return fmt.Errorf("SelectStocks US: %w", err)
+	}
+
+	if selectionLogID > 0 {
+		llmResultJSON, _ := json.Marshal(candidates)
+		e.db.ExecContext(ctx, //nolint:errcheck
+			`UPDATE trader_selection_logs SET llm_result=? WHERE id=?`,
+			string(llmResultJSON), selectionLogID)
+	}
+
+	var (
+		stockCode   string
+		filledPrice float64
+		filledQty   int
+		orderID     int64
+		kisOrderID  string
+	)
+
+	for i, candidate := range candidates {
+		code := candidate.StockCode
+		logger.Info("engine US: trying candidate",
+			map[string]any{"rank": i + 1, "stock_code": code, "reason": candidate.Reason})
+
+		e.setState(StateOrdering)
+
+		// Get current price
+		priceResp, priceErr := e.kisClient.GetOverseasPrice(ctx, excd, code)
+		if priceErr != nil {
+			logger.Warn("engine US: GetOverseasPrice failed, skipping",
+				map[string]any{"stock_code": code, "error": priceErr.Error()})
+			continue
+		}
+		currentPrice, pErr := strconv.ParseFloat(priceResp.Last, 64)
+		if pErr != nil || currentPrice <= 0 {
+			logger.Warn("engine US: invalid price, skipping", map[string]any{"stock_code": code})
+			continue
+		}
+
+		// Get available USD for this stock
+		availStr, _ := e.kisClient.GetOverseasAvailableOrder(ctx, exchCode, code, priceResp.Last)
+		availUSD, _ := strconv.ParseFloat(availStr, 64)
+		if availUSD <= 0 {
+			availUSD = availableUSD
+		}
+
+		orderAmt := availUSD * settings.OrderAmountPct / 100
+		qty := int(orderAmt / currentPrice)
+		if qty <= 0 {
+			qty = 1
+		}
+
+		// Find stock name from rankings
+		candidateName := code
+		for _, r := range rankings {
+			if r.StockCode == code {
+				candidateName = r.StockName
+				if candidateName == "" {
+					candidateName = code
+				}
+				break
+			}
+		}
+
+		// Place buy order
+		usResp, usErr := e.kisClient.PlaceOverseasBuyOrder(ctx, exchCode, code, qty, currentPrice)
+		if usErr != nil {
+			logger.Warn("engine US: PlaceOverseasBuyOrder failed, skipping",
+				map[string]any{"stock_code": code, "error": usErr.Error()})
+			continue
+		}
+
+		// Insert order to DB
+		dbRes, dbErr := e.db.ExecContext(ctx,
+			`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, source, target_pct, stop_pct, market, created_at)
+			 VALUES (?, ?, 'BUY', ?, ?, 'PENDING', ?, 'AGENT', ?, ?, 'US', ?)`,
+			code, candidateName, qty, currentPrice, usResp.KISOrderID,
+			settings.TakeProfitPct, settings.StopLossPct, time.Now().UTC())
+		if dbErr != nil {
+			logger.Warn("engine US: DB insert failed", map[string]any{"error": dbErr.Error()})
+		}
+		var dbOrderID int64
+		if dbErr == nil {
+			dbOrderID, _ = dbRes.LastInsertId()
+		}
+
+		e.setState(StateWaitingFill)
+
+		fillCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		fp, fq, filled := e.waitForFill(fillCtx, usResp.KISOrderID)
+		cancel()
+
+		if !filled {
+			logger.Warn("engine US: fill timeout, trying next candidate",
+				map[string]any{"stock_code": code})
+			// Mark as failed
+			e.db.ExecContext(ctx, //nolint:errcheck
+				`UPDATE orders SET status = 'FAILED' WHERE id = ?`, dbOrderID)
+			continue
+		}
+
+		stockCode = code
+		filledPrice = fp
+		filledQty = fq
+		orderID = dbOrderID
+		kisOrderID = usResp.KISOrderID
+		break
+	}
+
+	if stockCode == "" {
+		if selectionLogID > 0 {
+			e.db.ExecContext(ctx, //nolint:errcheck
+				`UPDATE trader_selection_logs SET fail_reason=? WHERE id=?`,
+				fmt.Sprintf("모든 US 후보 %d개 주문 실패", len(candidates)), selectionLogID)
+		}
+		e.setState(StateMonitoring)
+		return fmt.Errorf("all US candidates failed")
+	}
+
+	_ = kisOrderID
+
+	logger.Info("engine US: order filled",
+		map[string]any{"stock_code": stockCode, "filled_price": filledPrice, "filled_qty": filledQty})
+
+	if selectionLogID > 0 {
+		chosenReason := ""
+		for _, cand := range candidates {
+			if cand.StockCode == stockCode {
+				chosenReason = cand.Reason
+				break
+			}
+		}
+		e.db.ExecContext(ctx, //nolint:errcheck
+			`UPDATE trader_selection_logs SET selected_code=?, selected_reason=? WHERE id=?`,
+			stockCode, chosenReason, selectionLogID)
+	}
+
+	stockName := stockCode
+	for _, r := range rankings {
+		if r.StockCode == stockCode {
+			stockName = r.StockName
+			if stockName == "" {
+				stockName = stockCode
+			}
+			break
+		}
+	}
+
+	// Update order fill in DB
+	e.db.ExecContext(ctx, //nolint:errcheck
+		`UPDATE orders SET filled_price = ?, status = ? WHERE id = ?`,
+		filledPrice, string(models.OrderStatusFilled), orderID)
+
+	// Register with monitor
+	entry := monitor.MonitoredEntry{
+		StockCode:   stockCode,
+		StockName:   stockName,
+		FilledPrice: filledPrice,
+		TargetPrice: filledPrice * (1 + settings.TakeProfitPct/100),
+		StopPrice:   filledPrice * (1 - settings.StopLossPct/100),
+		OrderID:     orderID,
+		Market:      "US",
+		ExchCode:    exchCode,
+		SoldCh:      e.soldCh,
+	}
+	if regErr := e.mon.Register(ctx, entry); regErr != nil {
+		logger.Error("engine US: Register position failed", map[string]any{"error": regErr.Error()})
+	}
+
+	e.setState(StateMonitoring)
+	return nil
 }
