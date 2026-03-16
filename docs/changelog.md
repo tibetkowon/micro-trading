@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-16 — KIS API 명세 업데이트 + 국내·미장 동시 트레이딩 아키텍처 설계
+
+- **docs/kis-api/주문계좌.md**: 현재 사용 중인 TR_ID 중심으로 전면 재작성 (TTTC0012U/0011U/0013U/0084R/0081R/8434R/8908R)
+- **docs/kis-api/기본시세.md**: FHKST01010100/FHKST03010100/FHKST03010200 최신화
+- **docs/kis-api/순위분석.md**: 사용 중인 4종 API 상세화 + 전체 API 목록 추가
+- **docs/kis-api/실시간.md**: H0STCNT0/H0STCNI0/H0STASP0 WebSocket URL·필드 최신화
+- **docs/kis-api/해외주식_주문계좌.md** (신규): TTTT1002U/1006U/1004U/TTTS3007R/3018R/3012R/3035R 명세
+- **docs/kis-api/해외주식_기본시세.md** (신규): HHDFS00000300/HHDFS76950200/HHDFS76240000 명세
+- **docs/kis-api/해외주식_시세분석.md** (신규): 8종 순위 API (HHDFS76310010 등) 명세
+- **docs/kis-api/해외주식_실시간.md** (신규): HDFSCNT0/HDFSASP0/H0GSCNI0 WebSocket 명세
+- **docs/reviews/2026-03-16-dual-market-architecture.md** (신규): 국내·미장 동시 운영 전체 아키텍처 설계 (DB 스키마, Engine 분리, KIS Client 신규 함수, 스케줄러, UI 확장 계획)
+
 ## 2026-03-16 — 주문 정렬 변경 + 리포트 기능 제거 + 순위 AND/OR 조건 추가
 
 - **agent/history.go**: 주문 내역 정렬 `ORDER BY created_at DESC, id DESC` → `ASC, ASC` (오래된 주문이 위로)
