@@ -185,7 +185,7 @@ func StartOrderSyncScheduler(ctx context.Context, client *kis.Client, db *databa
 func GetLocalOrderHistory(ctx context.Context, db *database.DB, limit, offset int) ([]models.Order, error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, stock_code, stock_name, order_type, qty, price, filled_price, status, kis_order_id, source, sell_reason, created_at
-		 FROM orders ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+		 FROM orders ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?`,
 		limit, offset,
 	)
 	if err != nil {

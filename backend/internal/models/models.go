@@ -111,14 +111,6 @@ type TraderRankingLog struct {
 	ErrorMessage      string    `json:"error_message"`
 }
 
-// Report stores a daily AI-generated trading report.
-type Report struct {
-	ID         int64     `json:"id"`
-	ReportDate string    `json:"report_date"` // "2006-01-02"
-	Content    string    `json:"content"`     // 한국어 마크다운
-	CreatedAt  time.Time `json:"created_at"`
-}
-
 // Token stores the KIS OAuth access token and its validity window.
 type Token struct {
 	ID          int64     `json:"id"`

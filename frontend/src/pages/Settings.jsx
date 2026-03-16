@@ -74,6 +74,8 @@ export default function Settings() {
   const [disparityD20Min, setDisparityD20Min] = useState('0')
   const [disparityD20Max, setDisparityD20Max] = useState('0')
 
+  const [rankingCondition, setRankingCondition] = useState('AND')
+
   // ── 매수 설정 ──
   const [maxPositions, setMaxPositions] = useState('1')
   const [orderAmountPct, setOrderAmountPct] = useState('95')
@@ -113,6 +115,7 @@ export default function Settings() {
     if (data.ranking_execcount_net_buy_only != null) setExecCountNetBuyOnly(data.ranking_execcount_net_buy_only)
     if (data.ranking_disparity_d20_min != null) setDisparityD20Min(String(data.ranking_disparity_d20_min))
     if (data.ranking_disparity_d20_max != null) setDisparityD20Max(String(data.ranking_disparity_d20_max))
+    if (data.ranking_condition === 'AND' || data.ranking_condition === 'OR') setRankingCondition(data.ranking_condition)
 
     if (data.max_positions != null) setMaxPositions(String(data.max_positions))
     if (data.order_amount_pct != null) setOrderAmountPct(String(data.order_amount_pct))
@@ -177,6 +180,7 @@ export default function Settings() {
       ranking_execcount_net_buy_only: execCountNetBuyOnly,
       ranking_disparity_d20_min: parseFloat(disparityD20Min) || 0,
       ranking_disparity_d20_max: parseFloat(disparityD20Max) || 0,
+      ranking_condition: rankingCondition,
       max_positions: parseInt(maxPositions) || 1,
       order_amount_pct: parseFloat(orderAmountPct) || 95,
       take_profit_pct: parseFloat(takeProfitPct) || 3.0,
@@ -431,6 +435,28 @@ export default function Settings() {
                   </label>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* 순위 조건 (AND/OR) */}
+          <div className="space-y-2 pt-3 border-t border-gray-800">
+            <p className="text-xs text-gray-400">순위 조건</p>
+            <p className="text-xs text-gray-600">AND: 모든 선택 순위에 공통으로 포함된 종목만 / OR: 하나 이상의 순위에 포함된 종목 모두</p>
+            <div className="flex gap-2">
+              {['AND', 'OR'].map((cond) => (
+                <button
+                  key={cond}
+                  type="button"
+                  onClick={() => setRankingCondition(cond)}
+                  className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
+                    rankingCondition === cond
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {cond}
+                </button>
+              ))}
             </div>
           </div>
         </div>

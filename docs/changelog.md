@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-03-16 — 주문 정렬 변경 + 리포트 기능 제거 + 순위 AND/OR 조건 추가
+
+- **agent/history.go**: 주문 내역 정렬 `ORDER BY created_at DESC, id DESC` → `ASC, ASC` (오래된 주문이 위로)
+- **리포트 기능 완전 제거**: `engine.go` `GenerateDailyReport()` + `tradeRow` 제거, `claude.go` `ReportSummary` + `GenerateReport()` 제거, `handlers.go` `GetReports()` + `GetReport()` 제거, `router.go` `/api/reports` 라우트 제거, `database/db.go` `SaveReport()` 제거, `models/models.go` `Report` 구조체 제거, `cmd/server/main.go` 15:20 리포트 스케줄러 제거, `App.jsx` 리포트 임포트/라우트/네비 제거, `pages/Reports.jsx` 파일 삭제 (DB `reports` 테이블은 보존)
+- **순위 AND/OR 조건**: `database/db.go` `TradingSettings.RankingCondition` 필드 + 기본값 `"AND"` 추가, `engine.go` `getRankings()` OR 합집합 로직 분기 추가, `handlers.go` `GetSettings`/`UpdateSettings`에 `ranking_condition` 포함, `Settings.jsx` AND/OR 토글 버튼 UI 추가
+
 ## 2026-03-15 — WebSocket 자동 연결 버그 수정 + 매도 판단 근거 저장 및 표시
 
 - **cmd/server/main.go**: 08:50 스케줄러에서 `wsClient.SetReconnectCancel(wsCancel)` 호출 추가. 매일 16:00 `Disconnect()`가 `intentionalStop = true`로 설정하여 다음날 `StartWithReconnect`가 즉시 종료되는 버그 수정 → 이제 `SetReconnectCancel()`이 플래그를 리셋하여 자동 연결 정상 동작

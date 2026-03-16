@@ -8,7 +8,6 @@ import KISLogs from './pages/KISLogs'
 import SelectionLogs from './pages/SelectionLogs'
 import RankingLogs from './pages/RankingLogs'
 import Settings from './pages/Settings'
-import Reports from './pages/Reports'
 
 const navItems = [
   { to: '/', label: '대시보드', end: true },
@@ -18,7 +17,6 @@ const navItems = [
   { to: '/selection-logs', label: '선정 로그' },
   { to: '/ranking-logs', label: '순위 조회 로그' },
   { to: '/settings', label: '설정' },
-  { to: '/reports', label: '리포트' },
 ]
 
 const desktopNavClass = ({ isActive }) =>
@@ -115,7 +113,6 @@ export default function App() {
           <Route path="/selection-logs" element={<SelectionLogs />} />
           <Route path="/ranking-logs" element={<RankingLogs />} />
           <Route path="/settings" element={<Settings />} />
-          <Route path="/reports" element={<Reports />} />
         </Routes>
       </main>
     </div>

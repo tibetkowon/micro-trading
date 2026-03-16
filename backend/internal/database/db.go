@@ -41,6 +41,8 @@ type TradingSettings struct {
 	// 횡보 감지
 	StagnationThresholdPct float64 // 횡보 판단 기준 변동폭 (%)
 	StagnationDurationMin  int     // 횡보 지속 시간 (분)
+	// 순위 조건
+	RankingCondition string // "AND" | "OR"
 }
 
 // DB wraps the sql.DB connection.
@@ -207,6 +209,7 @@ func (db *DB) migrate() error {
 		{"trading_end_time", "15:15"},
 		{"stagnation_threshold_pct", "1.0"},
 		{"stagnation_duration_min", "30"},
+		{"ranking_condition", "AND"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -236,7 +239,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'ranking_execcount_net_buy_only','ranking_disparity_d20_min','ranking_disparity_d20_max',`+
 			`'ranking_top_n',`+
 			`'trading_start_time','trading_end_time',`+
-			`'stagnation_threshold_pct','stagnation_duration_min'`+
+			`'stagnation_threshold_pct','stagnation_duration_min',`+
+			`'ranking_condition'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -321,6 +325,10 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	if stagnationDurationMin == 0 {
 		stagnationDurationMin = 30
 	}
+	rankingCondition := vals["ranking_condition"]
+	if rankingCondition != "AND" && rankingCondition != "OR" {
+		rankingCondition = "AND"
+	}
 
 	return TradingSettings{
 		TakeProfitPct:              takeProfitPct,
@@ -345,16 +353,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		TradingEndTime:             tradingEndTime,
 		StagnationThresholdPct:     stagnationThresholdPct,
 		StagnationDurationMin:      stagnationDurationMin,
+		RankingCondition:           rankingCondition,
 	}, nil
-}
-
-// SaveReport upserts a daily trading report.
-func (db *DB) SaveReport(ctx context.Context, reportDate, content string) error {
-	_, err := db.ExecContext(ctx,
-		`INSERT INTO reports (report_date, content, created_at) VALUES (?, ?, datetime('now'))
-		 ON CONFLICT(report_date) DO UPDATE SET content = excluded.content, created_at = excluded.created_at`,
-		reportDate, content)
-	return err
 }
 
 // GetSetting returns the value for the given key from the settings table.

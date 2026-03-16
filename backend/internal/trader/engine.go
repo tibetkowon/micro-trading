@@ -701,55 +701,86 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		return nil, fmt.Errorf("no ranking types configured")
 	}
 
-	// AND intersection: keep only stocks present in every enabled ranking type.
-	// Use the first type as seed, then filter against the rest.
-	var seedType string
-	for k := range byType {
-		seedType = k
-		break
-	}
-
 	var result []RankItem
-	for code, base := range byType[seedType] {
-		inAll := true
-		for rt, m := range byType {
-			if rt == seedType {
-				continue
-			}
-			if _, ok := m[code]; !ok {
-				inAll = false
-				break
+
+	if settings.RankingCondition == "OR" {
+		// OR union: collect stocks appearing in any ranking type.
+		seen := map[string]RankItem{}
+		for _, m := range byType {
+			for code, item := range m {
+				if existing, exists := seen[code]; !exists {
+					item.RankingType = strings.Join(settings.RankingTypes, "|")
+					seen[code] = item
+				} else {
+					if item.VolIncrRate != "" {
+						existing.VolIncrRate = item.VolIncrRate
+					}
+					if item.Strength != "" {
+						existing.Strength = item.Strength
+					}
+					if item.NetBuyQty != "" {
+						existing.NetBuyQty = item.NetBuyQty
+					}
+					if item.DisparityD20 != "" {
+						existing.DisparityD20 = item.DisparityD20
+					}
+					seen[code] = existing
+				}
 			}
 		}
-		if !inAll {
-			continue
+		for _, item := range seen {
+			result = append(result, item)
+		}
+	} else {
+		// AND intersection: keep only stocks present in every enabled ranking type.
+		// Use the first type as seed, then filter against the rest.
+		var seedType string
+		for k := range byType {
+			seedType = k
+			break
 		}
 
-		// Merge fields from all ranking types into one RankItem.
-		merged := base
-		merged.RankingType = strings.Join(settings.RankingTypes, "+")
-		for rt, m := range byType {
-			if rt == seedType {
+		for code, base := range byType[seedType] {
+			inAll := true
+			for rt, m := range byType {
+				if rt == seedType {
+					continue
+				}
+				if _, ok := m[code]; !ok {
+					inAll = false
+					break
+				}
+			}
+			if !inAll {
 				continue
 			}
-			other := m[code]
-			if other.VolIncrRate != "" {
-				merged.VolIncrRate = other.VolIncrRate
+
+			// Merge fields from all ranking types into one RankItem.
+			merged := base
+			merged.RankingType = strings.Join(settings.RankingTypes, "+")
+			for rt, m := range byType {
+				if rt == seedType {
+					continue
+				}
+				other := m[code]
+				if other.VolIncrRate != "" {
+					merged.VolIncrRate = other.VolIncrRate
+				}
+				if other.Strength != "" {
+					merged.Strength = other.Strength
+				}
+				if other.NetBuyQty != "" {
+					merged.NetBuyQty = other.NetBuyQty
+				}
+				if other.DisparityD20 != "" {
+					merged.DisparityD20 = other.DisparityD20
+				}
 			}
-			if other.Strength != "" {
-				merged.Strength = other.Strength
-			}
-			if other.NetBuyQty != "" {
-				merged.NetBuyQty = other.NetBuyQty
-			}
-			if other.DisparityD20 != "" {
-				merged.DisparityD20 = other.DisparityD20
-			}
+			result = append(result, merged)
 		}
-		result = append(result, merged)
 	}
 
-	logger.Info("engine: rankings intersection", map[string]any{
+	logger.Info("engine: rankings result", map[string]any{
 		"types": settings.RankingTypes,
 		"count": len(result),
 	})
@@ -779,130 +810,3 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	return result, nil
 }
 
-// tradeRow holds a matched buy+sell pair for report generation.
-type tradeRow struct {
-	StockName string
-	BuyPrice  float64
-	SellPrice float64
-	Qty       int
-	PnL       float64
-	PnLPct    float64
-}
-
-// GenerateDailyReport builds a markdown report: server renders the table,
-// Claude writes the analysis section.
-func (e *Engine) GenerateDailyReport(ctx context.Context) (string, error) {
-	if e.claude == nil {
-		return "", fmt.Errorf("claude client not configured")
-	}
-
-	kst, _ := time.LoadLocation("Asia/Seoul")
-	today := time.Now().In(kst).Format("2006-01-02")
-
-	// Load today's FILLED orders from DB.
-	rows, err := e.db.QueryContext(ctx,
-		`SELECT stock_code, stock_name, order_type, qty, filled_price
-		 FROM orders
-		 WHERE date(created_at) = date(?) AND source = 'AGENT' AND status = 'FILLED'
-		 ORDER BY id`, today)
-	if err != nil {
-		return "", fmt.Errorf("load today's orders: %w", err)
-	}
-	defer rows.Close()
-
-	type orderRow struct {
-		Code        string
-		Name        string
-		Type        string
-		Qty         int
-		FilledPrice float64
-	}
-	var orders []orderRow
-	for rows.Next() {
-		var o orderRow
-		if err := rows.Scan(&o.Code, &o.Name, &o.Type, &o.Qty, &o.FilledPrice); err == nil {
-			orders = append(orders, o)
-		}
-	}
-
-	// Match BUY → SELL pairs per stock code (FIFO).
-	buyMap := map[string][]orderRow{}
-	var trades []tradeRow
-	for _, o := range orders {
-		if o.Type == "BUY" {
-			buyMap[o.Code] = append(buyMap[o.Code], o)
-		} else if o.Type == "SELL" {
-			if buys := buyMap[o.Code]; len(buys) > 0 {
-				buy := buys[0]
-				buyMap[o.Code] = buys[1:]
-				pnl := (o.FilledPrice - buy.FilledPrice) * float64(o.Qty)
-				pnlPct := (o.FilledPrice - buy.FilledPrice) / buy.FilledPrice * 100
-				trades = append(trades, tradeRow{
-					StockName: buy.Name,
-					BuyPrice:  buy.FilledPrice,
-					SellPrice: o.FilledPrice,
-					Qty:       o.Qty,
-					PnL:       pnl,
-					PnLPct:    pnlPct,
-				})
-			}
-		}
-	}
-
-	// Build markdown table.
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("# %s 트레이딩 리포트\n\n", today))
-	sb.WriteString("## 거래 결과\n\n")
-	if len(trades) == 0 {
-		sb.WriteString("오늘 완결된 거래가 없습니다.\n")
-	} else {
-		sb.WriteString("| 종목 | 매수가 | 매도가 | 수량 | 손익 | 수익률 |\n")
-		sb.WriteString("|------|--------|--------|------|------|--------|\n")
-		totalPnL := 0.0
-		winCount, lossCount := 0, 0
-		for _, t := range trades {
-			sign := "+"
-			if t.PnL < 0 {
-				sign = ""
-				lossCount++
-			} else {
-				winCount++
-			}
-			sb.WriteString(fmt.Sprintf("| %s | %.0f | %.0f | %d | %s%.0f원 | %s%.1f%% |\n",
-				t.StockName, t.BuyPrice, t.SellPrice, t.Qty, sign, t.PnL, sign, t.PnLPct))
-			totalPnL += t.PnL
-		}
-		sign := "+"
-		if totalPnL < 0 {
-			sign = ""
-		}
-		sb.WriteString(fmt.Sprintf("\n**총 실현 손익: %s%.0f원 | 승률: %d/%d**\n",
-			sign, totalPnL, winCount, len(trades)))
-
-		// Get account balance for Claude summary.
-		totalEval, withdrawable := 0.0, 0.0
-		if summary, balErr := e.kisClient.GetInquireBalance(ctx); balErr == nil {
-			totalEval, _ = strconv.ParseFloat(summary.TotalEval, 64)
-			withdrawable, _ = strconv.ParseFloat(summary.DepositAmt, 64)
-		}
-
-		// Claude writes the analysis section only.
-		analysis, claudeErr := e.claude.GenerateReport(ctx, ReportSummary{
-			Date:         today,
-			TotalPnL:     totalPnL,
-			WinCount:     winCount,
-			LossCount:    lossCount,
-			TotalEval:    totalEval,
-			Withdrawable: withdrawable,
-		})
-		if claudeErr != nil {
-			logger.Warn("report: claude analysis failed", map[string]any{"err": claudeErr.Error()})
-			analysis = "(AI 분석 생성 실패)"
-		}
-		sb.WriteString("\n## AI 분석\n\n")
-		sb.WriteString(analysis)
-		sb.WriteString("\n")
-	}
-
-	return sb.String(), nil
-}

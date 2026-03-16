@@ -315,22 +315,6 @@ func runMarketScheduler(ctx context.Context,
 				logger.Info("market scheduler: end-time liquidation triggered", map[string]any{"hhmm": hhmm, "end": endHHMM})
 				mon.LiquidateAll(ctx)
 
-			case hhmm == 1520:
-				// 15:20 — generate daily report
-				report, err := eng.GenerateDailyReport(ctx)
-				if err != nil {
-					logger.Error("market scheduler: daily report generation failed",
-						map[string]any{"error": err.Error()})
-				} else {
-					kstDate := now.Format("2006-01-02")
-					if saveErr := db.SaveReport(ctx, kstDate, report); saveErr != nil {
-						logger.Error("market scheduler: save report failed",
-							map[string]any{"error": saveErr.Error()})
-					} else {
-						logger.Info("market scheduler: daily report saved", map[string]any{"date": kstDate})
-					}
-				}
-
 			case hhmm == 1600 && wsRunning:
 				// 16:00 — disconnect
 				wsClient.Disconnect()

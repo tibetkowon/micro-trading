@@ -490,6 +490,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"trading_end_time":               ts.TradingEndTime,
 		"stagnation_threshold_pct":       ts.StagnationThresholdPct,
 		"stagnation_duration_min":        ts.StagnationDurationMin,
+		"ranking_condition":              ts.RankingCondition,
 	})
 }
 
@@ -521,6 +522,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		TradingEndTime             string   `json:"trading_end_time"`
 		StagnationThresholdPct     *float64 `json:"stagnation_threshold_pct"`
 		StagnationDurationMin      *int     `json:"stagnation_duration_min"`
+		RankingCondition           string   `json:"ranking_condition"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -710,6 +712,12 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	if req.RankingCondition == "AND" || req.RankingCondition == "OR" {
+		if !save("ranking_condition", req.RankingCondition) {
+			return
+		}
+	}
+
 	if !changed {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "변경할 항목이 없습니다"})
 		return
@@ -849,29 +857,6 @@ func (h *Handler) GetMarketStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"is_open": true, "checked_at": checkedAt, "reason": "open"})
 }
 
-// GET /api/reports — 일일 리포트 목록 (날짜 내림차순)
-func (h *Handler) GetReports(c *gin.Context) {
-	rows, err := h.db.QueryContext(c.Request.Context(),
-		`SELECT id, report_date, created_at FROM reports ORDER BY report_date DESC LIMIT 30`)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	defer rows.Close()
-
-	var reports []models.Report
-	for rows.Next() {
-		var r models.Report
-		if err := rows.Scan(&r.ID, &r.ReportDate, &r.CreatedAt); err == nil {
-			reports = append(reports, r)
-		}
-	}
-	if reports == nil {
-		reports = []models.Report{}
-	}
-	c.JSON(http.StatusOK, gin.H{"reports": reports})
-}
-
 // POST /api/ws/connect — 수동 WebSocket 연결 (테스트·장애 복구용)
 // 1) approval_key 발급 → 2) StartWithReconnect → 3) ResubscribeAll
 func (h *Handler) ConnectWebSocket(c *gin.Context) {
@@ -939,21 +924,3 @@ func (h *Handler) DisconnectWebSocket(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "WebSocket disconnected"})
 }
 
-// GET /api/reports/:date — 특정 날짜 리포트 전문 조회 (YYYY-MM-DD)
-func (h *Handler) GetReport(c *gin.Context) {
-	date := c.Param("date")
-	if date == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "date parameter required"})
-		return
-	}
-
-	var r models.Report
-	err := h.db.QueryRowContext(c.Request.Context(),
-		`SELECT id, report_date, content, created_at FROM reports WHERE report_date = ?`, date,
-	).Scan(&r.ID, &r.ReportDate, &r.Content, &r.CreatedAt)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
-		return
-	}
-	c.JSON(http.StatusOK, r)
-}
