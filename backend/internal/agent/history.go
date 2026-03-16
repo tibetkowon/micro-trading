@@ -184,7 +184,7 @@ func StartOrderSyncScheduler(ctx context.Context, client *kis.Client, db *databa
 // sorted by actual order time (created_at DESC) so manual and agent orders appear in correct chronological order.
 func GetLocalOrderHistory(ctx context.Context, db *database.DB, limit, offset int) ([]models.Order, error) {
 	rows, err := db.QueryContext(ctx,
-		`SELECT id, stock_code, stock_name, order_type, qty, price, filled_price, status, kis_order_id, source, created_at
+		`SELECT id, stock_code, stock_name, order_type, qty, price, filled_price, status, kis_order_id, source, sell_reason, created_at
 		 FROM orders ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
 		limit, offset,
 	)
@@ -196,7 +196,7 @@ func GetLocalOrderHistory(ctx context.Context, db *database.DB, limit, offset in
 	var orders []models.Order
 	for rows.Next() {
 		var o models.Order
-		if err := rows.Scan(&o.ID, &o.StockCode, &o.StockName, &o.OrderType, &o.Qty, &o.Price, &o.FilledPrice, &o.Status, &o.KISOrderID, &o.Source, &o.CreatedAt); err != nil {
+		if err := rows.Scan(&o.ID, &o.StockCode, &o.StockName, &o.OrderType, &o.Qty, &o.Price, &o.FilledPrice, &o.Status, &o.KISOrderID, &o.Source, &o.SellReason, &o.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan order: %w", err)
 		}
 		orders = append(orders, o)

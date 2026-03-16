@@ -232,8 +232,10 @@ func runMarketScheduler(ctx context.Context,
 					continue
 				}
 
+				wsCtx, wsCancel := context.WithCancel(ctx)
 				wsClient.SetApprovalKey(approvalKey)
-				go wsClient.StartWithReconnect(ctx)
+				wsClient.SetReconnectCancel(wsCancel)
+				go wsClient.StartWithReconnect(wsCtx)
 				wsRunning = true
 				tradingReady = false
 

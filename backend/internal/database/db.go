@@ -176,6 +176,7 @@ func (db *DB) migrate() error {
 		`ALTER TABLE orders ADD COLUMN target_pct   REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE orders ADD COLUMN stop_pct     REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE trader_selection_logs ADD COLUMN fail_reason TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE orders ADD COLUMN sell_reason TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, s := range alterStmts {
 		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시

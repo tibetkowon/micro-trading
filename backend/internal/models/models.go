@@ -47,9 +47,10 @@ type Order struct {
 	FilledPrice float64     `json:"filled_price"` // 체결가 (체결 후 avg_prvs 기준)
 	Status      OrderStatus `json:"status"`
 	KISOrderID  string      `json:"kis_order_id"`
-	Source      OrderSource `json:"source"`     // AGENT: 에이전트 주문 / MANUAL: 수동 거래 감지
-	TargetPct   float64     `json:"target_pct"` // 목표 수익률 (%)
-	StopPct     float64     `json:"stop_pct"`   // 손절 비율 (%)
+	Source      OrderSource `json:"source"`      // AGENT: 에이전트 주문 / MANUAL: 수동 거래 감지
+	TargetPct   float64     `json:"target_pct"`  // 목표 수익률 (%)
+	StopPct     float64     `json:"stop_pct"`    // 손절 비율 (%)
+	SellReason  string      `json:"sell_reason"` // 매도 사유 (자동 매도 시만 값 있음)
 	CreatedAt   time.Time   `json:"created_at"`
 }
 

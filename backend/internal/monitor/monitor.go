@@ -150,7 +150,7 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 			map[string]any{"stock_code": stockCode, "price": price, "target": pos.TargetPrice})
 		sellQty := 0
 		if !isTest {
-			sellQty = m.executeSell(stockCode, pos)
+			sellQty = m.executeSell(stockCode, pos, "목표가 도달")
 		}
 		if m.mqttPub != nil {
 			m.mqttPub.PublishAlert(mqttpkg.EventTargetHit,
@@ -164,7 +164,7 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 			map[string]any{"stock_code": stockCode, "price": price, "stop": pos.StopPrice})
 		sellQty := 0
 		if !isTest {
-			sellQty = m.executeSell(stockCode, pos)
+			sellQty = m.executeSell(stockCode, pos, "손절가 도달")
 		}
 		if m.mqttPub != nil {
 			m.mqttPub.PublishAlert(mqttpkg.EventStopHit,
@@ -194,7 +194,7 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 
 // executeSell places a market sell order for the given position and returns the qty sold.
 // Returns 0 if holdings lookup fails, qty is 0, or sell order fails.
-func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry) int {
+func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason string) int {
 	ctx := context.Background()
 
 	holdings, err := m.kisClient.GetHoldings(ctx)
@@ -216,7 +216,7 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry) int {
 		return 0
 	}
 
-	_, err = m.kisClient.PlaceSellOrder(ctx, kis.OrderRequest{
+	resp, err := m.kisClient.PlaceSellOrder(ctx, kis.OrderRequest{
 		StockCode: stockCode,
 		OrderDivn: "01", // 시장가
 		Qty:       fmt.Sprintf("%d", qty),
@@ -229,7 +229,16 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry) int {
 	}
 
 	logger.Info("auto-sell: sell order placed",
-		map[string]any{"stock_code": stockCode, "qty": qty, "filled_price": pos.FilledPrice})
+		map[string]any{"stock_code": stockCode, "qty": qty, "filled_price": pos.FilledPrice, "reason": reason})
+
+	kisOrderID := ""
+	if resp != nil {
+		kisOrderID = resp.KISOrderID
+	}
+	_, _ = m.db.ExecContext(ctx,
+		`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, created_at)
+		 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, ?)`,
+		stockCode, pos.StockName, qty, pos.FilledPrice, kisOrderID, reason, time.Now().UTC())
 
 	// Notify engine that this position was sold.
 	if pos.SoldCh != nil {
@@ -288,7 +297,7 @@ func (m *Monitor) LiquidateAll(ctx context.Context) {
 		}
 
 		sellQty := 0
-		_, err = m.kisClient.PlaceSellOrder(ctx, kis.OrderRequest{
+		liqResp, err := m.kisClient.PlaceSellOrder(ctx, kis.OrderRequest{
 			StockCode: code,
 			OrderDivn: "01", // 시장가
 			Qty:       fmt.Sprintf("%d", qty),
@@ -301,6 +310,14 @@ func (m *Monitor) LiquidateAll(ctx context.Context) {
 			sellQty = qty
 			logger.Info("liquidate: sell order placed",
 				map[string]any{"stock_code": code, "qty": qty})
+			kisOrderID := ""
+			if liqResp != nil {
+				kisOrderID = liqResp.KISOrderID
+			}
+			_, _ = m.db.ExecContext(ctx,
+				`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, created_at)
+				 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, ?)`,
+				code, pos.StockName, qty, pos.FilledPrice, kisOrderID, "일일 자동 청산", time.Now().UTC())
 		}
 
 		if m.mqttPub != nil {
@@ -620,7 +637,7 @@ func (m *Monitor) checkIndicators(
 
 		logger.Info("indicator check: sell condition triggered",
 			map[string]any{"stock_code": code, "reason": triggerReason})
-		sellQty := m.executeSell(code, pos)
+		sellQty := m.executeSell(code, pos, triggerReason)
 		if m.mqttPub != nil && sellQty > 0 {
 			m.mqttPub.PublishAlert(mqttpkg.EventTargetHit,
 				pos.StockCode, pos.StockName, 0,

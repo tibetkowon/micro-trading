@@ -102,6 +102,7 @@ export default function Orders() {
                 <th className="pb-2 pr-4">유형</th>
                 <th className="pb-2 pr-4">수량</th>
                 <th className="pb-2 pr-4">주문가 / 체결가</th>
+                <th className="pb-2 pr-4">매도사유</th>
                 <th className="pb-2 pr-4">상태</th>
                 <th className="pb-2 pr-4">주문시각</th>
                 <th className="pb-2"></th>
@@ -132,6 +133,9 @@ export default function Orders() {
                       ) : (
                         <span className="text-gray-500 text-xs">시장가</span>
                       )}
+                    </td>
+                    <td className="py-2 pr-4 text-xs text-gray-400">
+                      {o.order_type === 'SELL' && o.sell_reason ? o.sell_reason : '-'}
                     </td>
                     <td className="py-2 pr-4"><StatusBadge status={o.status} /></td>
                     <td className="py-2 pr-4 text-gray-400">{fmtDate(o.created_at)}</td>

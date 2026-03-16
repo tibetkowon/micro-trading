@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-11 (rev 9 — settings에 거래 시간 및 횡보 감지 키 4개 추가)
+> Last updated: 2026-03-15 (rev 10 — orders에 sell_reason 컬럼 추가)
 
 ---
 
@@ -78,6 +78,7 @@
 | `source` | TEXT | NOT NULL, DEFAULT 'AGENT' | `AGENT`=자율 트레이딩 엔진 / `MANUAL`=HTS/MTS 수동 거래 |
 | `target_pct` | REAL | NOT NULL, DEFAULT 0 | 목표 수익률 (%); 0이면 모니터링 미등록 |
 | `stop_pct` | REAL | NOT NULL, DEFAULT 0 | 손절 비율 (%); 0이면 모니터링 미등록 |
+| `sell_reason` | TEXT | NOT NULL, DEFAULT '' | 매도 사유 (자동 매도 시만 값 있음; 예: `"목표가 도달"`, `"손절가 도달"`, `"RSI 78.50 >= threshold 70.00"`, `"일일 자동 청산"`) |
 | `created_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 주문 시각 |
 
 **정렬 기준:** `created_at DESC, id DESC`

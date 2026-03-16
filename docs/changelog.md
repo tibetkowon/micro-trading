@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-03-15 — WebSocket 자동 연결 버그 수정 + 매도 판단 근거 저장 및 표시
+
+- **cmd/server/main.go**: 08:50 스케줄러에서 `wsClient.SetReconnectCancel(wsCancel)` 호출 추가. 매일 16:00 `Disconnect()`가 `intentionalStop = true`로 설정하여 다음날 `StartWithReconnect`가 즉시 종료되는 버그 수정 → 이제 `SetReconnectCancel()`이 플래그를 리셋하여 자동 연결 정상 동작
+- **database/db.go**: `orders` 테이블에 `sell_reason TEXT NOT NULL DEFAULT ''` 컬럼 마이그레이션 추가
+- **models/models.go**: `Order` 구조체에 `SellReason string` 필드 추가 (`json:"sell_reason"`)
+- **monitor/monitor.go**: `executeSell()` 시그니처에 `reason string` 파라미터 추가; 매도 주문 성공 시 `orders` 테이블에 INSERT (자동 매도 주문이 기존에 DB에 기록되지 않던 버그도 수정); `LiquidateAll()`도 동일하게 `orders` INSERT 추가 (reason=`"일일 자동 청산"`); `HandlePrice()` 목표가→`"목표가 도달"`, 손절가→`"손절가 도달"`; `checkIndicators()`→ `triggerReason` 변수 그대로 전달 (RSI/MACD/횡보 상세 메시지 포함)
+- **agent/history.go**: `GetLocalOrderHistory()` SELECT/Scan에 `sell_reason` 포함
+- **Orders.jsx**: 주문 목록 테이블에 `매도사유` 컬럼 추가 (SELL 주문에만 값 표시)
+
 ## 2026-03-11 — 이미 거래한 종목 서버 필터링 + 종목선정 UI 화살표 중복 수정
 
 - **trader/engine.go**: AND 교집합 이후, 지표 조회 전에 `excludedCodes`로 서버 측 필터링 추가. Claude API 호출 전에 이미 오늘 거래한 종목을 미리 제거하여 불필요한 API 토큰 낭비 방지
