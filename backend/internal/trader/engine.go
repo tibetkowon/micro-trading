@@ -809,4 +809,3 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 
 	return result, nil
 }
-

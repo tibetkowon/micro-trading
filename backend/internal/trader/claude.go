@@ -119,4 +119,3 @@ Order from best to worst. Include only stocks worth buying (skip clearly bad one
 
 	return candidates, nil
 }
-

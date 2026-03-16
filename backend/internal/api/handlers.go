@@ -923,4 +923,3 @@ func (h *Handler) DisconnectWebSocket(c *gin.Context) {
 	h.wsClient.Disconnect()
 	c.JSON(http.StatusOK, gin.H{"message": "WebSocket disconnected"})
 }
-
