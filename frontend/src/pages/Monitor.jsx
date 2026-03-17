@@ -143,8 +143,6 @@ export default function Monitor() {
         {/* Mobile card grid */}
         <div className="sm:hidden grid grid-cols-1 gap-3">
           {positions.map((p) => {
-            const targetPct = pct(p.target_price, p.filled_price)
-            const stopPct = pct(p.filled_price, p.stop_price)
             const isRemoving = removingCodes.has(p.stock_code)
             return (
               <div key={p.stock_code} className="bg-gray-900 border border-gray-800 rounded-lg p-3">
