@@ -387,8 +387,12 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		rankings = filtered
 	}
 	if len(rankings) == 0 {
+		failMsg := "no stocks passed hard filter (RSI/disparity/high-price/open-price)"
+		e.db.ExecContext(ctx, //nolint:errcheck
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, fail_reason, market) VALUES (?,?,?,?,?)`,
+			0, "[]", "", failMsg, "KR")
 		e.setState(StateMonitoring)
-		return fmt.Errorf("no stocks passed hard filter (RSI/disparity/high-price/open-price)")
+		return fmt.Errorf(failMsg)
 	}
 
 	// Persist selection log to DB (Claude 호출 전 INSERT — 실패해도 로그 남김).
@@ -1212,8 +1216,12 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		rankings = filtered
 	}
 	if len(rankings) == 0 {
+		failMsg := "no US stocks passed hard filter (high-price/MA trend/RSI/disparity/open-price)"
+		e.db.ExecContext(ctx, //nolint:errcheck
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, fail_reason, market) VALUES (?,?,?,?,?)`,
+			0, "[]", "", failMsg, "US")
 		e.setState(StateMonitoring)
-		return fmt.Errorf("no US stocks passed hard filter (high-price/MA trend/RSI/disparity/open-price)")
+		return fmt.Errorf(failMsg)
 	}
 
 	// Persist selection log
