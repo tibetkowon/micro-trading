@@ -67,6 +67,13 @@ type TradingSettings struct {
 	DailyMaxLossPct float64 // 일일 최대 손실 한도(%). 0=제한없음
 	// 지수 필터
 	IndexCodes []string // 지수 코드 목록 ("0001"=코스피, "1001"=코스닥). 빈 배열=비활성
+	// 하드 필터 (매수 품질 필터)
+	FilterRsiMax           float64 // RSI 과열 임계값 (0=필터없음). 기본 80
+	FilterDisparityM5Max   float64 // 5분봉 이격도 최대값 (0=필터없음). 기본 3.0
+	FilterHighPriceDiffMin float64 // 고가 대비 최소값% (0=필터없음). 기본 -5.0
+	FilterOpenPriceDiffMax float64 // 시가 대비 최대값% (0=필터없음). 기본 20.0
+	// 지수 하락 임계값
+	IndexDropThresholdPct float64 // 지수 하락 시 매수 중단 기준 % (기본 -1.0)
 }
 
 // DB wraps the sql.DB connection.
@@ -207,6 +214,8 @@ func (db *DB) migrate() error {
 		`ALTER TABLE monitored_positions ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
 		`ALTER TABLE trader_ranking_logs ADD COLUMN ranking_condition TEXT NOT NULL DEFAULT 'AND'`,
 		`ALTER TABLE trader_ranking_logs ADD COLUMN result_stocks TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE trader_selection_logs ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
+		`ALTER TABLE trader_ranking_logs ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
 	}
 	for _, s := range alterStmts {
 		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시
@@ -255,6 +264,11 @@ func (db *DB) migrate() error {
 		{"trailing_stop_pct", "1.0"},
 		{"daily_max_loss_pct", "0"},
 		{"index_codes", "[]"},
+		{"filter_rsi_max", "80"},
+		{"filter_disparity_m5_max", "3.0"},
+		{"filter_high_price_diff_min", "-5.0"},
+		{"filter_open_price_diff_max", "20.0"},
+		{"index_drop_threshold_pct", "-1.0"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -292,7 +306,10 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'min_trading_value',`+
 			`'buy_pause_start','buy_pause_end',`+
 			`'trailing_trigger_pct','trailing_stop_pct',`+
-			`'daily_max_loss_pct','index_codes'`+
+			`'daily_max_loss_pct','index_codes',`+
+			`'filter_rsi_max','filter_disparity_m5_max',`+
+			`'filter_high_price_diff_min','filter_open_price_diff_max',`+
+			`'index_drop_threshold_pct'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -403,6 +420,27 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		usRankingTopN = 20
 	}
 
+	filterRsiMax := f64("filter_rsi_max")
+	if filterRsiMax == 0 {
+		filterRsiMax = 80
+	}
+	filterDisparityM5Max := f64("filter_disparity_m5_max")
+	if filterDisparityM5Max == 0 {
+		filterDisparityM5Max = 3.0
+	}
+	filterHighPriceDiffMin := f64("filter_high_price_diff_min")
+	if filterHighPriceDiffMin == 0 {
+		filterHighPriceDiffMin = -5.0
+	}
+	filterOpenPriceDiffMax := f64("filter_open_price_diff_max")
+	if filterOpenPriceDiffMax == 0 {
+		filterOpenPriceDiffMax = 20.0
+	}
+	indexDropThresholdPct := f64("index_drop_threshold_pct")
+	if indexDropThresholdPct == 0 {
+		indexDropThresholdPct = -1.0
+	}
+
 	return TradingSettings{
 		TakeProfitPct:              takeProfitPct,
 		StopLossPct:                stopLossPct,
@@ -444,6 +482,11 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		TrailingStopPct:            f64("trailing_stop_pct"),
 		DailyMaxLossPct:            f64("daily_max_loss_pct"),
 		IndexCodes:                 strSlice("index_codes"),
+		FilterRsiMax:               filterRsiMax,
+		FilterDisparityM5Max:       filterDisparityM5Max,
+		FilterHighPriceDiffMin:     filterHighPriceDiffMin,
+		FilterOpenPriceDiffMax:     filterOpenPriceDiffMax,
+		IndexDropThresholdPct:      indexDropThresholdPct,
 	}, nil
 }
 
@@ -490,11 +533,11 @@ func (db *DB) InsertRankingLog(ctx context.Context, log models.TraderRankingLog)
 		`INSERT INTO trader_ranking_logs
 		 (timestamp, ranking_types, price_min, price_max,
 		  volume_count, strength_count, exec_count_count, disparity_count,
-		  ranking_condition, intersection_count, result_stocks, error_message)
-		 VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  ranking_condition, intersection_count, result_stocks, error_message, market)
+		 VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.RankingTypes, log.PriceMin, log.PriceMax,
 		log.VolumeCount, log.StrengthCount, log.ExecCountCount, log.DisparityCount,
-		log.RankingCondition, log.IntersectionCount, log.ResultStocks, log.ErrorMessage)
+		log.RankingCondition, log.IntersectionCount, log.ResultStocks, log.ErrorMessage, log.Market)
 	return err
 }
 
@@ -507,7 +550,7 @@ func (db *DB) GetRankingLogs(ctx context.Context, limit int) ([]models.TraderRan
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, timestamp, ranking_types, price_min, price_max,
 		        volume_count, strength_count, exec_count_count, disparity_count,
-		        ranking_condition, intersection_count, result_stocks, error_message
+		        ranking_condition, intersection_count, result_stocks, error_message, market
 		 FROM trader_ranking_logs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -520,7 +563,7 @@ func (db *DB) GetRankingLogs(ctx context.Context, limit int) ([]models.TraderRan
 		if err := rows.Scan(
 			&l.ID, &l.Timestamp, &l.RankingTypes, &l.PriceMin, &l.PriceMax,
 			&l.VolumeCount, &l.StrengthCount, &l.ExecCountCount, &l.DisparityCount,
-			&l.RankingCondition, &l.IntersectionCount, &l.ResultStocks, &l.ErrorMessage,
+			&l.RankingCondition, &l.IntersectionCount, &l.ResultStocks, &l.ErrorMessage, &l.Market,
 		); err != nil {
 			return nil, err
 		}

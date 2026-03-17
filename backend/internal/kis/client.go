@@ -368,15 +368,6 @@ func (c *Client) GetHoldings(ctx context.Context) ([]HoldingItem, error) {
 	return filtered, nil
 }
 
-// GetRawBalance returns the raw JSON response from the inquire-balance endpoint.
-// Used for debugging field name mismatches.
-func (c *Client) GetRawBalance(ctx context.Context) ([]byte, error) {
-	endpoint := "/uapi/domestic-stock/v1/trading/inquire-balance"
-	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&AFHR_FLPR_YN=N&OFL_YN=&INQR_DVSN=01&UNPR_DVSN=01&FUND_STTL_ICLD_YN=N&FNCG_AMT_AUTO_RDPT_YN=N&PRCS_DVSN=00&CTX_AREA_FK100=&CTX_AREA_NK100=",
-		c.accountNo, c.accountType)
-	return c.get(ctx, endpoint, params, "TTTC8434R")
-}
-
 // GetVolumeRank fetches the volume ranking (거래량 순위 FHPST01710000). Max 30 results.
 // market: "J"=KRX(default), "NX"=NXT.
 // sort (FID_BLNG_CLS_CODE): "0"=평균거래량(default), "1"=거래량증가율, "2"=평균거래회전율, "3"=거래대금순.
@@ -693,16 +684,6 @@ type OverseasPriceResponse struct {
 	Low  string `json:"low"`  // 저가
 }
 
-// OverseasDailyBar holds one daily OHLCV bar from the overseas daily chart API.
-type OverseasDailyBar struct {
-	Xymd string // 일자 (YYYYMMDD)
-	Open string // 시가
-	High string // 고가
-	Low  string // 저가
-	Clos string // 종가
-	TVol string // 거래량
-}
-
 // OverseasMinuteBar holds one 5-minute OHLCV bar from the overseas minute chart API (HHDFS76950200).
 type OverseasMinuteBar struct {
 	Kymd string // 일자 (YYYYMMDD)
@@ -880,59 +861,6 @@ func (c *Client) GetOverseasPrice(ctx context.Context, excd, symb string) (*Over
 		return nil, fmt.Errorf("parse overseas price: %w", err)
 	}
 	return &result.Output, nil
-}
-
-// GetOverseasDailyChart fetches overseas daily (일봉) OHLCV bars for a symbol (HHDFS76240000).
-// excd: NAS/NYS/AMS. symb: e.g. "AAPL". count: number of bars to return (max ~100).
-// Returns bars in reverse chronological order (newest first) as returned by the API.
-func (c *Client) GetOverseasDailyChart(ctx context.Context, excd, symb string, count int) ([]OverseasDailyBar, error) {
-	kst, _ := time.LoadLocation("Asia/Seoul")
-	bymd := time.Now().In(kst).Format("20060102")
-
-	endpoint := "/uapi/overseas-price/v1/quotations/dailyprice"
-	params := fmt.Sprintf("?AUTH=&EXCD=%s&SYMB=%s&GUBN=0&BYMD=%s&MODP=1&KEYB=",
-		excd, symb, bymd)
-
-	raw, err := c.get(ctx, endpoint, params, "HHDFS76240000")
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		Output2 []struct {
-			Xymd string `json:"xymd"`
-			Open string `json:"open"`
-			High string `json:"high"`
-			Low  string `json:"low"`
-			Clos string `json:"clos"`
-			TVol string `json:"tvol"`
-		} `json:"output2"`
-		MsgCode string `json:"msg_cd"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
-		return nil, fmt.Errorf("parse overseas daily chart: %w", err)
-	}
-	if result.Output2 == nil {
-		return []OverseasDailyBar{}, nil
-	}
-
-	bars := result.Output2
-	if count > 0 && len(bars) > count {
-		bars = bars[:count]
-	}
-	out := make([]OverseasDailyBar, len(bars))
-	for i, b := range bars {
-		out[i] = OverseasDailyBar{
-			Xymd: b.Xymd,
-			Open: b.Open,
-			High: b.High,
-			Low:  b.Low,
-			Clos: b.Clos,
-			TVol: b.TVol,
-		}
-	}
-	return out, nil
 }
 
 // GetOverseasMinuteChart fetches overseas 5-minute OHLCV bars (HHDFS76950200).

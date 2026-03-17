@@ -26,6 +26,7 @@ type Handler struct {
 	monitor      *monitor.Monitor
 	wsClient     *kis.WebSocketClient
 	engine       *trader.Engine
+	usEngine     *trader.Engine
 }
 
 // NewHandler creates a new Handler with the given dependencies.
@@ -44,6 +45,11 @@ func NewHandler(db *database.DB, client *kis.Client, tokenManager *kis.TokenMana
 // SetEngine injects the trading engine (called after engine is created in main).
 func (h *Handler) SetEngine(e *trader.Engine) {
 	h.engine = e
+}
+
+// SetUSEngine injects the US trading engine (called after engine is created in main).
+func (h *Handler) SetUSEngine(e *trader.Engine) {
+	h.usEngine = e
 }
 
 // GET /api/balance
@@ -239,12 +245,39 @@ func (h *Handler) PlaceOrder(c *gin.Context) {
 func (h *Handler) GetServerStatus(c *gin.Context) {
 	now := time.Now().In(agent.KSTLocation())
 
+	// KR market open check (weekdays 09:00~15:30 KST)
 	marketOpen := false
 	if wd := now.Weekday(); wd != time.Saturday && wd != time.Sunday {
 		min := now.Hour()*60 + now.Minute()
 		if min >= 9*60 && min < 15*60+30 {
 			marketOpen = true
 		}
+	}
+
+	// US market open check (using settings-based time window)
+	usMarketOpen := false
+	usStartStr := h.db.GetSetting(c.Request.Context(), "us_trading_start_time")
+	usEndStr := h.db.GetSetting(c.Request.Context(), "us_trading_end_time")
+	if usStartStr == "" {
+		usStartStr = "22:30"
+	}
+	if usEndStr == "" {
+		usEndStr = "05:00"
+	}
+	hhmm := now.Hour()*100 + now.Minute()
+	parseHHMMLocal := func(s string, def int) int {
+		t, err := time.Parse("15:04", s)
+		if err != nil {
+			return def
+		}
+		return t.Hour()*100 + t.Minute()
+	}
+	usStart := parseHHMMLocal(usStartStr, 2230)
+	usEnd := parseHHMMLocal(usEndStr, 500)
+	if usStart > usEnd {
+		usMarketOpen = hhmm >= usStart || hhmm < usEnd
+	} else {
+		usMarketOpen = hhmm >= usStart && hhmm < usEnd
 	}
 
 	wsConnected := false
@@ -270,13 +303,20 @@ func (h *Handler) GetServerStatus(c *gin.Context) {
 		traderState = string(h.engine.GetState())
 	}
 
+	traderStateUS := string(trader.StateIdle)
+	if h.usEngine != nil {
+		traderStateUS = string(h.usEngine.GetState())
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"market_open":     marketOpen,
+		"us_market_open":  usMarketOpen,
 		"trading_enabled": tradingEnabled,
 		"available_cash":  availableCash,
 		"ws_connected":    wsConnected,
 		"monitored_count": monitoredCount,
 		"trader_state":    traderState,
+		"trader_state_us": traderStateUS,
 	})
 }
 
@@ -373,7 +413,7 @@ func (h *Handler) GetSelectionLogs(c *gin.Context) {
 		`DELETE FROM trader_selection_logs WHERE timestamp < datetime('now', '-30 days')`)
 
 	rows, err := h.db.QueryContext(c.Request.Context(),
-		`SELECT id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason, fail_reason
+		`SELECT id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason, fail_reason, market
 		 FROM trader_selection_logs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -384,7 +424,7 @@ func (h *Handler) GetSelectionLogs(c *gin.Context) {
 	var logs []models.TraderSelectionLog
 	for rows.Next() {
 		var l models.TraderSelectionLog
-		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.Candidates, &l.LLMResult, &l.SelectedCode, &l.SelectedReason, &l.FailReason); err != nil {
+		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.Candidates, &l.LLMResult, &l.SelectedCode, &l.SelectedReason, &l.FailReason, &l.Market); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -514,6 +554,13 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"daily_max_loss_pct": ts.DailyMaxLossPct,
 		// 지수 필터
 		"index_codes": ts.IndexCodes,
+		// 하드 필터
+		"filter_rsi_max":             ts.FilterRsiMax,
+		"filter_disparity_m5_max":    ts.FilterDisparityM5Max,
+		"filter_high_price_diff_min": ts.FilterHighPriceDiffMin,
+		"filter_open_price_diff_max": ts.FilterOpenPriceDiffMax,
+		// 지수 하락 임계값
+		"index_drop_threshold_pct": ts.IndexDropThresholdPct,
 	})
 }
 
@@ -569,6 +616,13 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		DailyMaxLossPct *float64 `json:"daily_max_loss_pct"`
 		// 지수 필터 (nil = 변경 안 함)
 		IndexCodes []string `json:"index_codes"`
+		// 하드 필터
+		FilterRsiMax           *float64 `json:"filter_rsi_max"`
+		FilterDisparityM5Max   *float64 `json:"filter_disparity_m5_max"`
+		FilterHighPriceDiffMin *float64 `json:"filter_high_price_diff_min"`
+		FilterOpenPriceDiffMax *float64 `json:"filter_open_price_diff_max"`
+		// 지수 하락 임계값
+		IndexDropThresholdPct *float64 `json:"index_drop_threshold_pct"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -894,6 +948,32 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	if req.IndexCodes != nil {
 		b, _ := json.Marshal(req.IndexCodes)
 		if !save("index_codes", string(b)) {
+			return
+		}
+	}
+
+	if req.FilterRsiMax != nil {
+		if !save("filter_rsi_max", strconv.FormatFloat(*req.FilterRsiMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.FilterDisparityM5Max != nil {
+		if !save("filter_disparity_m5_max", strconv.FormatFloat(*req.FilterDisparityM5Max, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.FilterHighPriceDiffMin != nil {
+		if !save("filter_high_price_diff_min", strconv.FormatFloat(*req.FilterHighPriceDiffMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.FilterOpenPriceDiffMax != nil {
+		if !save("filter_open_price_diff_max", strconv.FormatFloat(*req.FilterOpenPriceDiffMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.IndexDropThresholdPct != nil {
+		if !save("index_drop_threshold_pct", strconv.FormatFloat(*req.IndexDropThresholdPct, 'f', -1, 64)) {
 			return
 		}
 	}

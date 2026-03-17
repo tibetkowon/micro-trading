@@ -103,6 +103,13 @@ export default function Settings() {
   const [dailyMaxLossPct, setDailyMaxLossPct] = useState('0')
   const [indexCodes, setIndexCodes] = useState([])
 
+  // ── 하드 필터 (매수 품질) ──
+  const [filterRsiMax, setFilterRsiMax] = useState('80')
+  const [filterDisparityM5Max, setFilterDisparityM5Max] = useState('3.0')
+  const [filterHighPriceDiffMin, setFilterHighPriceDiffMin] = useState('-5.0')
+  const [filterOpenPriceDiffMax, setFilterOpenPriceDiffMax] = useState('20.0')
+  const [indexDropThresholdPct, setIndexDropThresholdPct] = useState('-1.0')
+
   // ── AI 설정 ──
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
 
@@ -163,6 +170,12 @@ export default function Settings() {
     if (Array.isArray(data.index_codes)) setIndexCodes(data.index_codes)
 
     if (data.claude_model) setClaudeModel(data.claude_model)
+
+    if (data.filter_rsi_max != null) setFilterRsiMax(String(data.filter_rsi_max))
+    if (data.filter_disparity_m5_max != null) setFilterDisparityM5Max(String(data.filter_disparity_m5_max))
+    if (data.filter_high_price_diff_min != null) setFilterHighPriceDiffMin(String(data.filter_high_price_diff_min))
+    if (data.filter_open_price_diff_max != null) setFilterOpenPriceDiffMax(String(data.filter_open_price_diff_max))
+    if (data.index_drop_threshold_pct != null) setIndexDropThresholdPct(String(data.index_drop_threshold_pct))
 
     if (data.us_trading_enabled != null) setUsTradingEnabled(data.us_trading_enabled)
     if (data.us_dst_enabled != null) setUsDstEnabled(data.us_dst_enabled)
@@ -253,6 +266,11 @@ export default function Settings() {
       us_ranking_price_max: usRankingPriceMax,
       us_ranking_vol_rang: usRankingVolRang,
       us_ranking_top_n: parseInt(usRankingTopN) || 20,
+      filter_rsi_max: parseFloat(filterRsiMax) || 80,
+      filter_disparity_m5_max: parseFloat(filterDisparityM5Max) || 3.0,
+      filter_high_price_diff_min: parseFloat(filterHighPriceDiffMin) || -5.0,
+      filter_open_price_diff_max: parseFloat(filterOpenPriceDiffMax) || 20.0,
+      index_drop_threshold_pct: parseFloat(indexDropThresholdPct) || -1.0,
     }
 
     try {
@@ -278,7 +296,7 @@ export default function Settings() {
   const stagnationActive = sellConditions.includes('stagnation')
 
   return (
-    <div className="max-w-lg space-y-6">
+    <div className="space-y-6">
       <h1 className="text-xl font-bold">설정</h1>
 
       {/* 저장 결과 배너 */}
@@ -778,6 +796,71 @@ export default function Settings() {
               placeholder="claude-sonnet-4-6"
             />
           </label>
+        </div>
+
+        {/* ── 섹션 5b: 하드 필터 (매수 품질) ── */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider">하드 필터 (매수 품질)</p>
+          <p className="text-xs text-gray-600">LLM 호출 전 자동으로 제거되는 조건입니다. KR·US 공통 적용됩니다.</p>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">RSI 과열 임계값 (이상 제외)</span>
+              <input
+                type="number" step="1" min="50" max="100"
+                value={filterRsiMax}
+                onChange={(e) => setFilterRsiMax(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+              <p className="text-xs text-gray-600">기본 80 — RSI ≥ 이 값인 종목 제외</p>
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">5분봉 이격도 최대값 (%) (초과 제외)</span>
+              <input
+                type="number" step="0.1" min="0"
+                value={filterDisparityM5Max}
+                onChange={(e) => setFilterDisparityM5Max(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+              <p className="text-xs text-gray-600">기본 3.0 — 5분봉 MA5 이격도 초과 시 제외</p>
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">고가 대비 최솟값 (%) (미만 제외)</span>
+              <input
+                type="number" step="0.1"
+                value={filterHighPriceDiffMin}
+                onChange={(e) => setFilterHighPriceDiffMin(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+              <p className="text-xs text-gray-600">기본 -5.0 — 고가 대비 하락 폭이 이 값 미만인 종목 제외</p>
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">시가 대비 최댓값 (%) (초과 제외)</span>
+              <input
+                type="number" step="0.1" min="0"
+                value={filterOpenPriceDiffMax}
+                onChange={(e) => setFilterOpenPriceDiffMax(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+              <p className="text-xs text-gray-600">기본 20.0 — 당일 상한가 영역 종목 제외</p>
+            </label>
+          </div>
+
+          <div className="pt-1 border-t border-gray-800">
+            <label className="space-y-1 block">
+              <span className="text-xs text-gray-400">지수 하락 매수 중단 임계값 (%, 이하 시 중단)</span>
+              <input
+                type="number" step="0.1"
+                value={indexDropThresholdPct}
+                onChange={(e) => setIndexDropThresholdPct(e.target.value)}
+                className="w-full md:w-48 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+              <p className="text-xs text-gray-600">기본 -1.0 — 지수가 시가 대비 이 값 이하로 하락 시 매수 중단</p>
+            </label>
+          </div>
         </div>
 
         {/* ── 섹션 6: 미장 (미국주식) 설정 ── */}

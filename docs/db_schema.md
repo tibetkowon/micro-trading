@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-16 (rev 13 — orders/monitored_positions market 컬럼 추가, index_code → index_codes JSON 배열 변경)
+> Last updated: 2026-03-17 (rev 14 — trader_selection_logs/trader_ranking_logs market 컬럼 추가, settings 하드 필터 5개 키 추가)
 
 ---
 
@@ -52,6 +52,11 @@
 | `trailing_stop_pct` | `"1.0"` | 트레일링 스탑 최고가 대비 하락 허용폭 (%). `trailing_trigger_pct > 0`일 때만 유효 |
 | `daily_max_loss_pct` | `"0"` | 일일 최대 손실 한도 (총자산 대비 %). 0=제한없음. 초과 시 당일 매수 중단 |
 | `index_codes` | `"[]"` | 지수 필터 코드 JSON 배열 (`"[\"0001\",\"1001\"]"` 형식). 빈 배열=비활성. 체크된 지수가 시가 대비 -1% 이상 하락 시 매수 중단 |
+| `filter_rsi_max` | `"80"` | 하드 필터: RSI 과열 기준값 (이상이면 후보 제외) |
+| `filter_disparity_m5_max` | `"3.0"` | 하드 필터: 5분봉 이격도 상한 (%) (초과 시 후보 제외) |
+| `filter_high_price_diff_min` | `"-5.0"` | 하드 필터: 당일 고점 낙폭 하한 (%) (미달 시 후보 제외, 음수값) |
+| `filter_open_price_diff_max` | `"20.0"` | 하드 필터: 당일 시가 대비 상승률 상한 (%) (초과 시 후보 제외) |
+| `index_drop_threshold_pct` | `"-1.0"` | 지수 낙폭 필터 임계값 (%). 지수가 이 값 이하로 하락 시 매수 중단 (음수값) |
 
 ---
 
@@ -175,6 +180,7 @@
 | `sent_count` | INTEGER | NOT NULL, DEFAULT 0 | LLM에 전달한 후보 종목 수 |
 | `candidates` | TEXT | NOT NULL, DEFAULT '' | LLM에 전달한 `[]RankItem` JSON 배열 (기술지표 포함) |
 | `llm_result` | TEXT | NOT NULL, DEFAULT '' | Claude가 반환한 `[]StockCandidate` JSON 배열 (우선순위 순) |
+| `market` | TEXT | NOT NULL, DEFAULT 'KR' | 시장 구분: `KR`=국내주식 / `US`=미국주식 |
 | `selected_code` | TEXT | NOT NULL, DEFAULT '' | 최종 체결된 종목코드; 미체결 시 빈 문자열 |
 | `selected_reason` | TEXT | NOT NULL, DEFAULT '' | 체결 종목에 대한 Claude의 선정 이유 (한국어 1문장) |
 | `fail_reason` | TEXT | NOT NULL, DEFAULT '' | 선정 실패 사유 (LLM 오류, 주문 전체 실패 등); 정상 선정 시 빈 문자열 |
@@ -209,6 +215,7 @@
 | `disparity_count` | INTEGER | NOT NULL, DEFAULT -1 | 이격도 순위 필터 통과 종목 수; -1 = 타입 미사용 |
 | `intersection_count` | INTEGER | NOT NULL, DEFAULT 0 | AND 교집합 결과 종목 수 (Claude에 전달되는 후보 수) |
 | `error_message` | TEXT | NOT NULL, DEFAULT '' | 오류 발생 시 메시지; 정상이면 빈 문자열 |
+| `market` | TEXT | NOT NULL, DEFAULT 'KR' | 시장 구분: `KR`=국내주식 / `US`=미국주식 |
 
 **보존 정책:** `GET /api/logs/ranking` 호출 시 30일 이상 된 로그 자동 삭제.
 

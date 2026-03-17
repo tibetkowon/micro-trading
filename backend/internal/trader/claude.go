@@ -88,6 +88,7 @@ func (c *ClaudeClient) SelectStocks(
 2. ma5 < ma20  → downtrend, skip
 3. disparity_m5 > 3%%  → over-extended from 5-min MA, skip
 4. rsi14 >= 80  → overbought, skip
+5. open_price_diff > 20%%  → already at extreme daily high, skip
 
 ## Ranking Criteria (for survivors):
 - Best entry: high_price_diff between -0.5%% and -3%% (slight pullback from high, ready to bounce)
@@ -96,8 +97,9 @@ func (c *ClaudeClient) SelectStocks(
 - RSI: 40–65 is the ideal buy zone (not overbought, has momentum)
 - Disparity: disparity_m5 between 0%% and 2%% (near 5-min MA support, not overextended)
 - Volume confirmation: higher volume relative to average indicates institutional interest
-- Prefer: open_price_diff between 0%% and 8%% (gap-up with room to run, not overextended)
-- Avoid: open_price_diff > 15%% (already overextended today)
+- Prioritize consolidation/pullback: open_price_diff between 2%% and 10%% (healthy gap-up, consolidating)
+- Best entry zone: stocks near 5-min MA support after a small pullback, not at daily peak
+- Avoid: open_price_diff > 15%% (already overextended today, late entry risk)
 
 Ranking data (JSON):
 %s
@@ -106,7 +108,7 @@ Available cash: %.2f USD
 Respond with ONLY a valid JSON array — no explanation, no markdown, no extra text.
 If no stock passes, respond with exactly: []
 Best entry first:
-[{"stock_code":"TICKER","reason":"Pulled back -Y%% from high, MA5 > MA20, RSI=X (buy zone), MACD bullish"},...]`,
+[{"stock_code":"TICKER","reason":"Pulled back -Y%% from high, MA5 > MA20, RSI=X (buy zone), MACD bullish, consolidating near 5min MA"},...]`,
 			string(rankJSON), availableCash)
 	} else {
 		prompt = fmt.Sprintf(`You are an elite Korean day-trader known for avoiding Bull Traps and finding pullback(눌림목) entries.
@@ -115,12 +117,14 @@ Best entry first:
 1. disparity_m5 > 3%%  → over-extended from 5-min MA, skip
 2. high_price_diff > -0.5%%  → basically at today's peak, skip
 3. ma5 < ma20  → downtrend, skip
+4. open_price_diff > 20%%  → 당일 상한가 영역, 설거지 위험, skip
 
 ## Ranking Criteria (for survivors):
-- Best entry: high_price_diff between -1%% and -3%% (pulled back from high, ready to bounce)
+- 눌림목 우선: high_price_diff between -1%% and -3%% (고점 대비 눌림, 반등 준비)
+- 최적 매수 구간: 5분봉 MA 지지선 근처, 당일 고가 아님
 - Volume quality: net_buy_qty > 0 + strength increasing = accumulation signal
 - MACD: macd_line > macd_signal preferred (upward momentum)
-- Avoid: open_price_diff > 10%% (stocks that already ran too far today)
+- Avoid: open_price_diff > 10%% (이미 너무 많이 오른 종목, 뒤늦은 진입)
 
 Ranking data (JSON):
 %s

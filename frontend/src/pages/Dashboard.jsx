@@ -86,12 +86,19 @@ export default function Dashboard() {
       {!statusLoading && status && (
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
           <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">서버 상태</p>
-          <div className="flex flex-wrap gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div>
-              <p className="text-xs text-gray-500 mb-1">장 운영</p>
+              <p className="text-xs text-gray-500 mb-1">국장(KR)</p>
               <p className="flex items-center text-sm font-semibold">
                 <StatusDot ok={status.market_open} />
                 {status.market_open ? '개장' : '폐장'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">미장(US)</p>
+              <p className="flex items-center text-sm font-semibold">
+                <StatusDot ok={status.us_market_open} />
+                {status.us_market_open ? '개장' : '폐장'}
               </p>
             </div>
             <div>
@@ -136,7 +143,7 @@ export default function Dashboard() {
               <p className="text-sm font-semibold">{fmt(status.available_cash)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 mb-1">트레이더 상태</p>
+              <p className="text-xs text-gray-500 mb-1">국장 트레이더</p>
               <p className="text-sm font-semibold">
                 <span className={
                   status.trader_state === 'IDLE' ? 'text-gray-400' :
@@ -145,6 +152,19 @@ export default function Dashboard() {
                   'text-yellow-400'
                 }>
                   {status.trader_state === 'SEARCHING' ? 'SEARCHING (종목탐색)' : (status.trader_state || 'IDLE')}
+                </span>
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">미장 트레이더</p>
+              <p className="text-sm font-semibold">
+                <span className={
+                  status.trader_state_us === 'IDLE' ? 'text-gray-400' :
+                  status.trader_state_us === 'MONITORING' ? 'text-blue-400' :
+                  status.trader_state_us === 'SEARCHING' ? 'text-green-400' :
+                  'text-yellow-400'
+                }>
+                  {status.trader_state_us === 'SEARCHING' ? 'SEARCHING (종목탐색)' : (status.trader_state_us || 'IDLE')}
                 </span>
               </p>
             </div>

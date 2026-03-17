@@ -7,8 +7,11 @@ function fmtDate(s) {
   return new Date(s).toLocaleString('ko-KR')
 }
 
-function fmtPrice(price) {
+function fmtPrice(price, market) {
   if (!price && price !== 0) return '-'
+  if (market === 'US') {
+    return '$' + Number(price).toFixed(2)
+  }
   return Number(price).toLocaleString('ko-KR') + '원'
 }
 
@@ -97,14 +100,15 @@ export default function Orders() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800 text-gray-400 text-left">
-                <th className="pb-2 pr-4">ID</th>
+                <th className="pb-2 pr-4 hidden sm:table-cell">ID</th>
                 <th className="pb-2 pr-4">종목</th>
+                <th className="pb-2 pr-4">시장</th>
                 <th className="pb-2 pr-4">유형</th>
-                <th className="pb-2 pr-4">수량</th>
+                <th className="pb-2 pr-4 hidden sm:table-cell">수량</th>
                 <th className="pb-2 pr-4">주문가 / 체결가</th>
-                <th className="pb-2 pr-4">매도사유</th>
+                <th className="pb-2 pr-4 hidden sm:table-cell">매도사유</th>
                 <th className="pb-2 pr-4">상태</th>
-                <th className="pb-2 pr-4">주문시각</th>
+                <th className="pb-2 pr-4 hidden sm:table-cell">주문시각</th>
                 <th className="pb-2"></th>
               </tr>
             </thead>
@@ -114,31 +118,38 @@ export default function Orders() {
                 const isDeleting = deletingIds.has(o.id)
                 return (
                   <tr key={o.id} className="border-b border-gray-800/50 hover:bg-gray-900/50">
-                    <td className="py-2 pr-4 text-gray-500">{o.id}</td>
+                    <td className="py-2 pr-4 text-gray-500 hidden sm:table-cell">{o.id}</td>
                     <td className="py-2 pr-4">
                       <span className="font-semibold">{o.stock_name || o.stock_code}</span>
                       {o.stock_name && (
                         <span className="ml-1.5 text-xs text-gray-500 font-mono">{o.stock_code}</span>
                       )}
                     </td>
+                    <td className="py-2 pr-4">
+                      {o.market === 'US' ? (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-300 font-semibold">미장</span>
+                      ) : (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 font-semibold">국장</span>
+                      )}
+                    </td>
                     <td className={`py-2 pr-4 font-semibold ${o.order_type === 'BUY' ? 'text-red-400' : 'text-blue-400'}`}>
                       {o.order_type === 'BUY' ? '매수' : '매도'}
                     </td>
-                    <td className="py-2 pr-4">{o.qty.toLocaleString()}</td>
+                    <td className="py-2 pr-4 hidden sm:table-cell">{o.qty.toLocaleString()}</td>
                     <td className="py-2 pr-4">
                       {isFilled && o.filled_price > 0 ? (
-                        <span className="text-yellow-400 font-semibold">{fmtPrice(o.filled_price)}</span>
+                        <span className="text-yellow-400 font-semibold">{fmtPrice(o.filled_price, o.market)}</span>
                       ) : o.price > 0 ? (
-                        <span className="text-gray-300">{fmtPrice(o.price)}</span>
+                        <span className="text-gray-300">{fmtPrice(o.price, o.market)}</span>
                       ) : (
                         <span className="text-gray-500 text-xs">시장가</span>
                       )}
                     </td>
-                    <td className="py-2 pr-4 text-xs text-gray-400">
+                    <td className="py-2 pr-4 text-xs text-gray-400 hidden sm:table-cell">
                       {o.order_type === 'SELL' && o.sell_reason ? o.sell_reason : '-'}
                     </td>
                     <td className="py-2 pr-4"><StatusBadge status={o.status} /></td>
-                    <td className="py-2 pr-4 text-gray-400">{fmtDate(o.created_at)}</td>
+                    <td className="py-2 pr-4 text-gray-400 hidden sm:table-cell">{fmtDate(o.created_at)}</td>
                     <td className="py-2">
                       <button
                         onClick={() => handleDelete(o.id)}

@@ -72,7 +72,8 @@ export default function Monitor() {
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800 text-gray-400 text-left">
@@ -139,6 +140,48 @@ export default function Monitor() {
             </tbody>
           </table>
         </div>
+        {/* Mobile card grid */}
+        <div className="sm:hidden grid grid-cols-1 gap-3">
+          {positions.map((p) => {
+            const targetPct = pct(p.target_price, p.filled_price)
+            const stopPct = pct(p.filled_price, p.stop_price)
+            const isRemoving = removingCodes.has(p.stock_code)
+            return (
+              <div key={p.stock_code} className="bg-gray-900 border border-gray-800 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <span className="font-semibold text-sm">{p.stock_name || p.stock_code}</span>
+                    {p.stock_name && (
+                      <span className="ml-1.5 text-xs text-gray-500 font-mono">{p.stock_code}</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleRemove(p.stock_code)}
+                    disabled={isRemoving}
+                    className="text-xs px-2 py-1 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded disabled:opacity-40 transition-colors"
+                  >
+                    {isRemoving ? '...' : '해제'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <p className="text-gray-500 mb-0.5">체결가</p>
+                    <p className="text-gray-300">{fmt(p.filled_price)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 mb-0.5">목표가</p>
+                    <p className="text-green-400 font-semibold">{fmt(p.target_price)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 mb-0.5">손절가</p>
+                    <p className="text-red-400 font-semibold">{fmt(p.stop_price)}</p>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        </>
       )}
 
       <p className="mt-6 text-xs text-gray-600">

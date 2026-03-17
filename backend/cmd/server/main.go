@@ -131,6 +131,7 @@ func main() {
 
 	handler := api.NewHandler(db, kisClient, tokenManager, cfg, mon, wsClient)
 	handler.SetEngine(tradingEngine)
+	handler.SetUSEngine(usEngine)
 	router := api.SetupRouter(handler, cfg.FrontendDist)
 
 	srv := &http.Server{

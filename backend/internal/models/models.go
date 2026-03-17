@@ -96,6 +96,7 @@ type TraderSelectionLog struct {
 	SelectedCode   string `json:"selected_code"` // empty if no fill occurred
 	SelectedReason string `json:"selected_reason"`
 	FailReason     string `json:"fail_reason"` // LLM 오류 또는 주문 실패 사유
+	Market         string `json:"market"`      // "KR" | "US"
 }
 
 // TraderRankingLog records each getRankings() attempt for UI display.
@@ -113,6 +114,7 @@ type TraderRankingLog struct {
 	IntersectionCount int       `json:"intersection_count"` // 최종 결과 종목 수 (AND=교집합, OR=합집합)
 	ResultStocks      string    `json:"result_stocks"`      // JSON array of RankItem (지표 보강 전)
 	ErrorMessage      string    `json:"error_message"`
+	Market            string    `json:"market"` // "KR" | "US"
 }
 
 // Token stores the KIS OAuth access token and its validity window.

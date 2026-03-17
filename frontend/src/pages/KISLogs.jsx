@@ -49,39 +49,39 @@ export default function KISLogs() {
       ) : logs.length === 0 ? (
         <p className="text-gray-500">기록된 에러가 없습니다.</p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {logs.map((log) => (
             <div
               key={log.id}
-              className="bg-gray-900 border border-red-900/50 rounded-lg p-4"
+              className="bg-gray-900 border border-red-900/40 rounded-lg px-3 py-2.5"
             >
-              <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                  <span className="text-xs bg-red-900/60 text-red-300 px-2 py-0.5 rounded font-mono mr-2">
-                    {log.error_code || 'UNKNOWN'}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs bg-red-900/60 text-red-300 px-1.5 py-0.5 rounded font-mono shrink-0">
+                    {log.error_code || 'ERR'}
                   </span>
-                  <span className="text-xs text-gray-500 font-mono">{log.endpoint}</span>
+                  <span className="text-xs text-gray-500 font-mono truncate">{log.endpoint}</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-500">{fmtDate(log.timestamp)}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs text-gray-600">{fmtDate(log.timestamp)}</span>
                   <button
                     onClick={() => handleDelete(log.id)}
                     disabled={deletingIds.has(log.id)}
-                    className="text-xs px-2 py-0.5 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded disabled:opacity-40 transition-colors"
+                    className="text-xs px-1.5 py-0.5 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded disabled:opacity-40 transition-colors"
                   >
                     {deletingIds.has(log.id) ? '...' : '삭제'}
                   </button>
                 </div>
               </div>
               {log.error_message && (
-                <p className="text-sm text-gray-300 mt-2">{log.error_message}</p>
+                <p className="text-xs text-gray-400 mt-1">{log.error_message}</p>
               )}
               {log.raw_response && (
-                <details className="mt-2">
-                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300">
+                <details className="mt-1">
+                  <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-400">
                     Raw Response
                   </summary>
-                  <pre className="mt-1 text-xs text-gray-400 bg-gray-950 rounded p-2 overflow-x-auto whitespace-pre-wrap">
+                  <pre className="mt-1 text-xs text-gray-500 bg-gray-950 rounded p-2 overflow-x-auto whitespace-pre-wrap">
                     {log.raw_response}
                   </pre>
                 </details>

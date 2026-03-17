@@ -81,6 +81,11 @@ export default function RankingLogs() {
                 {/* 헤더 */}
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {log.market === 'US' ? (
+                      <span className="text-xs bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded font-semibold">미장</span>
+                    ) : (
+                      <span className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded font-semibold">국장</span>
+                    )}
                     {hasError ? (
                       <span className="text-xs bg-red-900/60 text-red-300 px-2 py-0.5 rounded">
                         오류
@@ -101,7 +106,9 @@ export default function RankingLogs() {
                     )}
                     <span className="text-xs text-gray-500">
                       {log.price_min && log.price_max
-                        ? `${Number(log.price_min).toLocaleString()}~${Number(log.price_max).toLocaleString()}원`
+                        ? log.market === 'US'
+                          ? `$${Number(log.price_min).toLocaleString()}~$${Number(log.price_max).toLocaleString()}`
+                          : `${Number(log.price_min).toLocaleString()}~${Number(log.price_max).toLocaleString()}원`
                         : ''}
                     </span>
                   </div>

@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-17 — 하드 필터 설정화, market 컬럼 추가, UI 개선
+
+- **models/models.go**: `TraderSelectionLog`, `TraderRankingLog`에 `Market string` 필드 추가
+- **database/db.go**: `TradingSettings`에 `FilterRsiMax`, `FilterDisparityM5Max`, `FilterHighPriceDiffMin`, `FilterOpenPriceDiffMax`, `IndexDropThresholdPct` 5개 필드 추가; `trader_selection_logs`·`trader_ranking_logs` 테이블에 `market` 컬럼 ALTER; 5개 신규 설정값 기본값 INSERT; `InsertRankingLog`·`GetRankingLogs` market 컬럼 반영
+- **trader/engine.go**: KR·US 하드 필터를 `settings.*` 필드 기반으로 교체 (RSI/Disparity/HighPriceDiff/OpenPriceDiff); KR·US `trader_selection_logs` INSERT에 market 컬럼 추가; `getRankings` KR·US `InsertRankingLog`에 Market 필드 추가; 지수 하락 임계값 `IndexDropThresholdPct` 적용
+- **trader/claude.go**: KR·US 프롬프트에 `open_price_diff > 20%% skip` 룰 추가; 눌림목·최적 진입 구간 강조 개선
+- **api/handlers.go**: `Handler`에 `usEngine` 필드 추가; `SetUSEngine()` 메서드; `GetServerStatus`에 `us_market_open`·`trader_state_us` 반환; `GetSelectionLogs` market 컬럼 SELECT/Scan; GetSettings·UpdateSettings에 5개 신규 필터 설정 반영
+- **cmd/server/main.go**: `handler.SetUSEngine(usEngine)` 호출 추가
+- **kis/client.go**: `GetRawBalance()` 디버깅 함수 제거; `GetOverseasDailyChart()`·`OverseasDailyBar` 제거 (GetOverseasMinuteChart로 대체)
+- **Settings.jsx**: 하드 필터(매수 품질) 섹션 신규 추가 (RSI/5분봉이격도/고가대비/시가대비/지수하락임계값); 레이아웃 max-w-lg 제거
+- **Dashboard.jsx**: "장 운영"을 "국장(KR)"/"미장(US)"으로 분리; "미장 트레이더" 상태 추가; 서버 상태 그리드 반응형 개선
+- **Monitor.jsx**: 모바일 카드 그리드 추가 (sm:hidden)
+- **Orders.jsx**: `fmtPrice(price, market)` US→`$X.XX`/KR→`X원`; "시장" 컬럼 (미장/국장 배지); 일부 헤더 hidden sm:table-cell 반응형 처리
+- **KISLogs.jsx**: 로그 카드 레이아웃 컴팩트화
+- **SelectionLogs.jsx**: market 배지 (미장/국장) 카드 헤더 추가
+- **RankingLogs.jsx**: market 배지 추가; 가격 범위 US→`$X~$Y`/KR→`X~Y원` 포맷
+
 ## 2026-03-17 — MA5/MA20 일봉→5분봉 전환, US RSI/MACD/DisparityM5 지표 추가
 
 - **kis/client.go**: `OverseasMinuteBar` 구조체 및 `GetOverseasMinuteChart()`(HHDFS76950200) 추가 — 5분봉 OHLCV 최대 120개, NMIN=5/PINC=1/NREC=120

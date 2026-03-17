@@ -63,6 +63,11 @@ export default function SelectionLogs() {
                 {/* 헤더 */}
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {log.market === 'US' ? (
+                      <span className="text-xs bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded font-semibold">미장</span>
+                    ) : (
+                      <span className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded font-semibold">국장</span>
+                    )}
                     {hasSelected ? (
                       <span className="text-xs bg-green-900/60 text-green-300 px-2 py-0.5 rounded font-mono">
                         ✓ {log.selected_code}

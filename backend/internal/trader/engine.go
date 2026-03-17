@@ -209,14 +209,18 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		}
 	}
 
-	// 지수 필터: 지수가 시가 대비 -1% 이상 하락 시 매수 중단
+	// 지수 필터: 지수가 시가 대비 설정값 이상 하락 시 매수 중단
+	indexDropThreshold := settings.IndexDropThresholdPct
+	if indexDropThreshold == 0 {
+		indexDropThreshold = -1.0
+	}
 	for _, code := range settings.IndexCodes {
 		if idx, idxErr := e.kisClient.GetIndexPrice(ctx, code); idxErr == nil {
 			open, _ := strconv.ParseFloat(idx.DayOpen, 64)
 			cur, _ := strconv.ParseFloat(idx.CurrentPrice, 64)
-			if open > 0 && cur > 0 && (cur-open)/open*100 <= -1.0 {
+			if open > 0 && cur > 0 && (cur-open)/open*100 <= indexDropThreshold {
 				e.setState(StateMonitoring)
-				return fmt.Errorf("지수 -1%% 이상 하락 (지수:%s %.2f%%↓), 매수 일시 중단", code, (cur-open)/open*100)
+				return fmt.Errorf("지수 %.1f%% 이상 하락 (지수:%s %.2f%%↓), 매수 일시 중단", indexDropThreshold, code, (cur-open)/open*100)
 			}
 		}
 	}
@@ -340,18 +344,42 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 
 	// 하드 필터: LLM 전달 전 과열/이격 과대 종목 제거
 	{
+		filterRsiMax := settings.FilterRsiMax
+		if filterRsiMax == 0 {
+			filterRsiMax = 80
+		}
+		filterDisparityM5Max := settings.FilterDisparityM5Max
+		if filterDisparityM5Max == 0 {
+			filterDisparityM5Max = 3.0
+		}
+		filterHighPriceDiffMin := settings.FilterHighPriceDiffMin
+		if filterHighPriceDiffMin == 0 {
+			filterHighPriceDiffMin = -5.0
+		}
+		filterOpenPriceDiffMax := settings.FilterOpenPriceDiffMax
+		if filterOpenPriceDiffMax == 0 {
+			filterOpenPriceDiffMax = 20.0
+		}
 		filtered := rankings[:0]
 		for _, item := range rankings {
-			// RSI 과열 (80 이상) 제외
-			if item.RSI14 > 0 && item.RSI14 >= 80 {
+			// RSI 과열 제외
+			if item.RSI14 > 0 && item.RSI14 >= filterRsiMax {
+				logger.Info("engine: hard filter RSI", map[string]any{"stock_code": item.StockCode, "rsi": item.RSI14, "threshold": filterRsiMax})
 				continue
 			}
-			// 5분봉 이격도 3% 초과 제외
-			if item.DisparityM5 > 3.0 {
+			// 5분봉 이격도 초과 제외
+			if item.DisparityM5 > filterDisparityM5Max {
+				logger.Info("engine: hard filter disparity_m5", map[string]any{"stock_code": item.StockCode, "disparity_m5": item.DisparityM5, "threshold": filterDisparityM5Max})
 				continue
 			}
-			// 고가 대비 너무 많이 흘러내린 종목 (-5% 이하) 제외
-			if item.HighPriceDiff != 0 && item.HighPriceDiff < -5.0 {
+			// 고가 대비 너무 많이 흘러내린 종목 제외
+			if item.HighPriceDiff != 0 && item.HighPriceDiff < filterHighPriceDiffMin {
+				logger.Info("engine: hard filter high_price_diff", map[string]any{"stock_code": item.StockCode, "high_price_diff": item.HighPriceDiff, "threshold": filterHighPriceDiffMin})
+				continue
+			}
+			// 당일 상한가 영역 (시가 대비 과도 상승) 제외
+			if item.OpenPriceDiff > filterOpenPriceDiffMax {
+				logger.Info("engine: hard filter open_price_diff", map[string]any{"stock_code": item.StockCode, "open_price_diff": item.OpenPriceDiff, "threshold": filterOpenPriceDiffMax})
 				continue
 			}
 			filtered = append(filtered, item)
@@ -360,7 +388,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	}
 	if len(rankings) == 0 {
 		e.setState(StateMonitoring)
-		return fmt.Errorf("no stocks passed hard filter (RSI/disparity/high-price)")
+		return fmt.Errorf("no stocks passed hard filter (RSI/disparity/high-price/open-price)")
 	}
 
 	// Persist selection log to DB (Claude 호출 전 INSERT — 실패해도 로그 남김).
@@ -368,8 +396,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	{
 		candidatesJSON, _ := json.Marshal(rankings)
 		res, dbErr := e.db.ExecContext(ctx,
-			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result) VALUES (?,?,?)`,
-			len(rankings), string(candidatesJSON), "")
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, market) VALUES (?,?,?,?)`,
+			len(rankings), string(candidatesJSON), "", "KR")
 		if dbErr == nil {
 			selectionLogID, _ = res.LastInsertId()
 		}
@@ -839,6 +867,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			IntersectionCount: 0,
 			ResultStocks:      "[]",
 			ErrorMessage:      "no ranking types configured",
+			Market:            "KR",
 		})
 		return nil, fmt.Errorf("no ranking types configured")
 	}
@@ -948,6 +977,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		RankingCondition:  settings.RankingCondition,
 		IntersectionCount: len(result),
 		ResultStocks:      string(resultStocksJSON),
+		Market:            "KR",
 	}); err != nil {
 		logger.Warn("engine: InsertRankingLog failed", map[string]any{"error": err.Error()})
 	}
@@ -999,6 +1029,7 @@ func (e *Engine) getRankingsUS(ctx context.Context, settings database.TradingSet
 		PriceMax:          prc2,
 		VolumeCount:       len(result),
 		IntersectionCount: len(result),
+		Market:            "US",
 	})
 
 	return result, nil
@@ -1133,22 +1164,47 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 
 	// 하드 필터: LLM 전달 전 부적격 종목 제거
 	{
+		filterRsiMax := settings.FilterRsiMax
+		if filterRsiMax == 0 {
+			filterRsiMax = 80
+		}
+		filterDisparityM5Max := settings.FilterDisparityM5Max
+		if filterDisparityM5Max == 0 {
+			filterDisparityM5Max = 3.0
+		}
+		filterHighPriceDiffMin := settings.FilterHighPriceDiffMin
+		if filterHighPriceDiffMin == 0 {
+			filterHighPriceDiffMin = -5.0
+		}
+		filterOpenPriceDiffMax := settings.FilterOpenPriceDiffMax
+		if filterOpenPriceDiffMax == 0 {
+			filterOpenPriceDiffMax = 20.0
+		}
 		filtered := rankings[:0]
 		for _, item := range rankings {
-			// 고가 대비 5% 초과 하락 종목 제거 (매도 압력 심함)
-			if item.HighPriceDiff != 0 && item.HighPriceDiff < -5.0 {
+			// 고가 대비 초과 하락 종목 제거 (매도 압력 심함)
+			if item.HighPriceDiff != 0 && item.HighPriceDiff < filterHighPriceDiffMin {
+				logger.Info("engine US: hard filter high_price_diff", map[string]any{"stock_code": item.StockCode, "high_price_diff": item.HighPriceDiff, "threshold": filterHighPriceDiffMin})
 				continue
 			}
 			// MA5 < MA20: 하락 추세 종목 제거
 			if item.MA5 > 0 && item.MA20 > 0 && item.MA5 < item.MA20 {
+				logger.Info("engine US: hard filter MA trend", map[string]any{"stock_code": item.StockCode, "ma5": item.MA5, "ma20": item.MA20})
 				continue
 			}
-			// RSI 과열 (80 이상) 제외
-			if item.RSI14 > 0 && item.RSI14 >= 80 {
+			// RSI 과열 제외
+			if item.RSI14 > 0 && item.RSI14 >= filterRsiMax {
+				logger.Info("engine US: hard filter RSI", map[string]any{"stock_code": item.StockCode, "rsi": item.RSI14, "threshold": filterRsiMax})
 				continue
 			}
-			// 5분봉 이격도 3% 초과 제외
-			if item.DisparityM5 > 3.0 {
+			// 5분봉 이격도 초과 제외
+			if item.DisparityM5 > filterDisparityM5Max {
+				logger.Info("engine US: hard filter disparity_m5", map[string]any{"stock_code": item.StockCode, "disparity_m5": item.DisparityM5, "threshold": filterDisparityM5Max})
+				continue
+			}
+			// 당일 극단 고가 영역 (시가 대비 과도 상승) 제외
+			if item.OpenPriceDiff > filterOpenPriceDiffMax {
+				logger.Info("engine US: hard filter open_price_diff", map[string]any{"stock_code": item.StockCode, "open_price_diff": item.OpenPriceDiff, "threshold": filterOpenPriceDiffMax})
 				continue
 			}
 			filtered = append(filtered, item)
@@ -1157,7 +1213,7 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 	}
 	if len(rankings) == 0 {
 		e.setState(StateMonitoring)
-		return fmt.Errorf("no US stocks passed hard filter (high-price/MA trend/RSI/disparity)")
+		return fmt.Errorf("no US stocks passed hard filter (high-price/MA trend/RSI/disparity/open-price)")
 	}
 
 	// Persist selection log
@@ -1165,8 +1221,8 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 	{
 		candidatesJSON, _ := json.Marshal(rankings)
 		res, dbErr := e.db.ExecContext(ctx,
-			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result) VALUES (?,?,?)`,
-			len(rankings), string(candidatesJSON), "")
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, market) VALUES (?,?,?,?)`,
+			len(rankings), string(candidatesJSON), "", "US")
 		if dbErr == nil {
 			selectionLogID, _ = res.LastInsertId()
 		}
