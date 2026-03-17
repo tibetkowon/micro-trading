@@ -589,6 +589,24 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	priceMin := settings.RankingPriceMin
 	priceMax := settings.RankingPriceMax
 
+	// KIS API price filter params may be ignored by some ranking endpoints,
+	// so we enforce the price range ourselves after each API call.
+	priceMinF, _ := strconv.ParseFloat(priceMin, 64)
+	priceMaxF, _ := strconv.ParseFloat(priceMax, 64)
+	withinPriceRange := func(currentPrice string) bool {
+		p, err := strconv.ParseFloat(currentPrice, 64)
+		if err != nil || p <= 0 {
+			return false
+		}
+		if priceMinF > 0 && p < priceMinF {
+			return false
+		}
+		if priceMaxF > 0 && p > priceMaxF {
+			return false
+		}
+		return true
+	}
+
 	// byType holds filtered results per ranking type: stockCode → RankItem
 	byType := make(map[string]map[string]RankItem) // rankingType → code → item
 
@@ -606,6 +624,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			for _, item := range items {
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
+				}
+				if !withinPriceRange(item.CurrentPrice) {
+					continue
 				}
 				if settings.RankingVolumeMinIncrRate > 0 {
 					rate, _ := strconv.ParseFloat(item.VolIncrRate, 64)
@@ -632,6 +653,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
 				}
+				if !withinPriceRange(item.CurrentPrice) {
+					continue
+				}
 				if settings.RankingStrengthMin > 0 {
 					str, _ := strconv.ParseFloat(item.Strength, 64)
 					if str < settings.RankingStrengthMin {
@@ -657,6 +681,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
 				}
+				if !withinPriceRange(item.CurrentPrice) {
+					continue
+				}
 				if settings.RankingExecCountNetBuyOnly {
 					netBuy, _ := strconv.ParseFloat(item.NetBuyQty, 64)
 					if netBuy <= 0 {
@@ -681,6 +708,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			for _, item := range items {
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
+				}
+				if !withinPriceRange(item.CurrentPrice) {
+					continue
 				}
 				if settings.RankingDisparityD20Min > 0 || settings.RankingDisparityD20Max > 0 {
 					d20, _ := strconv.ParseFloat(item.D20, 64)
