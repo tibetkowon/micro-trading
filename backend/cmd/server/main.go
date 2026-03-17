@@ -189,6 +189,7 @@ func parseHHMM(s string, def int) int {
 //	15:15 → stop engine → liquidate all positions
 //	15:20 → generate daily report → save to DB
 //	16:00 → disconnect
+//
 // isActiveUSTrading returns true if the current hhmm is within the US trading window.
 // Handles midnight crossover (e.g., 22:30~05:00).
 func isActiveUSTrading(hhmm, startHHMM, endHHMM int) bool {

@@ -29,8 +29,8 @@ type MonitoredEntry struct {
 	TargetPrice float64
 	StopPrice   float64
 	OrderID     int64
-	Market      string    // "KR" or "US" (empty defaults to "KR")
-	ExchCode    string    // 거래소코드 for US: NASD/NYSE/AMEX (empty for KR)
+	Market      string        // "KR" or "US" (empty defaults to "KR")
+	ExchCode    string        // 거래소코드 for US: NASD/NYSE/AMEX (empty for KR)
 	SoldCh      chan<- string // optional: engine receives sold signal (may be nil)
 	// 트레일링 스탑
 	TrailingTriggerPct float64 // 활성화 기준 수익률 (%). 0=비활성

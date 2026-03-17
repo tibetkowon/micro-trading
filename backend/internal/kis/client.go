@@ -662,21 +662,21 @@ type OverseasOrderResponse struct {
 // OverseasHoldingItem holds a single overseas stock position.
 type OverseasHoldingItem struct {
 	StockCode      string `json:"ovrs_pdno"`          // 종목코드
-	StockName      string `json:"ovrs_item_name"`      // 종목명
-	HoldingQty     string `json:"ovrs_cblc_qty"`       // 잔고수량
-	AvgPrice       string `json:"pchs_avg_pric"`       // 매입평균가격
-	CurrentPrice   string `json:"now_pric2"`           // 현재가
-	EvalProfitLoss string `json:"frcr_evlu_pfls_amt"`  // 외화평가손익
-	ProfitRate     string `json:"evlu_pfls_rt"`        // 평가손익율
-	OrderablQty    string `json:"ord_psbl_qty"`        // 주문가능수량
+	StockName      string `json:"ovrs_item_name"`     // 종목명
+	HoldingQty     string `json:"ovrs_cblc_qty"`      // 잔고수량
+	AvgPrice       string `json:"pchs_avg_pric"`      // 매입평균가격
+	CurrentPrice   string `json:"now_pric2"`          // 현재가
+	EvalProfitLoss string `json:"frcr_evlu_pfls_amt"` // 외화평가손익
+	ProfitRate     string `json:"evlu_pfls_rt"`       // 평가손익율
+	OrderablQty    string `json:"ord_psbl_qty"`       // 주문가능수량
 }
 
 // OverseasBalanceSummary holds overseas account summary.
 type OverseasBalanceSummary struct {
 	TotalProfitLoss string `json:"tot_evlu_pfls_amt"` // 총평가손익금액
-	TotalProfitRate string `json:"tot_pftrt"`          // 총수익율
-	TotalBuyAmt     string `json:"frcr_pchs_amt1"`     // 외화매입금액
-	OrdPsblFrcrAmt  string `json:"ord_psbl_frcr_amt"`  // 주문가능외화금액
+	TotalProfitRate string `json:"tot_pftrt"`         // 총수익율
+	TotalBuyAmt     string `json:"frcr_pchs_amt1"`    // 외화매입금액
+	OrdPsblFrcrAmt  string `json:"ord_psbl_frcr_amt"` // 주문가능외화금액
 }
 
 // OverseasPriceResponse holds overseas stock current price info.
@@ -803,9 +803,9 @@ func (c *Client) GetOverseasHoldings(ctx context.Context, exchCode, crcy string)
 	}
 
 	var result struct {
-		Output1 []OverseasHoldingItem   `json:"output1"`
+		Output1 []OverseasHoldingItem    `json:"output1"`
 		Output2 []OverseasBalanceSummary `json:"output2"`
-		MsgCode string                  `json:"msg_cd"`
+		MsgCode string                   `json:"msg_cd"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
