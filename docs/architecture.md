@@ -1,6 +1,6 @@
 # Project Architecture
 
-> Last updated: 2026-03-06 (rev 7 — 자율 트레이딩 엔진 도입, Claude API 통합)
+> Last updated: 2026-03-17 (rev 8 — KR/US 듀얼 마켓 엔진, 매매 품질 필터 8종)
 
 ## Directory Tree
 
@@ -61,13 +61,13 @@ micro-trading-for-agent/
 │   │   │   ├── Card.jsx        # 재사용 통계 카드
 │   │   │   └── StatusBadge.jsx # 주문 상태 배지 (색상 코딩)
 │   │   └── pages/
-│   │       ├── Dashboard.jsx   # 잔고 카드 + 보유 종목 + 트레이더 상태
-│   │       ├── Monitor.jsx     # 모니터링 포지션 목록
-│   │       ├── Orders.jsx      # 주문 내역 테이블 (오늘 기준)
-│   │       ├── KISLogs.jsx     # KIS API 에러 로그 뷰어
-│   │       ├── Settings.jsx    # 거래 파라미터·순위·매도조건·지표·Claude 설정
-│   │       ├── Reports.jsx     # 일일 리포트 목록 + 내용 표시
-│   │       └── Debug.jsx       # WebSocket·Monitor·가격주입 테스트 도구
+│   │       ├── Dashboard.jsx       # 잔고 카드 + 보유 종목 + 트레이더 상태
+│   │       ├── Monitor.jsx         # 모니터링 포지션 목록
+│   │       ├── Orders.jsx          # 주문 내역 테이블 (오늘 기준)
+│   │       ├── KISLogs.jsx         # KIS API 에러 로그 뷰어
+│   │       ├── SelectionLogs.jsx   # LLM 종목 선정 로그 뷰어
+│   │       ├── RankingLogs.jsx     # 순위 조회 로그 뷰어
+│   │       └── Settings.jsx        # 거래 파라미터·순위·매도조건·지표·US·Claude 설정
 │   ├── index.html              # Vite HTML 템플릿
 │   ├── vite.config.js          # Vite 설정; /api 프록시 → :8080
 │   ├── tailwind.config.js      # Tailwind content 경로
@@ -99,7 +99,7 @@ micro-trading-for-agent/
 
 ### `backend/internal/database`
 - **Role:** SQLite 연결 초기화 및 서버 시작 시 스키마 마이그레이션 자동 실행.
-- `GetTradingSettings(ctx)` — 자율 트레이딩 설정 12개를 일괄 조회하여 `TradingSettings` 구조체로 반환
+- `GetTradingSettings(ctx)` — 자율 트레이딩 설정 40개 이상을 일괄 조회하여 `TradingSettings` 구조체로 반환 (KR/US 설정, 트레일링 스탑, 매수 중단 시간대, 지수 필터, 일일 손실 한도 포함)
 - `SaveReport(ctx, date, content)` — 일일 리포트 upsert
 - 신규 설정 키는 `INSERT OR IGNORE`로 기본값 자동 삽입 (서버 기동 시)
 
@@ -108,8 +108,12 @@ micro-trading-for-agent/
 - `Order`, `MonitoredPosition`, `Balance`, `KISAPILog`, `Token`, `Report`, `Setting`
 
 ### `backend/internal/kis`
-- **`client.go`** — REST API 요청/응답, 토큰 주입, Rate Limiting
-- **`websocket.go`** — WebSocket 연결/재연결, `H0STCNT0`(체결가)/`H0STCNI0`(체결통보) 구독, AES-256-CBC 복호화
+- **`client.go`** — REST API 요청/응답, 토큰 주입, Rate Limiting; 해외주식 API 7종 추가:
+  - `GetOverseasPrice`, `GetOverseasVolumeRank`
+  - `PlaceOverseasBuyOrder`, `PlaceOverseasSellOrder`
+  - `GetOverseasHoldings`, `GetOverseasAvailableOrder`
+  - `GetOverseasDailyChart`
+- **`websocket.go`** — WebSocket 연결/재연결, `H0STCNT0`(체결가)/`H0STCNI0`(체결통보) 구독, AES-256-CBC 복호화; 해외주식 실시간 가격(`HDFSCNT0`) 구독/해제 지원
   - `PriceCh chan PriceEvent` — monitor.StartPriceConsumer가 소비
   - `ExecCh chan ExecEvent` — trader.Engine이 체결 확인에 사용 (단일 소비자)
 - **`token.go`** — OAuth 토큰 발급·갱신·캐시, 자격증명 지문 체크
@@ -120,10 +124,11 @@ micro-trading-for-agent/
 
 ### `backend/internal/monitor`
 - **Role:** 보유 포지션 실시간 모니터링.
-- `Register(pos MonitoredEntry)` — 포지션 등록; `MonitoredEntry.SoldCh`에 엔진 채널 주입 가능
-- `HandlePrice(stockCode, price, isTest)` — WebSocket 가격 이벤트 처리; 목표/손절 도달 시 `executeSell()` + MQTT + `SoldCh` 알림
+- `MonitoredEntry` — `Market string`("KR"/"US"), `ExchCode string`(해외거래소), `TrailingTriggerPct/TrailingStopPct/PeakPrice/TrailingActivated` 트레일링 스탑 필드 포함
+- `Register(ctx, pos MonitoredEntry)` — 포지션 등록; US 종목은 해외 실시간 가격 WebSocket 구독
+- `HandlePrice(stockCode, price, isTest)` — WebSocket 가격 이벤트 처리; 트레일링 스탑 활성화·갱신, 목표/손절 도달 시 `executeSell()`(KR) 또는 `executeOverseasSell()`(US) + MQTT + `SoldCh` 알림
 - `StartIndicatorChecker(ctx, intervalMin, conditions, rsiThreshold, macdBearish, getInfoFn)` — RSI/MACD 주기 평가; `getInfoFn` 콜백으로 순환 임포트 방지
-- `LiquidateAll(ctx)` — 15:15 전량 시장가 청산
+- `LiquidateAll(ctx, market ...string)` — 전량 시장가 청산; market 인자로 "KR"/"US" 선택 가능 (생략 시 전체)
 
 ### `backend/internal/agent`
 - **Role:** KIS API 데이터와 DB를 연결하는 거래 액션 함수 모음.
@@ -133,15 +138,18 @@ micro-trading-for-agent/
 - `StartOrderSyncScheduler()` — 5분 간격 KIS 체결 내역 동기화
 
 ### `backend/internal/trader`
-- **Role:** Claude API 기반 자율 트레이딩 엔진.
+- **Role:** Claude API 기반 자율 트레이딩 엔진 (KR/US 듀얼 마켓).
 - **`claude.go`**
-  - `ClaudeClient.SelectStock(ctx, rankings, availableCash, excludedCodes)` → `(stockCode, reason, error)`
+  - `ClaudeClient.SelectStocks(ctx, rankings, availableCash, excludedCodes, market)` → `([]Selection, error)` — `market="KR"|"US"` 에 따라 프롬프트 분기
   - `ClaudeClient.GenerateReport(ctx, date, trades, totalEval, withdrawable)` → `(markdown, error)`
 - **`engine.go`**
+  - `Engine.market` = `"KR"` | `"US"` (NewEngine 생성 시 지정)
   - `Engine.Start(ctx)` → 사이클 goroutine 시작, `stop func()` 반환
-  - `Engine.GetState()` → 현재 상태 (`IDLE|SELECTING|ORDERING|WAITING_FILL|MONITORING`)
+  - `Engine.GetState()` → 현재 상태 (`IDLE|SEARCHING|SELECTING|ORDERING|WAITING_FILL|MONITORING`)
   - `Engine.GenerateDailyReport(ctx)` → 당일 AGENT 주문 로드 후 Claude 리포트 생성
   - `Engine.SoldCh()` → Monitor에 주입할 매도 완료 채널 반환
+  - **KR 품질 필터 (selectAndBuy):** 매수중단시간대 → 지수필터(-1% 이상 하락) → 거래대금 하한선 → RSI/이격도 하드필터 → HighPriceDiff → MA5<MA20 → 일일손실한도
+  - **US 품질 필터 (selectAndBuyUS):** 거래대금 하한선 → GetOverseasDailyChart MA5/MA20 크로스 확인 + 추가 필터
 
 ### `backend/internal/api`
 - **Role:** HTTP 레이어. 입력 검증 → agent/db/engine 함수 호출 → JSON 응답.
@@ -150,6 +158,8 @@ micro-trading-for-agent/
 ---
 
 ## 장운영 스케줄러 (main.go `runMarketScheduler`)
+
+### KR 마켓 (국내)
 
 ```
 08:50 (KST) → tokenManager.IssueToken()
@@ -161,38 +171,81 @@ micro-trading-for-agent/
             → agent.IsMarketOpen() 확인
             → tradingReady = true (조건 충족 시)
 
-09:15 (KST) → engine.Start(ctx)                  ← tradingReady == true 시에만
+09:15 (KST) → krEngine.Start(ctx)                ← tradingReady == true 시에만
             → mon.StartIndicatorChecker(ctx, ...)
 
-15:15 (KST) → engine stop()
+15:15 (KST) → krEngine stop()
             → mon.StartIndicatorChecker cancel()
-            → mon.LiquidateAll(ctx)
+            → mon.LiquidateAll(ctx, "KR")
 
-15:20 (KST) → engine.GenerateDailyReport(ctx)
+15:20 (KST) → krEngine.GenerateDailyReport(ctx)
             → db.SaveReport(date, report)
 
 16:00 (KST) → wsClient.Disconnect()
 ```
 
+### US 마켓 (미장) — 자정 크로스오버 처리 포함
+
+```
+us_trading_start_time (기본 22:30 KST)
+            → usEngine.Start(ctx)               ← us_trading_enabled == true 시에만
+
+us_trading_end_time (기본 05:00 KST)
+            → usEngine stop()
+            → mon.LiquidateAll(ctx, "US")
+```
+
+> `isActiveUSTrading(hhmm, start, end)` — 자정을 넘는 시간대(예: 22:30~05:00) 판별을 위해 종료 시각이 시작 시각보다 작으면 자정 크로스오버로 처리.
+
 ---
 
-## 트레이딩 엔진 사이클 (09:15 ~ 15:15 반복)
+## 트레이딩 엔진 사이클
+
+### KR 사이클 (09:15 ~ 15:15 반복)
 
 ```
 현재 포지션 수 < max_positions?
-  YES →
+  YES → [SEARCHING → SELECTING]
     1. 당일 거래 종목 코드 제외 목록 조회 (DB)
     2. 설정된 순위 API 호출 (volume/strength/exec_count/disparity)
-    3. GetInquireBalance() → 가용자금 확인
-    4. ClaudeClient.SelectStock(rankings, cash, excluded) → stockCode, reason
-    5. CheckOrderFeasibility(stockCode) → orderableQty
-    6. PlaceOrder(시장가, qty * order_amount_pct%)
-    7. ExecCh drain-and-match (KISOrderID 매칭, 최대 5분)
+    3. 품질 필터 (순서대로 적용):
+       a. 매수 중단 시간대(buy_pause_start~end) 해당 시 대기
+       b. 지수 필터 — index_codes 지수 -1% 이상 하락 시 매수 중단
+       c. 거래대금 하한선(min_trading_value) 미달 종목 제거
+       d. 지표 enrichment — GetStockInfo(RSI14, MA5/MA20, 이격도)
+       e. 하드 필터 — RSI 과매수, 이격도 과열, 고가 괴리, MA5<MA20 종목 제거
+       f. 일일 최대 손실 한도 초과 시 매수 중단
+    4. GetInquireBalance() → 가용자금 확인
+    5. ClaudeClient.SelectStocks(rankings, cash, excluded, "KR") → stockCode, reason
+    6. CheckOrderFeasibility(stockCode) → orderableQty
+    7. PlaceOrder(시장가, qty * order_amount_pct%)   [ORDERING]
+    8. ExecCh drain-and-match (KISOrderID 매칭, 최대 5분)   [WAITING_FILL]
        └─ 타임아웃 → CancelOrder() → 처음으로
-    8. Monitor.Register(pos, SoldCh=engine.soldCh)
-    9. 다시 1로 (max_positions 미충족 시 즉시 다음 종목)
+    9. Monitor.Register(pos, SoldCh=engine.soldCh)   [MONITORING]
+   10. 다시 1로 (max_positions 미충족 시 즉시 다음 종목)
 
   NO → soldCh 대기 (or 30초 주기 re-check)
+       └─ sold 수신 → 처음으로
+```
+
+### US 사이클 (us_start ~ us_end 반복)
+
+```
+현재 US 포지션 수 < max_positions?
+  YES → [SEARCHING → SELECTING]
+    1. 당일 거래 종목 코드 제외 목록 조회 (DB)
+    2. GetOverseasVolumeRank(exchange) → 상위 N 종목
+    3. 품질 필터:
+       a. 거래대금 하한선(min_trading_value USD) 미달 종목 제거
+       b. GetOverseasDailyChart — MA5/MA20 데드크로스 종목 제거
+    4. GetOverseasAvailableOrder() → 가용자금 확인
+    5. ClaudeClient.SelectStocks(rankings, cash, excluded, "US") → stockCode, reason
+    6. PlaceOverseasBuyOrder(exchange, stockCode, qty)   [ORDERING]
+    7. ExecCh drain-and-match (최대 5분)   [WAITING_FILL]
+       └─ 타임아웃 → 처음으로
+    8. Monitor.Register(pos{Market:"US", ExchCode:…}, SoldCh=engine.soldCh)   [MONITORING]
+
+  NO → soldCh 대기
        └─ sold 수신 → 처음으로
 ```
 
@@ -252,16 +305,12 @@ monitor.StartIndicatorChecker() (5분 주기, 별도 goroutine)
 | GET | `/api/ranking/disparity` | `GetDisparityRank` | 이격도 순위 |
 | GET | `/api/logs/kis` | `GetKISLogs` | KIS API 에러 로그 |
 | DELETE | `/api/logs/kis/:id` | `DeleteKISLog` | 에러 로그 단건 삭제 |
+| GET | `/api/logs/selection` | `GetSelectionLogs` | LLM 종목 선정 로그 (30일 자동 삭제) |
+| GET | `/api/logs/ranking` | `GetRankingLogs` | 순위 조회 로그 (30일 자동 삭제) |
 | GET | `/api/settings` | `GetSettings` | 모든 설정 조회 |
 | PATCH | `/api/settings` | `UpdateSettings` | 설정 변경 |
-| GET | `/api/reports` | `GetReports` | 리포트 날짜 목록 |
-| GET | `/api/reports/:date` | `GetReport` | 특정 날짜 리포트 전문 |
-| GET | `/api/debug/balance` | `DebugRawBalance` | KIS 잔고 원본 응답 |
-| POST | `/api/debug/ws` | `DebugWSConnect` | WebSocket 수동 연결 |
-| DELETE | `/api/debug/ws` | `DebugWSDisconnect` | WebSocket 수동 해제 |
-| POST | `/api/debug/price` | `DebugInjectPrice` | 가짜 가격 이벤트 주입 (is_test=true) |
-| POST | `/api/debug/monitor` | `DebugRegisterMonitor` | 모니터 포지션 직접 등록 (KIS 주문 없이) |
-| POST | `/api/debug/liquidate` | `DebugLiquidate` | LiquidateAll 수동 트리거 |
+| POST | `/api/ws/connect` | `ConnectWebSocket` | WebSocket 수동 연결 |
+| POST | `/api/ws/disconnect` | `DisconnectWebSocket` | WebSocket 수동 해제 |
 | GET | `/health` | (inline) | 헬스 체크 |
 
 ---

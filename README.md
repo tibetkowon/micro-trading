@@ -17,12 +17,20 @@ NCP Micro (1GB RAM) 환경에서 효율적으로 동작하도록 설계되었습
 
 ## 시스템 개요
 
-서버가 Claude API를 활용하여 장 시간 중 다음 사이클을 자율 반복합니다:
+국내(KR) + 미장(US) 동시 운영 듀얼 엔진으로 서버가 Claude API를 활용하여 각 시장 시간 중 다음 사이클을 자율 반복합니다:
 
+**KR (국내):**
 ```
-순위 조회 → Claude 종목 선정 → KIS 시장가 매수
+국내 순위 조회 → 품질 필터(지수·거래대금·RSI/이격도) → Claude 종목 선정 → KIS 시장가 매수
   → WebSocket 체결 확인 → 포지션 모니터 등록
-  → 목표가/손절가/지표 감시 → 자동 매도 → 다음 사이클
+  → 목표가/손절가/트레일링스탑/지표 감시 → 자동 매도 → 다음 사이클
+```
+
+**US (미장):**
+```
+해외 거래량 순위 조회 → 품질 필터(MA5/MA20 등) → Claude 종목 선정 → 해외 시장가 매수
+  → WebSocket 체결 확인 → 포지션 모니터 등록
+  → 목표가/손절가 감시 → 자동 매도 → 다음 사이클
 ```
 
 매일 15:20에 Claude가 당일 거래 내역을 분석한 한국어 마크다운 일일 리포트를 생성하여 DB에 저장합니다.
@@ -79,10 +87,12 @@ npm run dev
 | **08:50** | KIS 토큰 갱신 + WebSocket 연결 + 체결통보 구독 | 평일 |
 | **09:00** | `trading_enabled` 확인 + 장 개장 여부 확인 → tradingReady 세팅 | 평일 |
 | **`trading_start_time`** (기본: 09:15) | 자율 트레이딩 엔진 시작 + 지표 감시 시작 | `tradingReady == true` |
-| **`trading_end_time`** (기본: 15:15) | 엔진 정지 + 모든 포지션 전량 시장가 청산 | 평일 |
+| **`trading_end_time`** (기본: 15:15) | KR 엔진 정지 + 국내 포지션 전량 시장가 청산 | 평일 |
 | **15:20** | Claude 일일 리포트 생성 → DB 저장 | 평일 |
 | **16:00** | WebSocket 연결 해제 | 평일 |
 | 5분 주기 | KIS 체결 내역 → DB 동기화 | 장 중에만 |
+| **`us_trading_start_time`** (기본: 22:30 KST) | US 엔진 시작 | `us_trading_enabled == true` |
+| **`us_trading_end_time`** (기본: 05:00 KST) | US 엔진 정지 + 미국 포지션 전량 청산 | - |
 
 > 거래 시작·종료 시간은 Settings 화면에서 변경 가능합니다. 변경 시 다음 틱(30초 이내)부터 반영됩니다.
 
@@ -91,12 +101,13 @@ npm run dev
 ## 트레이딩 엔진 상태 머신
 
 ```
-IDLE → SELECTING → ORDERING → WAITING_FILL → MONITORING
-         ↑                                        │
-         └──────────── (매도 완료 신호) ────────────┘
+IDLE → SEARCHING → SELECTING → ORDERING → WAITING_FILL → MONITORING
+           ↑                                                    │
+           └──────────────── (매도 완료 신호) ───────────────────┘
 ```
 
-- **SELECTING**: 순위 API 조회 → Claude에 종목 선정 요청
+- **SEARCHING**: 포지션 여유 있음 — 매수 종목 탐색 대기 단계
+- **SELECTING**: 순위 API 조회 → 품질 필터 적용 → Claude에 종목 선정 요청
 - **ORDERING**: KIS 시장가 매수 주문 실행
 - **WAITING_FILL**: WebSocket ExecCh에서 체결 확인 (최대 5분 → 타임아웃 시 취소 후 재선정)
 - **MONITORING**: Monitor에 포지션 등록 후 다음 종목 선정 대기
@@ -120,6 +131,15 @@ Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
 | 지표 확인 주기 | 5분 | RSI/MACD 체크 간격 |
 | RSI 과매수 기준 | 70 | RSI ≥ 이 값이면 매도 트리거 |
 | MACD 데드크로스 매도 | OFF | MACD선 < 시그널선 시 매도 |
+| 트레일링 스탑 트리거 | 0% (비활성) | 이 수익률 달성 시 트레일링 스탑 활성화 |
+| 트레일링 스탑 간격 | 0% (비활성) | 고점 대비 이 % 하락 시 매도 |
+| 매수 중단 시간대 | "" (비활성) | 예: `11:20~13:00` → 해당 시간대 매수 안 함 |
+| 최소 거래대금 | 0 (비활성) | KRW/USD 기준, 이 미만 종목 제거 |
+| 일일 최대 손실 한도 | 0% (비활성) | 당일 실현손실이 총평가 대비 이 % 초과 시 매수 중단 |
+| 지수 필터 | [] (비활성) | 예: `["0001","1001"]` — 지수 -1% 이상 하락 시 매수 중단 |
+| US 거래 활성화 | OFF | US 엔진 ON/OFF |
+| US 거래 거래소 | NAS | NAS/NYS/AMS |
+| US 가격 범위 | "" (제한없음) | USD 기준 최소/최대 주가 필터 |
 | Claude 모델 | claude-sonnet-4-6 | 종목 선정 및 리포트 생성에 사용 |
 
 ---
@@ -206,6 +226,14 @@ Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
 | GET | `/api/logs/kis` | KIS API 에러 로그 (`?summary=true` raw 제외) |
 | DELETE | `/api/logs/kis/:id` | 에러 로그 단건 삭제 |
 | GET | `/api/logs/selection` | LLM 종목 선정 로그 (`?limit=20`, 최신 순, 30일 자동 삭제) |
+| GET | `/api/logs/ranking` | 순위 조회 로그 (최신 순, 30일 자동 삭제) |
+
+### WebSocket 제어
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/ws/connect` | WebSocket 수동 연결 |
+| POST | `/api/ws/disconnect` | WebSocket 수동 해제 |
 
 ### 헬스 체크
 
