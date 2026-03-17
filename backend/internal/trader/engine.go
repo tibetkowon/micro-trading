@@ -200,13 +200,13 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	}
 
 	// 지수 필터: 지수가 시가 대비 -1% 이상 하락 시 매수 중단
-	if settings.IndexCode != "" {
-		if idx, idxErr := e.kisClient.GetIndexPrice(ctx, settings.IndexCode); idxErr == nil {
+	for _, code := range settings.IndexCodes {
+		if idx, idxErr := e.kisClient.GetIndexPrice(ctx, code); idxErr == nil {
 			open, _ := strconv.ParseFloat(idx.DayOpen, 64)
 			cur, _ := strconv.ParseFloat(idx.CurrentPrice, 64)
 			if open > 0 && cur > 0 && (cur-open)/open*100 <= -1.0 {
 				e.setState(StateMonitoring)
-				return fmt.Errorf("지수 -1%% 이상 하락 (지수:%s %.2f%%↓), 매수 일시 중단", settings.IndexCode, (cur-open)/open*100)
+				return fmt.Errorf("지수 -1%% 이상 하락 (지수:%s %.2f%%↓), 매수 일시 중단", code, (cur-open)/open*100)
 			}
 		}
 	}

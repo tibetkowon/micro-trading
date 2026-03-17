@@ -502,7 +502,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		// 일일 최대 손실
 		"daily_max_loss_pct": ts.DailyMaxLossPct,
 		// 지수 필터
-		"index_code": ts.IndexCode,
+		"index_codes": ts.IndexCodes,
 	})
 }
 
@@ -545,8 +545,8 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		TrailingStopPct    *float64 `json:"trailing_stop_pct"`
 		// 일일 최대 손실
 		DailyMaxLossPct *float64 `json:"daily_max_loss_pct"`
-		// 지수 필터 (nil = 변경 안 함, "" = 비활성화)
-		IndexCode *string `json:"index_code"`
+		// 지수 필터 (nil = 변경 안 함)
+		IndexCodes []string `json:"index_codes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -800,8 +800,9 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
-	if req.IndexCode != nil {
-		if !save("index_code", *req.IndexCode) {
+	if req.IndexCodes != nil {
+		b, _ := json.Marshal(req.IndexCodes)
+		if !save("index_codes", string(b)) {
 			return
 		}
 	}

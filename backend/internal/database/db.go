@@ -55,7 +55,7 @@ type TradingSettings struct {
 	// 일일 최대 손실
 	DailyMaxLossPct float64 // 일일 최대 손실 한도(%). 0=제한없음
 	// 지수 필터
-	IndexCode string // 지수 코드("0001"=코스피, "1001"=코스닥). 비어있으면 비활성
+	IndexCodes []string // 지수 코드 목록 ("0001"=코스피, "1001"=코스닥). 빈 배열=비활성
 }
 
 // DB wraps the sql.DB connection.
@@ -230,7 +230,7 @@ func (db *DB) migrate() error {
 		{"trailing_trigger_pct", "0"},
 		{"trailing_stop_pct", "1.0"},
 		{"daily_max_loss_pct", "0"},
-		{"index_code", ""},
+		{"index_codes", "[]"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -265,7 +265,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'min_trading_value',`+
 			`'buy_pause_start','buy_pause_end',`+
 			`'trailing_trigger_pct','trailing_stop_pct',`+
-			`'daily_max_loss_pct','index_code'`+
+			`'daily_max_loss_pct','index_codes'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -385,7 +385,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		TrailingTriggerPct:         f64("trailing_trigger_pct"),
 		TrailingStopPct:            f64("trailing_stop_pct"),
 		DailyMaxLossPct:            f64("daily_max_loss_pct"),
-		IndexCode:                  vals["index_code"],
+		IndexCodes:                 strSlice("index_codes"),
 	}, nil
 }
 

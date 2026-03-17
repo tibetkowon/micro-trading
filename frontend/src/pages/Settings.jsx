@@ -101,7 +101,7 @@ export default function Settings() {
 
   // ── 리스크 관리 ──
   const [dailyMaxLossPct, setDailyMaxLossPct] = useState('0')
-  const [indexCode, setIndexCode] = useState('')
+  const [indexCodes, setIndexCodes] = useState([])
 
   // ── AI 설정 ──
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
@@ -148,7 +148,7 @@ export default function Settings() {
     if (data.trailing_trigger_pct != null) setTrailingTriggerPct(String(data.trailing_trigger_pct))
     if (data.trailing_stop_pct != null) setTrailingStopPct(String(data.trailing_stop_pct))
     if (data.daily_max_loss_pct != null) setDailyMaxLossPct(String(data.daily_max_loss_pct))
-    if (data.index_code != null) setIndexCode(data.index_code)
+    if (Array.isArray(data.index_codes)) setIndexCodes(data.index_codes)
 
     if (data.claude_model) setClaudeModel(data.claude_model)
   }, [data])
@@ -218,7 +218,7 @@ export default function Settings() {
       trailing_trigger_pct: parseFloat(trailingTriggerPct) || 0,
       trailing_stop_pct: parseFloat(trailingStopPct) || 1.0,
       daily_max_loss_pct: parseFloat(dailyMaxLossPct) || 0,
-      index_code: indexCode,
+      index_codes: indexCodes,
       claude_model: claudeModel,
     }
 
@@ -333,18 +333,22 @@ export default function Settings() {
 
           {/* 지수 필터 */}
           <div className="space-y-1 pt-1 border-t border-gray-800">
-            <label className="space-y-1 block">
-              <span className="text-xs text-gray-400">지수 필터 코드 (0001=코스피, 1001=코스닥, 빈값=비활성)</span>
-              <input
-                type="text"
-                value={indexCode}
-                onChange={(e) => setIndexCode(e.target.value)}
-                className="w-36 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200 font-mono"
-                placeholder="0001"
-                maxLength={4}
-              />
-            </label>
-            <p className="text-xs text-gray-600">지수가 시가 대비 -1% 이상 하락 시 매수를 일시 중단합니다.</p>
+            <span className="text-xs text-gray-400 block">지수 필터 (체크된 지수가 시가 대비 -1% 이상 하락 시 매수 중단)</span>
+            <div className="flex gap-4">
+              {[{ code: '0001', label: '코스피' }, { code: '1001', label: '코스닥' }].map(({ code, label }) => (
+                <label key={code} className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={indexCodes.includes(code)}
+                    onChange={(e) => setIndexCodes(prev =>
+                      e.target.checked ? [...prev, code] : prev.filter(c => c !== code)
+                    )}
+                    className="accent-blue-500"
+                  />
+                  <span className="text-sm text-gray-300">{label} ({code})</span>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -558,7 +562,7 @@ export default function Settings() {
             <label className="space-y-1 block">
               <span className="text-xs text-gray-400">최소 거래대금 (원, 0=필터없음)</span>
               <input
-                type="number" step="100000000" min="0"
+                type="number" step="any" min="0"
                 value={minTradingValue}
                 onChange={(e) => setMinTradingValue(e.target.value)}
                 className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
@@ -666,7 +670,7 @@ export default function Settings() {
               <label className="space-y-1">
                 <span className="text-xs text-gray-400">활성화 기준 수익률 (%, 0=비활성)</span>
                 <input
-                  type="number" step="0.5" min="0"
+                  type="number" step="0.1" min="0"
                   value={trailingTriggerPct}
                   onChange={(e) => setTrailingTriggerPct(e.target.value)}
                   className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
@@ -675,7 +679,7 @@ export default function Settings() {
               <label className="space-y-1">
                 <span className="text-xs text-gray-400">최고가 대비 하락 허용폭 (%)</span>
                 <input
-                  type="number" step="0.5" min="0.1"
+                  type="number" step="0.1" min="0.1"
                   value={trailingStopPct}
                   onChange={(e) => setTrailingStopPct(e.target.value)}
                   className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
@@ -690,7 +694,7 @@ export default function Settings() {
             <label className="space-y-1 block">
               <span className="text-xs text-gray-400">총자산 대비 최대 손실 (%, 0=제한없음)</span>
               <input
-                type="number" step="0.5" min="0"
+                type="number" step="0.1" min="0"
                 value={dailyMaxLossPct}
                 onChange={(e) => setDailyMaxLossPct(e.target.value)}
                 className="w-40 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
