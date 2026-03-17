@@ -824,6 +824,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			DisparityCount:    -1,
 			RankingCondition:  settings.RankingCondition,
 			IntersectionCount: 0,
+			ResultStocks:      "[]",
 			ErrorMessage:      "no ranking types configured",
 		})
 		return nil, fmt.Errorf("no ranking types configured")
@@ -922,6 +923,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		return len(m)
 	}
 	typesJSON, _ := json.Marshal(settings.RankingTypes)
+	resultStocksJSON, _ := json.Marshal(result)
 	if err := e.db.InsertRankingLog(ctx, models.TraderRankingLog{
 		RankingTypes:      string(typesJSON),
 		PriceMin:          settings.RankingPriceMin,
@@ -932,6 +934,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		DisparityCount:    countFor("disparity"),
 		RankingCondition:  settings.RankingCondition,
 		IntersectionCount: len(result),
+		ResultStocks:      string(resultStocksJSON),
 	}); err != nil {
 		logger.Warn("engine: InsertRankingLog failed", map[string]any{"error": err.Error()})
 	}

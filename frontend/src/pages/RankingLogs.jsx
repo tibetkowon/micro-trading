@@ -14,6 +14,17 @@ function parseTypes(str) {
   }
 }
 
+function parseJSON(str) {
+  try { return JSON.parse(str) } catch { return null }
+}
+
+function fmt(val, digits = 0) {
+  if (val == null || val === '' || val === '0') return '-'
+  const n = Number(val)
+  if (isNaN(n)) return val
+  return digits > 0 ? n.toFixed(digits) : n.toLocaleString()
+}
+
 function TypeCount({ label, count }) {
   if (count === -1) return null
   return (
@@ -65,6 +76,8 @@ export default function RankingLogs() {
             const isOR = log.ranking_condition === 'OR'
             const separator = isOR ? '|' : '+'
             const resultLabel = isOR ? '합집합' : '교집합'
+
+            const resultStocks = parseJSON(log.result_stocks) || []
 
             return (
               <div
@@ -123,6 +136,45 @@ export default function RankingLogs() {
                           {log.intersection_count}개
                         </span>
                       </div>
+                    </div>
+                  </details>
+                )}
+
+                {/* 결과 종목 목록 */}
+                {!hasError && resultStocks.length > 0 && (
+                  <details className="mt-3" open={resultStocks.length <= 10}>
+                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 select-none">
+                      {resultLabel} 종목 목록 ({resultStocks.length}개)
+                    </summary>
+                    <div className="mt-2 overflow-x-auto">
+                      <table className="text-xs w-full border-collapse">
+                        <thead>
+                          <tr className="text-gray-500 border-b border-gray-700">
+                            <th className="text-left py-1 pr-3">코드</th>
+                            <th className="text-left py-1 pr-3">종목명</th>
+                            <th className="text-right py-1 pr-3">현재가</th>
+                            <th className="text-right py-1 pr-3">체결강도</th>
+                            <th className="text-right py-1 pr-3">순매수</th>
+                            <th className="text-right py-1 pr-3">거래량증가율</th>
+                            <th className="text-right py-1 pr-3">이격도D20</th>
+                            <th className="text-left py-1">순위유형</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {resultStocks.map((s) => (
+                            <tr key={s.stock_code} className="border-b border-gray-800 text-gray-400">
+                              <td className="py-1 pr-3 font-mono text-gray-300">{s.stock_code}</td>
+                              <td className="py-1 pr-3">{s.stock_name}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(s.current_price)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(s.strength)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(s.net_buy_qty)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(s.vol_incr_rate)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(s.disparity_d20)}</td>
+                              <td className="py-1 text-gray-500 font-mono text-xs">{s.ranking_type}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </details>
                 )}

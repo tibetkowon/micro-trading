@@ -193,6 +193,7 @@ func (db *DB) migrate() error {
 		`ALTER TABLE trader_selection_logs ADD COLUMN fail_reason TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE orders ADD COLUMN sell_reason TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE trader_ranking_logs ADD COLUMN ranking_condition TEXT NOT NULL DEFAULT 'AND'`,
+		`ALTER TABLE trader_ranking_logs ADD COLUMN result_stocks TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, s := range alterStmts {
 		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시
@@ -432,11 +433,11 @@ func (db *DB) InsertRankingLog(ctx context.Context, log models.TraderRankingLog)
 		`INSERT INTO trader_ranking_logs
 		 (timestamp, ranking_types, price_min, price_max,
 		  volume_count, strength_count, exec_count_count, disparity_count,
-		  ranking_condition, intersection_count, error_message)
-		 VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  ranking_condition, intersection_count, result_stocks, error_message)
+		 VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.RankingTypes, log.PriceMin, log.PriceMax,
 		log.VolumeCount, log.StrengthCount, log.ExecCountCount, log.DisparityCount,
-		log.RankingCondition, log.IntersectionCount, log.ErrorMessage)
+		log.RankingCondition, log.IntersectionCount, log.ResultStocks, log.ErrorMessage)
 	return err
 }
 
@@ -449,7 +450,7 @@ func (db *DB) GetRankingLogs(ctx context.Context, limit int) ([]models.TraderRan
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, timestamp, ranking_types, price_min, price_max,
 		        volume_count, strength_count, exec_count_count, disparity_count,
-		        ranking_condition, intersection_count, error_message
+		        ranking_condition, intersection_count, result_stocks, error_message
 		 FROM trader_ranking_logs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -462,7 +463,7 @@ func (db *DB) GetRankingLogs(ctx context.Context, limit int) ([]models.TraderRan
 		if err := rows.Scan(
 			&l.ID, &l.Timestamp, &l.RankingTypes, &l.PriceMin, &l.PriceMax,
 			&l.VolumeCount, &l.StrengthCount, &l.ExecCountCount, &l.DisparityCount,
-			&l.RankingCondition, &l.IntersectionCount, &l.ErrorMessage,
+			&l.RankingCondition, &l.IntersectionCount, &l.ResultStocks, &l.ErrorMessage,
 		); err != nil {
 			return nil, err
 		}
