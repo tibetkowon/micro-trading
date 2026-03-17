@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-16 (rev 11 — settings에 매매 품질 개선 설정 키 8종 추가)
+> Last updated: 2026-03-16 (rev 12 — index_code → index_codes JSON 배열로 변경)
 
 ---
 
@@ -51,7 +51,7 @@
 | `trailing_trigger_pct` | `"0"` | 트레일링 스탑 활성화 기준 수익률 (%). 0=비활성. 이 수익률 도달 시 최고가 추적 시작 |
 | `trailing_stop_pct` | `"1.0"` | 트레일링 스탑 최고가 대비 하락 허용폭 (%). `trailing_trigger_pct > 0`일 때만 유효 |
 | `daily_max_loss_pct` | `"0"` | 일일 최대 손실 한도 (총자산 대비 %). 0=제한없음. 초과 시 당일 매수 중단 |
-| `index_code` | `""` | 지수 필터 코드 (`0001`=코스피, `1001`=코스닥). 비어있으면 비활성. 지수가 시가 대비 -1% 이상 하락 시 매수 중단 |
+| `index_codes` | `"[]"` | 지수 필터 코드 JSON 배열 (`"[\"0001\",\"1001\"]"` 형식). 빈 배열=비활성. 체크된 지수가 시가 대비 -1% 이상 하락 시 매수 중단 |
 
 ---
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-16 — Settings input step 수정 + 지수 필터 복수 지정
+
+- **Settings.jsx**: `min_trading_value` step `100000000` → `any` (자유 입력). `trailing_trigger_pct`, `trailing_stop_pct`, `daily_max_loss_pct` step `0.5` → `0.1`
+- **database/db.go**: `IndexCode string` → `IndexCodes []string`, DB 키 `index_code` → `index_codes` (JSON 배열, 기본값 `"[]"`)
+- **trader/engine.go**: 단일 지수 코드 체크 → `IndexCodes` 배열 루프
+- **api/handlers.go**: `index_code *string` → `index_codes []string`, JSON 직렬화 저장
+- **Settings.jsx**: 지수 필터 텍스트 입력 → 코스피(0001)/코스닥(1001) 체크박스 2개
+
+---
+
 ## 2026-03-16 — 매매 품질 개선 8종 (OHLC·하드필터·트레일링스탑·점심제한·거래대금·일일손실한도·지수필터)
 
 ### A. 당일 OHLC + 파생 지표
