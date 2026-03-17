@@ -88,7 +88,7 @@ Order from best to worst. Include only stocks worth buying (skip clearly bad one
 
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.model),
-		MaxTokens: 512,
+		MaxTokens: 1024,
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 		},
