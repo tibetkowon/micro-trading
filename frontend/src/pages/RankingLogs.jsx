@@ -62,6 +62,9 @@ export default function RankingLogs() {
             const types = parseTypes(log.ranking_types)
             const hasError = log.error_message !== ''
             const noMatch = !hasError && log.intersection_count === 0
+            const isOR = log.ranking_condition === 'OR'
+            const separator = isOR ? '|' : '+'
+            const resultLabel = isOR ? '합집합' : '교집합'
 
             return (
               <div
@@ -81,12 +84,12 @@ export default function RankingLogs() {
                       </span>
                     ) : (
                       <span className="text-xs bg-green-900/60 text-green-300 px-2 py-0.5 rounded font-mono">
-                        교집합 {log.intersection_count}종목
+                        {resultLabel} {log.intersection_count}종목
                       </span>
                     )}
                     {types.length > 0 && (
                       <span className="text-xs text-gray-400 font-mono">
-                        [{types.join('+')}]
+                        [{types.join(separator)}]
                       </span>
                     )}
                     <span className="text-xs text-gray-500">
@@ -115,7 +118,7 @@ export default function RankingLogs() {
                       <TypeCount label="대량체결 (exec_count)" count={log.exec_count_count} />
                       <TypeCount label="이격도 (disparity)" count={log.disparity_count} />
                       <div className="flex items-center justify-between text-xs py-0.5 mt-1 border-t border-gray-700 pt-1">
-                        <span className="text-gray-300 font-medium">AND 교집합</span>
+                        <span className="text-gray-300 font-medium">{isOR ? 'OR 합집합' : 'AND 교집합'}</span>
                         <span className={`font-mono font-bold ${log.intersection_count > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
                           {log.intersection_count}개
                         </span>

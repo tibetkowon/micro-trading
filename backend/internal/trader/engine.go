@@ -258,6 +258,22 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no available cash")
 	}
 
+	// Filter out stocks whose current price exceeds available cash (can't buy even 1 share).
+	{
+		filtered := rankings[:0]
+		for _, item := range rankings {
+			price, _ := strconv.ParseFloat(item.CurrentPrice, 64)
+			if price > 0 && price <= availableCash {
+				filtered = append(filtered, item)
+			}
+		}
+		rankings = filtered
+	}
+	if len(rankings) == 0 {
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no affordable stocks after price filter (cash: %.0f)", availableCash)
+	}
+
 	// Persist selection log to DB (Claude 호출 전 INSERT — 실패해도 로그 남김).
 	var selectionLogID int64
 	{
@@ -695,6 +711,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			StrengthCount:     -1,
 			ExecCountCount:    -1,
 			DisparityCount:    -1,
+			RankingCondition:  settings.RankingCondition,
 			IntersectionCount: 0,
 			ErrorMessage:      "no ranking types configured",
 		})
@@ -802,6 +819,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		StrengthCount:     countFor("strength"),
 		ExecCountCount:    countFor("exec_count"),
 		DisparityCount:    countFor("disparity"),
+		RankingCondition:  settings.RankingCondition,
 		IntersectionCount: len(result),
 	}); err != nil {
 		logger.Warn("engine: InsertRankingLog failed", map[string]any{"error": err.Error()})
