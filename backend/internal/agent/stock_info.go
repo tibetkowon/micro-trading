@@ -13,23 +13,23 @@ import (
 // StockInfo holds key stock data for the AI agent's decision-making,
 // including current price, moving averages, trading value, RSI, and MACD.
 type StockInfo struct {
-	StockCode    string  `json:"stock_code"`
-	CurrentPrice string  `json:"current_price"`
-	ChangeRate   string  `json:"change_rate"`
-	Volume       string  `json:"volume"`
-	TradingValue float64 `json:"trading_value"` // 거래대금 (volume × price, KRW); 0 = unavailable
-	DayOpen      string  `json:"day_open"`       // 당일 시가
-	DayHigh      string  `json:"day_high"`       // 당일 고가
-	DayLow       string  `json:"day_low"`        // 당일 저가
+	StockCode     string  `json:"stock_code"`
+	CurrentPrice  string  `json:"current_price"`
+	ChangeRate    string  `json:"change_rate"`
+	Volume        string  `json:"volume"`
+	TradingValue  float64 `json:"trading_value"`   // 거래대금 (volume × price, KRW); 0 = unavailable
+	DayOpen       string  `json:"day_open"`        // 당일 시가
+	DayHigh       string  `json:"day_high"`        // 당일 고가
+	DayLow        string  `json:"day_low"`         // 당일 저가
 	HighPriceDiff float64 `json:"high_price_diff"` // (현재가-고가)/고가×100 (음수=눌림 정도)
 	OpenPriceDiff float64 `json:"open_price_diff"` // (현재가-시가)/시가×100 (오늘 상승률)
 	DisparityM5   float64 `json:"disparity_m5"`    // (현재가-5분봉MA5)/5분봉MA5×100
-	MA5          float64 `json:"ma5"`
-	MA20         float64 `json:"ma20"`
-	RSI14        float64 `json:"rsi14"`          // RSI(14) from 5-minute closes; 0 = insufficient data
-	MACDLine     float64 `json:"macd_line"`      // MACD line (EMA12 − EMA26) from 5m candles
-	MACDSignal   float64 `json:"macd_signal"`    // Signal line (EMA9 of MACD line) from 5m candles
-	MACDHisto    float64 `json:"macd_histogram"` // Histogram (MACD line − Signal line)
+	MA5           float64 `json:"ma5"`
+	MA20          float64 `json:"ma20"`
+	RSI14         float64 `json:"rsi14"`          // RSI(14) from 5-minute closes; 0 = insufficient data
+	MACDLine      float64 `json:"macd_line"`      // MACD line (EMA12 − EMA26) from 5m candles
+	MACDSignal    float64 `json:"macd_signal"`    // Signal line (EMA9 of MACD line) from 5m candles
+	MACDHisto     float64 `json:"macd_histogram"` // Histogram (MACD line − Signal line)
 }
 
 // GetStockInfo fetches the latest price and computes all technical indicators:

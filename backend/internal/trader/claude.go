@@ -30,7 +30,7 @@ type RankItem struct {
 	// 파생 지표 (서버 계산)
 	HighPriceDiff float64 `json:"high_price_diff,omitempty"` // (현재가-고가)/고가×100 (음수=눌림)
 	OpenPriceDiff float64 `json:"open_price_diff,omitempty"` // (현재가-시가)/시가×100 (당일 상승률)
-	DisparityM5   float64 `json:"disparity_m5,omitempty"`   // 5분봉 MA5 이격도
+	DisparityM5   float64 `json:"disparity_m5,omitempty"`    // 5분봉 MA5 이격도
 	// Technical indicators from GetStockInfo
 	MA5        float64 `json:"ma5,omitempty"`
 	MA20       float64 `json:"ma20,omitempty"`
