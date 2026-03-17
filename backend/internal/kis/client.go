@@ -703,6 +703,17 @@ type OverseasDailyBar struct {
 	TVol string // 거래량
 }
 
+// OverseasMinuteBar holds one 5-minute OHLCV bar from the overseas minute chart API (HHDFS76950200).
+type OverseasMinuteBar struct {
+	Kymd string // 일자 (YYYYMMDD)
+	Khms string // 시간 (HHMMSS)
+	Open string // 시가
+	High string // 고가
+	Low  string // 저가
+	Last string // 종가
+	EVol string // 거래량
+}
+
 // OverseasRankItem holds one entry from the overseas volume ranking API.
 type OverseasRankItem struct {
 	Rank  string `json:"rank"`  // 순위
@@ -919,6 +930,54 @@ func (c *Client) GetOverseasDailyChart(ctx context.Context, excd, symb string, c
 			Low:  b.Low,
 			Clos: b.Clos,
 			TVol: b.TVol,
+		}
+	}
+	return out, nil
+}
+
+// GetOverseasMinuteChart fetches overseas 5-minute OHLCV bars (HHDFS76950200).
+// excd: NAS/NYS/AMS. symb: e.g. "AAPL". Returns up to 120 bars, newest first.
+// NMIN=5: 5분봉, PINC=1: 전일포함, NREC=120: 최대 120개.
+func (c *Client) GetOverseasMinuteChart(ctx context.Context, excd, symb string) ([]OverseasMinuteBar, error) {
+	endpoint := "/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice"
+	params := fmt.Sprintf("?AUTH=&EXCD=%s&SYMB=%s&NMIN=5&PINC=1&NEXT=0&NREC=120&FILL=0&KEYB=",
+		excd, symb)
+
+	raw, err := c.get(ctx, endpoint, params, "HHDFS76950200")
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Output2 []struct {
+			Kymd string `json:"kymd"`
+			Khms string `json:"khms"`
+			Open string `json:"open"`
+			High string `json:"high"`
+			Low  string `json:"low"`
+			Last string `json:"last"`
+			EVol string `json:"evol"`
+		} `json:"output2"`
+		MsgCode string `json:"msg_cd"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse overseas minute chart: %w", err)
+	}
+	if result.Output2 == nil {
+		return []OverseasMinuteBar{}, nil
+	}
+
+	out := make([]OverseasMinuteBar, len(result.Output2))
+	for i, b := range result.Output2 {
+		out[i] = OverseasMinuteBar{
+			Kymd: b.Kymd,
+			Khms: b.Khms,
+			Open: b.Open,
+			High: b.High,
+			Low:  b.Low,
+			Last: b.Last,
+			EVol: b.EVol,
 		}
 	}
 	return out, nil

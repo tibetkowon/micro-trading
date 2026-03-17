@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 )
@@ -33,9 +32,9 @@ type StockInfo struct {
 }
 
 // GetStockInfo fetches the latest price and computes all technical indicators:
-//   - MA5 / MA20: from daily closes (~40 calendar days)
+//   - MA5 / MA20: from 5-minute candle closes (up to 200 1-min bars → ~40 5-min bars)
 //   - TradingValue: current_price × today's volume (KRW)
-//   - RSI(14), MACD(12,26,9): from 5-minute candles (up to 200 1-min bars → ~40 5-min bars)
+//   - RSI(14), MACD(12,26,9): from 5-minute candles
 //
 // Indicator fields are 0 when there is insufficient market data (pre-open, thin session, etc.).
 func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*StockInfo, error) {
@@ -73,25 +72,10 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 		info.OpenPriceDiff = math.Round((price-open)/open*10000) / 100
 	}
 
-	// --- MA5 / MA20 from daily closes ---
-	endDate := time.Now().Format("20060102")
-	startDate := time.Now().AddDate(0, 0, -40).Format("20060102")
-	daily, maErr := client.GetDailyChart(ctx, stockCode, startDate, endDate)
-	if maErr == nil && len(daily) > 0 {
-		closes := make([]float64, 0, len(daily))
-		for i := len(daily) - 1; i >= 0; i-- {
-			v, parseErr := strconv.ParseFloat(daily[i].Close, 64)
-			if parseErr == nil && v > 0 {
-				closes = append(closes, v)
-			}
-		}
-		info.MA5 = calcMA(closes, 5)
-		info.MA20 = calcMA(closes, 20)
-	}
-
-	// --- RSI(14) and MACD(12,26,9) from 5-minute candles ---
+	// --- MA5 / MA20 / RSI(14) / MACD(12,26,9) / DisparityM5 from 5-minute candles ---
 	// Fetch 200 1-minute bars → aggregate to ~40 5-minute bars.
 	// 40 bars is sufficient for MACD(12,26,9) which needs 26+9-1 = 34 periods minimum.
+	// MA5/MA20 are also computed from these 5m closes for intraday consistency.
 	bars, chartErr := fetchMinuteBars(ctx, client, stockCode, 200)
 	if chartErr == nil && len(bars) > 0 {
 		candles5m := aggregateMinuteBars(bars, 5)
@@ -100,6 +84,8 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 			for i, c := range candles5m {
 				closes5m[i] = c.Close
 			}
+			info.MA5 = calcMA(closes5m, 5)
+			info.MA20 = calcMA(closes5m, 20)
 			info.RSI14 = calcRSI(closes5m, 14)
 			info.MACDLine, info.MACDSignal, info.MACDHisto = calcMACD(closes5m, 12, 26, 9)
 			// DisparityM5: 현재가와 5분봉 MA5의 이격도
@@ -234,4 +220,67 @@ func calcMACD(closes []float64, fastPeriod, slowPeriod, signalPeriod int) (macdL
 	return math.Round(lastMACD*100) / 100,
 		math.Round(lastSignal*100) / 100,
 		math.Round(lastHisto*100) / 100
+}
+
+// GetOverseasStockInfo fetches current price and computes all technical indicators
+// for an overseas (US) stock using 5-minute bars (HHDFS76950200).
+//   - MA5 / MA20: from 5-minute closes (up to 120 bars)
+//   - RSI(14), MACD(12,26,9): from 5-minute closes
+//   - DisparityM5: (currentPrice - MA5) / MA5 × 100
+//
+// Indicator fields are 0 when there is insufficient data.
+func GetOverseasStockInfo(ctx context.Context, client *kis.Client, excd, symb string) (*StockInfo, error) {
+	priceResp, err := client.GetOverseasPrice(ctx, excd, symb)
+	if err != nil {
+		return nil, fmt.Errorf("GetOverseasStockInfo [%s]: %w", symb, err)
+	}
+
+	currentPrice, _ := strconv.ParseFloat(priceResp.Last, 64)
+	vol, _ := strconv.ParseFloat(priceResp.TVol, 64)
+
+	info := &StockInfo{
+		StockCode:    symb,
+		CurrentPrice: priceResp.Last,
+		ChangeRate:   priceResp.Rate,
+		Volume:       priceResp.TVol,
+		DayOpen:      priceResp.Open,
+		DayHigh:      priceResp.High,
+		DayLow:       priceResp.Low,
+	}
+
+	if currentPrice > 0 && vol > 0 {
+		info.TradingValue = currentPrice * vol
+	}
+
+	high, _ := strconv.ParseFloat(priceResp.High, 64)
+	open, _ := strconv.ParseFloat(priceResp.Open, 64)
+	if currentPrice > 0 && high > 0 {
+		info.HighPriceDiff = math.Round((currentPrice-high)/high*10000) / 100
+	}
+	if currentPrice > 0 && open > 0 {
+		info.OpenPriceDiff = math.Round((currentPrice-open)/open*10000) / 100
+	}
+
+	// 5분봉 데이터 조회 — newest-first → reverse to oldest-first for indicators.
+	bars, chartErr := client.GetOverseasMinuteChart(ctx, excd, symb)
+	if chartErr == nil && len(bars) > 0 {
+		closes5m := make([]float64, 0, len(bars))
+		for i := len(bars) - 1; i >= 0; i-- {
+			v, parseErr := strconv.ParseFloat(bars[i].Last, 64)
+			if parseErr == nil && v > 0 {
+				closes5m = append(closes5m, v)
+			}
+		}
+		if len(closes5m) >= 2 {
+			info.MA5 = calcMA(closes5m, 5)
+			info.MA20 = calcMA(closes5m, 20)
+			info.RSI14 = calcRSI(closes5m, 14)
+			info.MACDLine, info.MACDSignal, info.MACDHisto = calcMACD(closes5m, 12, 26, 9)
+			if info.MA5 > 0 && currentPrice > 0 {
+				info.DisparityM5 = math.Round((currentPrice-info.MA5)/info.MA5*10000) / 100
+			}
+		}
+	}
+
+	return info, nil
 }

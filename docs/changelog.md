@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-03-17 — MA5/MA20 일봉→5분봉 전환, US RSI/MACD/DisparityM5 지표 추가
+
+- **kis/client.go**: `OverseasMinuteBar` 구조체 및 `GetOverseasMinuteChart()`(HHDFS76950200) 추가 — 5분봉 OHLCV 최대 120개, NMIN=5/PINC=1/NREC=120
+- **agent/stock_info.go**: KR `GetStockInfo()` MA5/MA20 계산을 일봉(GetDailyChart)에서 5분봉 집계(`closes5m`)로 전환 — 단타 전략에서 5분봉 MA가 실제 단기 추세를 반영; `GetOverseasStockInfo(ctx, client, excd, symb)` 신규 추가 — 해외주식 5분봉 기반 MA5/MA20/RSI14/MACD/DisparityM5 일괄 계산
+- **trader/engine.go**: US enrichment 루프를 `GetOverseasStockInfo()` 단일 호출로 교체 (`GetOverseasPrice` + `GetOverseasDailyChart` 인라인 제거); US 하드 필터에 RSI≥80 및 disparity_m5>3% 조건 추가
+- **trader/claude.go**: US 프롬프트 업데이트 — Hard Rejection에 disparity_m5>3% / rsi14≥80 추가, Ranking 기준에 MACD·RSI·DisparityM5 참조 추가, "RSI/MACD not available" 주석 제거
+
 ## 2026-03-17 — 미장(US) 엔진 품질 개선 — KR 개선 기능 적용
 
 - **kis/client.go**: `OverseasPriceResponse`에 `Open`, `High`, `Low`, `Tamt` 필드 추가 (API 기존 반환값 매핑), `OverseasDailyBar` 타입 및 `GetOverseasDailyChart()`(HHDFS76240000) 신규 구현 (일봉 OHLCV 배열 반환)

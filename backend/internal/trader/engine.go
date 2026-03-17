@@ -1092,47 +1092,25 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		}
 	}
 
-	// Enrich each candidate with technical indicators (MA5/MA20/HighPriceDiff/OpenPriceDiff).
+	// Enrich each candidate with technical indicators via 5-minute bars (MA5/MA20/RSI/MACD/DisparityM5).
 	for i, r := range rankings {
-		priceResp, priceErr := e.kisClient.GetOverseasPrice(ctx, excd, r.StockCode)
-		if priceErr != nil {
-			logger.Warn("engine US: GetOverseasPrice failed for enrichment",
-				map[string]any{"stock_code": r.StockCode, "error": priceErr.Error()})
+		info, enrichErr := agent.GetOverseasStockInfo(ctx, e.kisClient, excd, r.StockCode)
+		if enrichErr != nil {
+			logger.Warn("engine US: GetOverseasStockInfo failed, skipping indicators",
+				map[string]any{"stock_code": r.StockCode, "error": enrichErr.Error()})
 			continue
 		}
-		last, _ := strconv.ParseFloat(priceResp.Last, 64)
-		high, _ := strconv.ParseFloat(priceResp.High, 64)
-		open, _ := strconv.ParseFloat(priceResp.Open, 64)
-		if last > 0 && high > 0 {
-			rankings[i].HighPriceDiff = (last - high) / high * 100
-		}
-		if last > 0 && open > 0 {
-			rankings[i].OpenPriceDiff = (last - open) / open * 100
-		}
-
-		// MA5/MA20 from daily chart
-		bars, chartErr := e.kisClient.GetOverseasDailyChart(ctx, excd, r.StockCode, 22)
-		if chartErr != nil {
-			logger.Warn("engine US: GetOverseasDailyChart failed",
-				map[string]any{"stock_code": r.StockCode, "error": chartErr.Error()})
-			continue
-		}
-		if len(bars) >= 5 {
-			var sum5 float64
-			for j := 0; j < 5; j++ {
-				v, _ := strconv.ParseFloat(bars[j].Clos, 64)
-				sum5 += v
-			}
-			rankings[i].MA5 = sum5 / 5
-		}
-		if len(bars) >= 20 {
-			var sum20 float64
-			for j := 0; j < 20; j++ {
-				v, _ := strconv.ParseFloat(bars[j].Clos, 64)
-				sum20 += v
-			}
-			rankings[i].MA20 = sum20 / 20
-		}
+		rankings[i].MA5 = info.MA5
+		rankings[i].MA20 = info.MA20
+		rankings[i].RSI14 = info.RSI14
+		rankings[i].MACDLine = info.MACDLine
+		rankings[i].MACDSignal = info.MACDSignal
+		rankings[i].DayOpen = info.DayOpen
+		rankings[i].DayHigh = info.DayHigh
+		rankings[i].DayLow = info.DayLow
+		rankings[i].HighPriceDiff = info.HighPriceDiff
+		rankings[i].OpenPriceDiff = info.OpenPriceDiff
+		rankings[i].DisparityM5 = info.DisparityM5
 	}
 
 	// 최소 거래대금 필터 (USD)
@@ -1165,13 +1143,21 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 			if item.MA5 > 0 && item.MA20 > 0 && item.MA5 < item.MA20 {
 				continue
 			}
+			// RSI 과열 (80 이상) 제외
+			if item.RSI14 > 0 && item.RSI14 >= 80 {
+				continue
+			}
+			// 5분봉 이격도 3% 초과 제외
+			if item.DisparityM5 > 3.0 {
+				continue
+			}
 			filtered = append(filtered, item)
 		}
 		rankings = filtered
 	}
 	if len(rankings) == 0 {
 		e.setState(StateMonitoring)
-		return fmt.Errorf("no US stocks passed hard filter (high-price/MA trend)")
+		return fmt.Errorf("no US stocks passed hard filter (high-price/MA trend/RSI/disparity)")
 	}
 
 	// Persist selection log

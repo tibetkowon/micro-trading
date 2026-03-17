@@ -86,16 +86,18 @@ func (c *ClaudeClient) SelectStocks(
 ## Hard Rejection Rules — skip if ANY apply:
 1. high_price_diff < -5%%  → dropped more than 5%% from today's high, avoid (selling pressure)
 2. ma5 < ma20  → downtrend, skip
+3. disparity_m5 > 3%%  → over-extended from 5-min MA, skip
+4. rsi14 >= 80  → overbought, skip
 
 ## Ranking Criteria (for survivors):
 - Best entry: high_price_diff between -0.5%% and -3%% (slight pullback from high, ready to bounce)
 - MA trend: ma5 > ma20 confirms uptrend — prefer larger gap
+- MACD: macd_line > macd_signal preferred (upward momentum)
+- RSI: 40–65 is the ideal buy zone (not overbought, has momentum)
+- Disparity: disparity_m5 between 0%% and 2%% (near 5-min MA support, not overextended)
 - Volume confirmation: higher volume relative to average indicates institutional interest
 - Prefer: open_price_diff between 0%% and 8%% (gap-up with room to run, not overextended)
 - Avoid: open_price_diff > 15%% (already overextended today)
-
-Available indicators: high_price_diff, open_price_diff, ma5, ma20, volume, current_price
-Note: RSI, MACD, and disparity_m5 are not available for US stocks — do not reference them.
 
 Ranking data (JSON):
 %s
@@ -104,7 +106,7 @@ Available cash: %.2f USD
 Respond with ONLY a valid JSON array — no explanation, no markdown, no extra text.
 If no stock passes, respond with exactly: []
 Best entry first:
-[{"stock_code":"TICKER","reason":"Pulled back -Y%% from high, MA5 > MA20 uptrend, strong volume"},...]`,
+[{"stock_code":"TICKER","reason":"Pulled back -Y%% from high, MA5 > MA20, RSI=X (buy zone), MACD bullish"},...]`,
 			string(rankJSON), availableCash)
 	} else {
 		prompt = fmt.Sprintf(`You are an elite Korean day-trader known for avoiding Bull Traps and finding pullback(눌림목) entries.
