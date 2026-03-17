@@ -94,7 +94,9 @@ Ranking data (JSON):
 %s
 Available cash: %.0f KRW
 
-Respond with ONLY a JSON array, best entry first. Skip clearly bad stocks:
+Respond with ONLY a valid JSON array — no explanation, no markdown, no extra text.
+If no stock passes, respond with exactly: []
+Best entry first:
 [{"stock_code":"6-digit","reason":"고점(X원) 대비 -Y%% 눌림, 5분봉 MA 지지, 순매수 우세로 반등 기대"},...]`,
 		string(rankJSON), availableCash)
 
@@ -114,19 +116,38 @@ Respond with ONLY a JSON array, best entry first. Skip clearly bad stocks:
 	}
 
 	raw := strings.TrimSpace(msg.Content[0].AsText().Text)
-	if strings.HasPrefix(raw, "```") {
-		lines := strings.Split(raw, "\n")
-		if len(lines) >= 3 {
-			raw = strings.Join(lines[1:len(lines)-1], "\n")
+
+	// Extract JSON array portion: find first '[' and its matching ']'
+	start := strings.Index(raw, "[")
+	if start == -1 {
+		return nil, fmt.Errorf("claude response has no JSON array (raw: %s)", raw)
+	}
+	depth, end := 0, -1
+	for i := start; i < len(raw); i++ {
+		switch raw[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				end = i
+			}
+		}
+		if end != -1 {
+			break
 		}
 	}
+	if end == -1 {
+		return nil, fmt.Errorf("claude response JSON array not closed (raw: %s)", raw)
+	}
+	raw = raw[start : end+1]
 
 	var candidates []StockCandidate
 	if err := json.Unmarshal([]byte(raw), &candidates); err != nil {
 		return nil, fmt.Errorf("claude response parse error: %w (raw: %s)", err, raw)
 	}
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("claude returned empty candidate list")
+		return nil, fmt.Errorf("claude: 조건에 맞는 종목 없음 (Hard Rejection Rule 적용)")
 	}
 
 	return candidates, nil
