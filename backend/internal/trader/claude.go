@@ -23,6 +23,14 @@ type RankItem struct {
 	Strength     string `json:"strength,omitempty"`      // 체결강도 % (strength)
 	NetBuyQty    string `json:"net_buy_qty,omitempty"`   // 순매수체결량 (exec_count)
 	DisparityD20 string `json:"disparity_d20,omitempty"` // 20일 이격도 (disparity)
+	// 당일 OHLC
+	DayOpen string `json:"day_open,omitempty"`
+	DayHigh string `json:"day_high,omitempty"`
+	DayLow  string `json:"day_low,omitempty"`
+	// 파생 지표 (서버 계산)
+	HighPriceDiff float64 `json:"high_price_diff,omitempty"` // (현재가-고가)/고가×100 (음수=눌림)
+	OpenPriceDiff float64 `json:"open_price_diff,omitempty"` // (현재가-시가)/시가×100 (당일 상승률)
+	DisparityM5   float64 `json:"disparity_m5,omitempty"`   // 5분봉 MA5 이격도
 	// Technical indicators from GetStockInfo
 	MA5        float64 `json:"ma5,omitempty"`
 	MA20       float64 `json:"ma20,omitempty"`
@@ -69,26 +77,30 @@ func (c *ClaudeClient) SelectStocks(
 
 	rankJSON, _ := json.Marshal(rankings)
 
-	prompt := fmt.Sprintf(`You are a Korean stock intraday trading AI.
+	prompt := fmt.Sprintf(`You are an elite Korean day-trader known for avoiding Bull Traps and finding pullback(눌림목) entries.
 
-Analyze the ranking data below and rank ALL viable stocks for same-day trading, best first.
+## Hard Rejection Rules — skip if ANY apply:
+1. disparity_m5 > 3%%  → over-extended from 5-min MA, skip
+2. high_price_diff > -0.5%%  → basically at today's peak, skip
+3. ma5 < ma20  → downtrend, skip
 
-Constraints:
-- Available cash: %.0f KRW
-- Goal: maximize intraday return
-- Consider: MA trend (price vs MA5/MA20), RSI (avoid >70), MACD direction, volume momentum
+## Ranking Criteria (for survivors):
+- Best entry: high_price_diff between -1%% and -3%% (pulled back from high, ready to bounce)
+- Volume quality: net_buy_qty > 0 + strength increasing = accumulation signal
+- MACD: macd_line > macd_signal preferred (upward momentum)
+- Avoid: open_price_diff > 10%% (stocks that already ran too far today)
 
 Ranking data (JSON):
 %s
+Available cash: %.0f KRW
 
-Respond with ONLY a JSON array — no explanation, no markdown.
-Order from best to worst. Include only stocks worth buying (skip clearly bad ones):
-[{"stock_code":"6-digit code","reason":"한국어로 1문장"},...]`,
-		availableCash, string(rankJSON))
+Respond with ONLY a JSON array, best entry first. Skip clearly bad stocks:
+[{"stock_code":"6-digit","reason":"고점(X원) 대비 -Y%% 눌림, 5분봉 MA 지지, 순매수 우세로 반등 기대"},...]`,
+		string(rankJSON), availableCash)
 
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.model),
-		MaxTokens: 1024,
+		MaxTokens: 2048,
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 		},

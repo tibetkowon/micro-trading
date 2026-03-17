@@ -18,6 +18,12 @@ type StockInfo struct {
 	ChangeRate   string  `json:"change_rate"`
 	Volume       string  `json:"volume"`
 	TradingValue float64 `json:"trading_value"` // 거래대금 (volume × price, KRW); 0 = unavailable
+	DayOpen      string  `json:"day_open"`       // 당일 시가
+	DayHigh      string  `json:"day_high"`       // 당일 고가
+	DayLow       string  `json:"day_low"`        // 당일 저가
+	HighPriceDiff float64 `json:"high_price_diff"` // (현재가-고가)/고가×100 (음수=눌림 정도)
+	OpenPriceDiff float64 `json:"open_price_diff"` // (현재가-시가)/시가×100 (오늘 상승률)
+	DisparityM5   float64 `json:"disparity_m5"`    // (현재가-5분봉MA5)/5분봉MA5×100
 	MA5          float64 `json:"ma5"`
 	MA20         float64 `json:"ma20"`
 	RSI14        float64 `json:"rsi14"`          // RSI(14) from 5-minute closes; 0 = insufficient data
@@ -47,6 +53,9 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 		CurrentPrice: resp.CurrentPrice,
 		ChangeRate:   resp.ChangeRate,
 		Volume:       resp.Volume,
+		DayOpen:      resp.DayOpen,
+		DayHigh:      resp.DayHigh,
+		DayLow:       resp.DayLow,
 	}
 
 	// --- TradingValue: current_price × today's volume ---
@@ -54,6 +63,14 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 	vol, _ := strconv.ParseFloat(resp.Volume, 64)
 	if price > 0 && vol > 0 {
 		info.TradingValue = math.Round(price * vol)
+	}
+
+	// --- HighPriceDiff / OpenPriceDiff ---
+	if high, err := strconv.ParseFloat(resp.DayHigh, 64); err == nil && high > 0 {
+		info.HighPriceDiff = math.Round((price-high)/high*10000) / 100
+	}
+	if open, err := strconv.ParseFloat(resp.DayOpen, 64); err == nil && open > 0 {
+		info.OpenPriceDiff = math.Round((price-open)/open*10000) / 100
 	}
 
 	// --- MA5 / MA20 from daily closes ---
@@ -85,6 +102,10 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 			}
 			info.RSI14 = calcRSI(closes5m, 14)
 			info.MACDLine, info.MACDSignal, info.MACDHisto = calcMACD(closes5m, 12, 26, 9)
+			// DisparityM5: 현재가와 5분봉 MA5의 이격도
+			if ma5m := calcMA(closes5m, 5); ma5m > 0 && price > 0 {
+				info.DisparityM5 = math.Round((price-ma5m)/ma5m*10000) / 100
+			}
 		}
 	}
 

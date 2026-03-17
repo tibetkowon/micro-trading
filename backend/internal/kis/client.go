@@ -57,6 +57,9 @@ type StockPriceResponse struct {
 	CurrentPrice string `json:"stck_prpr"`      // 주식 현재가
 	ChangeRate   string `json:"prdy_ctrt"`      // 전일대비율
 	Volume       string `json:"acml_vol"`       // 누적 거래량
+	DayOpen      string `json:"stck_oprc"`      // 당일 시가
+	DayHigh      string `json:"stck_hgpr"`      // 당일 고가
+	DayLow       string `json:"stck_lwpr"`      // 당일 저가
 }
 
 // AvailableOrderResponse holds response from inquire-psbl-order (매수가능조회 TTTC8908R).
@@ -234,6 +237,37 @@ func (c *Client) GetStockPrice(ctx context.Context, stockCode string) (*StockPri
 		return nil, fmt.Errorf("parse stock price: %w", err)
 	}
 	return &result.Output, nil
+}
+
+// GetIndexPrice fetches the current price and opening price for a domestic index.
+// indexCode: "0001"=코스피, "1001"=코스닥 (업종 지수 코드).
+// Uses inquire-index-price endpoint (FHPUP02100000).
+// Returns a StockPriceResponse with CurrentPrice and DayOpen populated.
+// If the endpoint fails (e.g., sandbox mode), returns an error — caller should skip the filter gracefully.
+func (c *Client) GetIndexPrice(ctx context.Context, indexCode string) (*StockPriceResponse, error) {
+	endpoint := "/uapi/domestic-stock/v1/quotations/inquire-index-price"
+	params := fmt.Sprintf("?FID_COND_MRKT_DIV_CODE=U&FID_INPUT_ISCD=%s", indexCode)
+
+	raw, err := c.get(ctx, endpoint, params, "FHPUP02100000")
+	if err != nil {
+		return nil, err
+	}
+
+	// KIS 업종지수 응답 필드는 stock과 다른 접두사를 사용함.
+	var result struct {
+		Output struct {
+			CurrentPrice string `json:"bstp_nmix_prpr"` // 업종지수 현재가
+			DayOpen      string `json:"bstp_nmix_oprc"` // 업종지수 시가
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("parse index price: %w", err)
+	}
+	return &StockPriceResponse{
+		StockCode:    indexCode,
+		CurrentPrice: result.Output.CurrentPrice,
+		DayOpen:      result.Output.DayOpen,
+	}, nil
 }
 
 // GetAvailableOrder checks order feasibility for a specific stock (매수가능조회 TTTC8908R).

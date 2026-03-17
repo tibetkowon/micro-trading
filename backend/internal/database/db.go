@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 
@@ -43,6 +44,18 @@ type TradingSettings struct {
 	StagnationDurationMin  int     // 횡보 지속 시간 (분)
 	// 순위 조건
 	RankingCondition string // "AND" | "OR"
+	// 거래대금 하한선
+	MinTradingValue float64 // 최소 거래대금(원). 0=필터없음
+	// 매수 중단 시간대
+	BuyPauseStart string // 매수 중단 시작 (HH:MM). 비어있으면 비활성
+	BuyPauseEnd   string // 매수 중단 종료 (HH:MM)
+	// 트레일링 스탑
+	TrailingTriggerPct float64 // 활성화 기준 수익률(%). 0=비활성
+	TrailingStopPct    float64 // 최고가 대비 하락 허용폭(%)
+	// 일일 최대 손실
+	DailyMaxLossPct float64 // 일일 최대 손실 한도(%). 0=제한없음
+	// 지수 필터
+	IndexCode string // 지수 코드("0001"=코스피, "1001"=코스닥). 비어있으면 비활성
 }
 
 // DB wraps the sql.DB connection.
@@ -211,6 +224,13 @@ func (db *DB) migrate() error {
 		{"stagnation_threshold_pct", "1.0"},
 		{"stagnation_duration_min", "30"},
 		{"ranking_condition", "AND"},
+		{"min_trading_value", "0"},
+		{"buy_pause_start", "11:00"},
+		{"buy_pause_end", "14:00"},
+		{"trailing_trigger_pct", "0"},
+		{"trailing_stop_pct", "1.0"},
+		{"daily_max_loss_pct", "0"},
+		{"index_code", ""},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -241,7 +261,11 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'ranking_top_n',`+
 			`'trading_start_time','trading_end_time',`+
 			`'stagnation_threshold_pct','stagnation_duration_min',`+
-			`'ranking_condition'`+
+			`'ranking_condition',`+
+			`'min_trading_value',`+
+			`'buy_pause_start','buy_pause_end',`+
+			`'trailing_trigger_pct','trailing_stop_pct',`+
+			`'daily_max_loss_pct','index_code'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -355,6 +379,13 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		StagnationThresholdPct:     stagnationThresholdPct,
 		StagnationDurationMin:      stagnationDurationMin,
 		RankingCondition:           rankingCondition,
+		MinTradingValue:            f64("min_trading_value"),
+		BuyPauseStart:              vals["buy_pause_start"],
+		BuyPauseEnd:                vals["buy_pause_end"],
+		TrailingTriggerPct:         f64("trailing_trigger_pct"),
+		TrailingStopPct:            f64("trailing_stop_pct"),
+		DailyMaxLossPct:            f64("daily_max_loss_pct"),
+		IndexCode:                  vals["index_code"],
 	}, nil
 }
 
@@ -373,6 +404,26 @@ func (db *DB) SetSetting(ctx context.Context, key, value string) error {
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 		key, value)
 	return err
+}
+
+// GetTodayRealizedPnL returns today's realized P&L (KRW) for AGENT SELL orders.
+// P&L = sum((filled_price - price) * qty) for SELL orders with filled_price > 0.
+// 'price' in SELL orders is set to the buy filled_price at order creation time.
+// Returns 0 if there are no qualifying orders or on query error.
+func (db *DB) GetTodayRealizedPnL(ctx context.Context) float64 {
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	today := time.Now().In(kst).Format("2006-01-02")
+
+	var pnl float64
+	db.QueryRowContext(ctx, //nolint:errcheck
+		`SELECT COALESCE(SUM((filled_price - price) * qty), 0)
+		 FROM orders
+		 WHERE date(created_at) = date(?)
+		   AND order_type = 'SELL'
+		   AND source = 'AGENT'
+		   AND filled_price > 0`, today,
+	).Scan(&pnl)
+	return pnl
 }
 
 // InsertRankingLog saves a single getRankings() attempt record.

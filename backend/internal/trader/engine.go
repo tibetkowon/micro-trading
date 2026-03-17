@@ -190,6 +190,27 @@ func (e *Engine) runCycle(ctx context.Context) {
 func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSettings) error {
 	e.setState(StateSelecting)
 
+	// 매수 중단 시간대 체크
+	if settings.BuyPauseStart != "" && settings.BuyPauseEnd != "" {
+		now := time.Now().Format("15:04")
+		if now >= settings.BuyPauseStart && now < settings.BuyPauseEnd {
+			e.setState(StateMonitoring)
+			return fmt.Errorf("매수 중단 시간대 (%s~%s)", settings.BuyPauseStart, settings.BuyPauseEnd)
+		}
+	}
+
+	// 지수 필터: 지수가 시가 대비 -1% 이상 하락 시 매수 중단
+	if settings.IndexCode != "" {
+		if idx, idxErr := e.kisClient.GetIndexPrice(ctx, settings.IndexCode); idxErr == nil {
+			open, _ := strconv.ParseFloat(idx.DayOpen, 64)
+			cur, _ := strconv.ParseFloat(idx.CurrentPrice, 64)
+			if open > 0 && cur > 0 && (cur-open)/open*100 <= -1.0 {
+				e.setState(StateMonitoring)
+				return fmt.Errorf("지수 -1%% 이상 하락 (지수:%s %.2f%%↓), 매수 일시 중단", settings.IndexCode, (cur-open)/open*100)
+			}
+		}
+	}
+
 	// Build today's exclusion list from DB orders.
 	excludedCodes := e.getTodayTradedCodes(ctx)
 
@@ -244,6 +265,23 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		rankings[i].RSI14 = info.RSI14
 		rankings[i].MACDLine = info.MACDLine
 		rankings[i].MACDSignal = info.MACDSignal
+		rankings[i].DayOpen = info.DayOpen
+		rankings[i].DayHigh = info.DayHigh
+		rankings[i].DayLow = info.DayLow
+		rankings[i].HighPriceDiff = info.HighPriceDiff
+		rankings[i].OpenPriceDiff = info.OpenPriceDiff
+		rankings[i].DisparityM5 = info.DisparityM5
+	}
+	// 거래대금 하한선 필터
+	if settings.MinTradingValue > 0 {
+		filtered := rankings[:0]
+		for _, item := range rankings {
+			info, err := agent.GetStockInfo(ctx, e.kisClient, item.StockCode)
+			if err != nil || info.TradingValue >= settings.MinTradingValue {
+				filtered = append(filtered, item)
+			}
+		}
+		rankings = filtered
 	}
 
 	// Get available cash.
@@ -256,6 +294,22 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	if availableCash <= 0 {
 		e.setState(StateMonitoring)
 		return fmt.Errorf("no available cash")
+	}
+
+	// 일일 최대 손실 한도 체크
+	if settings.DailyMaxLossPct > 0 {
+		pnl := e.db.GetTodayRealizedPnL(ctx)
+		if pnl < 0 {
+			totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
+			if totalEval <= 0 {
+				totalEval = availableCash
+			}
+			lossLimit := totalEval * settings.DailyMaxLossPct / 100
+			if -pnl >= lossLimit {
+				e.setState(StateMonitoring)
+				return fmt.Errorf("일일 최대 손실 한도 도달 (%.0f원 손실 >= 한도 %.0f원)", -pnl, lossLimit)
+			}
+		}
 	}
 
 	// Filter out stocks whose current price exceeds available cash (can't buy even 1 share).
@@ -272,6 +326,31 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	if len(rankings) == 0 {
 		e.setState(StateMonitoring)
 		return fmt.Errorf("no affordable stocks after price filter (cash: %.0f)", availableCash)
+	}
+
+	// 하드 필터: LLM 전달 전 과열/이격 과대 종목 제거
+	{
+		filtered := rankings[:0]
+		for _, item := range rankings {
+			// RSI 과열 (80 이상) 제외
+			if item.RSI14 > 0 && item.RSI14 >= 80 {
+				continue
+			}
+			// 5분봉 이격도 3% 초과 제외
+			if item.DisparityM5 > 3.0 {
+				continue
+			}
+			// 고가 대비 너무 많이 흘러내린 종목 (-5% 이하) 제외
+			if item.HighPriceDiff != 0 && item.HighPriceDiff < -5.0 {
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		rankings = filtered
+	}
+	if len(rankings) == 0 {
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no stocks passed hard filter (RSI/disparity/high-price)")
 	}
 
 	// Persist selection log to DB (Claude 호출 전 INSERT — 실패해도 로그 남김).
@@ -431,13 +510,15 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 
 	// Register with monitor.
 	entry := monitor.MonitoredEntry{
-		StockCode:   stockCode,
-		StockName:   stockName,
-		FilledPrice: filledPrice,
-		TargetPrice: filledPrice * (1 + settings.TakeProfitPct/100),
-		StopPrice:   filledPrice * (1 - settings.StopLossPct/100),
-		OrderID:     result.OrderID,
-		SoldCh:      e.soldCh,
+		StockCode:          stockCode,
+		StockName:          stockName,
+		FilledPrice:        filledPrice,
+		TargetPrice:        filledPrice * (1 + settings.TakeProfitPct/100),
+		StopPrice:          filledPrice * (1 - settings.StopLossPct/100),
+		OrderID:            result.OrderID,
+		SoldCh:             e.soldCh,
+		TrailingTriggerPct: settings.TrailingTriggerPct,
+		TrailingStopPct:    settings.TrailingStopPct,
 	}
 	if regErr := e.mon.Register(ctx, entry); regErr != nil {
 		logger.Error("engine: Register position failed",

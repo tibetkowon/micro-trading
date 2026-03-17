@@ -30,6 +30,11 @@ type MonitoredEntry struct {
 	StopPrice   float64
 	OrderID     int64
 	SoldCh      chan<- string // optional: engine receives sold signal (may be nil)
+	// 트레일링 스탑
+	TrailingTriggerPct float64 // 활성화 기준 수익률 (%). 0=비활성
+	TrailingStopPct    float64 // 최고가 대비 하락 허용폭 (%)
+	TrailingActivated  bool    // 트레일링 스탑 활성화 여부
+	PeakPrice          float64 // 보유 중 도달한 최고가
 }
 
 // Monitor watches registered positions for target/stop price hits and
@@ -142,6 +147,57 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 	m.mu.RUnlock()
 	if !ok {
 		return
+	}
+
+	// 트레일링 스탑: 활성화 여부 갱신 및 트리거 체크
+	if pos.TrailingTriggerPct > 0 && pos.FilledPrice > 0 {
+		triggerThreshold := pos.FilledPrice * (1 + pos.TrailingTriggerPct/100)
+		if !pos.TrailingActivated && price >= triggerThreshold {
+			// 트레일링 스탑 활성화
+			m.mu.Lock()
+			if p, ok2 := m.positions[stockCode]; ok2 {
+				p.TrailingActivated = true
+				p.PeakPrice = price
+			}
+			m.mu.Unlock()
+			logger.Info("monitor: trailing stop activated",
+				map[string]any{"stock_code": stockCode, "price": price, "trigger": triggerThreshold})
+		} else if pos.TrailingActivated {
+			// 최고가 갱신
+			if price > pos.PeakPrice {
+				m.mu.Lock()
+				if p, ok2 := m.positions[stockCode]; ok2 {
+					p.PeakPrice = price
+				}
+				m.mu.Unlock()
+				// 최신 pos 재조회
+				m.mu.RLock()
+				pos, ok = m.positions[stockCode]
+				m.mu.RUnlock()
+				if !ok {
+					return
+				}
+			}
+			// 트레일링 스탑 트리거 체크
+			if pos.TrailingStopPct > 0 && pos.PeakPrice > 0 {
+				stopThreshold := pos.PeakPrice * (1 - pos.TrailingStopPct/100)
+				if price < stopThreshold {
+					logger.Info("monitor: TRAILING STOP hit",
+						map[string]any{"stock_code": stockCode, "price": price, "peak": pos.PeakPrice, "stop_threshold": stopThreshold})
+					sellQty := 0
+					if !isTest {
+						sellQty = m.executeSell(stockCode, pos, "트레일링 스탑")
+					}
+					if m.mqttPub != nil {
+						m.mqttPub.PublishAlert(mqttpkg.EventTargetHit,
+							pos.StockCode, pos.StockName, price,
+							pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, isTest)
+					}
+					m.Remove(context.Background(), stockCode)
+					return
+				}
+			}
+		}
 	}
 
 	switch {

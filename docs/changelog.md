@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-03-16 — 매매 품질 개선 8종 (OHLC·하드필터·트레일링스탑·점심제한·거래대금·일일손실한도·지수필터)
+
+### A. 당일 OHLC + 파생 지표
+- **kis/client.go**: `StockPriceResponse`에 `DayOpen`, `DayHigh`, `DayLow` 필드 추가 (KIS API가 이미 반환하는 필드)
+- **agent/stock_info.go**: `StockInfo`에 `DayOpen`, `DayHigh`, `DayLow`, `HighPriceDiff`, `OpenPriceDiff`, `DisparityM5` 추가. `HighPriceDiff = (현재가-고가)/고가×100`, `OpenPriceDiff = (현재가-시가)/시가×100`, `DisparityM5`는 기존 5분봉 데이터로 계산 (추가 API 호출 없음)
+- **trader/claude.go**: `RankItem`에 6개 파생 지표 필드 추가
+- **trader/engine.go**: `GetStockInfo` 결과에서 신규 필드 매핑
+
+### B. 코드 레벨 하드 필터
+- **trader/engine.go**: LLM 호출 전 서버 측 제거 — RSI≥80, DisparityM5>3%, HighPriceDiff<-5%
+
+### C. 프롬프트 전면 개선
+- **trader/claude.go**: 불 트랩 회피 + 눌림목 매수 전략 프롬프트로 교체. `MaxTokens: 2048`
+
+### D. 거래대금 하한선
+- **database/db.go**: `TradingSettings.MinTradingValue` 추가, 기본값 `0`(비활성)
+- **trader/engine.go**: GetStockInfo 루프 이후 거래대금 미달 종목 필터링
+- **api/handlers.go**: `min_trading_value` 읽기/쓰기 추가
+- **Settings.jsx**: 매수 설정 섹션에 "최소 거래대금" 입력 UI 추가
+
+### E. 점심시간 매수 중단
+- **database/db.go**: `BuyPauseStart`, `BuyPauseEnd` 추가, 기본값 `11:00`/`14:00`
+- **trader/engine.go**: `selectAndBuy()` 진입 시 중단 시간대 체크
+- **api/handlers.go**: `buy_pause_start`, `buy_pause_end` 읽기/쓰기 추가
+- **Settings.jsx**: 거래 제어 섹션에 매수 중단 시작/종료 시간 입력 UI 추가
+
+### F. 트레일링 스탑
+- **database/db.go**: `TrailingTriggerPct`, `TrailingStopPct` 추가, 기본값 `0`/`1.0`
+- **monitor/monitor.go**: `MonitoredEntry`에 `TrailingTriggerPct`, `TrailingStopPct`, `TrailingActivated`, `PeakPrice` 필드 추가. `HandlePrice()`에서 활성화 기준 도달 시 트레일링 활성화, 최고가 추적, 최고가 대비 하락 폭 초과 시 자동 매도
+- **trader/engine.go**: MonitoredEntry 등록 시 trailing 파라미터 전달
+- **api/handlers.go**: `trailing_trigger_pct`, `trailing_stop_pct` 읽기/쓰기 추가
+- **Settings.jsx**: 매도 설정 섹션에 트레일링 스탑 UI 추가
+
+### G. 일일 최대 손실 제한
+- **database/db.go**: `DailyMaxLossPct` 추가, 기본값 `0`(비활성); `GetTodayRealizedPnL()` 함수 추가 (당일 SELL 주문의 실현 손익 합산)
+- **trader/engine.go**: GetInquireBalance 이후 손실 한도 초과 시 매수 중단
+- **api/handlers.go**: `daily_max_loss_pct` 읽기/쓰기 추가
+- **Settings.jsx**: 매도 설정 섹션에 일일 최대 손실 UI 추가
+
+### H. 지수 필터
+- **database/db.go**: `IndexCode` 추가, 기본값 `""`(비활성)
+- **kis/client.go**: `GetIndexPrice(ctx, indexCode)` 함수 추가 — `inquire-index-price` (FHPUP02100000) 엔드포인트
+- **trader/engine.go**: `selectAndBuy()` 진입 시 지수가 시가 대비 -1% 이상 하락이면 매수 중단
+- **api/handlers.go**: `index_code` 읽기/쓰기 추가
+- **Settings.jsx**: 거래 제어 섹션에 지수 코드 입력 UI 추가
+
+### 기타
+- **kis/client.go**: `withinPriceRange()` 헬퍼로 KIS API가 무시하는 가격 파라미터를 서버에서 재필터링
+
 ## 2026-03-16 — 주문 정렬 변경 + 리포트 기능 제거 + 순위 AND/OR 조건 추가
 
 - **agent/history.go**: 주문 내역 정렬 `ORDER BY created_at DESC, id DESC` → `ASC, ASC` (오래된 주문이 위로)
