@@ -103,18 +103,22 @@ export default function SelectionLogs() {
                       <table className="text-xs w-full border-collapse">
                         <thead>
                           <tr className="text-gray-500 border-b border-gray-700">
-                            <th className="text-left py-1 pr-3">순위</th>
                             <th className="text-left py-1 pr-3">코드</th>
                             <th className="text-left py-1 pr-3">종목명</th>
+                            <th className="text-left py-1 pr-3">순위유형</th>
                             <th className="text-right py-1 pr-3">현재가</th>
+                            <th className="text-right py-1 pr-3">시가</th>
                             <th className="text-right py-1 pr-3">고가</th>
+                            <th className="text-right py-1 pr-3">저가</th>
                             <th className="text-right py-1 pr-3">고가대비%</th>
                             <th className="text-right py-1 pr-3">시가대비%</th>
                             <th className="text-right py-1 pr-3">5분이격</th>
                             <th className="text-right py-1 pr-3">MA5</th>
                             <th className="text-right py-1 pr-3">MA20</th>
                             <th className="text-right py-1 pr-3">RSI</th>
-                            <th className="text-right py-1 pr-3">MACD</th>
+                            <th className="text-right py-1 pr-3">MACD선</th>
+                            <th className="text-right py-1 pr-3">MACD신호</th>
+                            <th className="text-right py-1 pr-3">거래량</th>
                             <th className="text-right py-1 pr-3">체결강도</th>
                             <th className="text-right py-1 pr-3">순매수</th>
                             <th className="text-right py-1 pr-3">거래량증가율</th>
@@ -128,11 +132,13 @@ export default function SelectionLogs() {
                             const dm5 = c.disparity_m5
                             return (
                             <tr key={c.stock_code} className="border-b border-gray-800 text-gray-400">
-                              <td className="py-1 pr-3">{c.data_rank}</td>
                               <td className="py-1 pr-3 font-mono text-gray-300">{c.stock_code}</td>
                               <td className="py-1 pr-3">{c.stock_name}</td>
+                              <td className="py-1 pr-3 text-gray-500 font-mono text-xs">{c.ranking_type}</td>
                               <td className="py-1 pr-3 text-right">{fmt(c.current_price)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.day_open)}</td>
                               <td className="py-1 pr-3 text-right">{fmt(c.day_high)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.day_low)}</td>
                               <td className={`py-1 pr-3 text-right ${hpd < -3 ? 'text-blue-400' : hpd > -0.5 ? 'text-red-400' : 'text-gray-400'}`}>
                                 {hpd != null && hpd !== 0 ? hpd.toFixed(1) + '%' : '-'}
                               </td>
@@ -146,6 +152,8 @@ export default function SelectionLogs() {
                               <td className="py-1 pr-3 text-right">{fmt(c.ma20)}</td>
                               <td className="py-1 pr-3 text-right">{fmt(c.rsi14, 1)}</td>
                               <td className="py-1 pr-3 text-right">{fmt(c.macd_line, 2)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.macd_signal, 2)}</td>
+                              <td className="py-1 pr-3 text-right">{fmt(c.volume)}</td>
                               <td className="py-1 pr-3 text-right">{fmt(c.strength)}</td>
                               <td className="py-1 pr-3 text-right">{fmt(c.net_buy_qty)}</td>
                               <td className="py-1 pr-3 text-right">{fmt(c.vol_incr_rate)}</td>
