@@ -23,6 +23,14 @@ type RankItem struct {
 	Strength     string `json:"strength,omitempty"`      // 체결강도 % (strength)
 	NetBuyQty    string `json:"net_buy_qty,omitempty"`   // 순매수체결량 (exec_count)
 	DisparityD20 string `json:"disparity_d20,omitempty"` // 20일 이격도 (disparity)
+	// 당일 OHLC
+	DayOpen string `json:"day_open,omitempty"`
+	DayHigh string `json:"day_high,omitempty"`
+	DayLow  string `json:"day_low,omitempty"`
+	// 파생 지표 (서버 계산)
+	HighPriceDiff float64 `json:"high_price_diff,omitempty"` // (현재가-고가)/고가×100 (음수=눌림)
+	OpenPriceDiff float64 `json:"open_price_diff,omitempty"` // (현재가-시가)/시가×100 (당일 상승률)
+	DisparityM5   float64 `json:"disparity_m5,omitempty"`    // 5분봉 MA5 이격도
 	// Technical indicators from GetStockInfo
 	MA5        float64 `json:"ma5,omitempty"`
 	MA20       float64 `json:"ma20,omitempty"`
@@ -56,12 +64,14 @@ type StockCandidate struct {
 
 // SelectStocks asks Claude to rank all viable candidates from the ranking list.
 // Already-traded stocks are filtered server-side before this call.
+// market: "KR" (default) or "US" — selects the appropriate prompt and context.
 // Returns an ordered slice — index 0 is the top pick. Engine tries them in order.
 func (c *ClaudeClient) SelectStocks(
 	ctx context.Context,
 	rankings []RankItem,
 	availableCash float64,
 	_ []string, // excludedCodes: filtered server-side, kept for API compatibility
+	market string,
 ) ([]StockCandidate, error) {
 	if len(rankings) == 0 {
 		return nil, fmt.Errorf("ranking list is empty")
@@ -69,26 +79,61 @@ func (c *ClaudeClient) SelectStocks(
 
 	rankJSON, _ := json.Marshal(rankings)
 
-	prompt := fmt.Sprintf(`You are a Korean stock intraday trading AI.
+	var prompt string
+	if market == "US" {
+		prompt = fmt.Sprintf(`You are an elite US day-trader focused on NASDAQ/NYSE/AMEX stocks, known for avoiding Bull Traps and finding momentum entries.
 
-Analyze the ranking data below and rank ALL viable stocks for same-day trading, best first.
+## Hard Rejection Rules — skip if ANY apply:
+1. high_price_diff < -5%%  → dropped more than 5%% from today's high, avoid (selling pressure)
+2. ma5 < ma20  → downtrend, skip
 
-Constraints:
-- Available cash: %.0f KRW
-- Goal: maximize intraday return
-- Consider: MA trend (price vs MA5/MA20), RSI (avoid >70), MACD direction, volume momentum
+## Ranking Criteria (for survivors):
+- Best entry: high_price_diff between -0.5%% and -3%% (slight pullback from high, ready to bounce)
+- MA trend: ma5 > ma20 confirms uptrend — prefer larger gap
+- Volume confirmation: higher volume relative to average indicates institutional interest
+- Prefer: open_price_diff between 0%% and 8%% (gap-up with room to run, not overextended)
+- Avoid: open_price_diff > 15%% (already overextended today)
+
+Available indicators: high_price_diff, open_price_diff, ma5, ma20, volume, current_price
+Note: RSI, MACD, and disparity_m5 are not available for US stocks — do not reference them.
 
 Ranking data (JSON):
 %s
+Available cash: %.2f USD
 
-Respond with ONLY a JSON array — no explanation, no markdown.
-Order from best to worst. Include only stocks worth buying (skip clearly bad ones):
-[{"stock_code":"6-digit code","reason":"한국어로 1문장"},...]`,
-		availableCash, string(rankJSON))
+Respond with ONLY a valid JSON array — no explanation, no markdown, no extra text.
+If no stock passes, respond with exactly: []
+Best entry first:
+[{"stock_code":"TICKER","reason":"Pulled back -Y%% from high, MA5 > MA20 uptrend, strong volume"},...]`,
+			string(rankJSON), availableCash)
+	} else {
+		prompt = fmt.Sprintf(`You are an elite Korean day-trader known for avoiding Bull Traps and finding pullback(눌림목) entries.
+
+## Hard Rejection Rules — skip if ANY apply:
+1. disparity_m5 > 3%%  → over-extended from 5-min MA, skip
+2. high_price_diff > -0.5%%  → basically at today's peak, skip
+3. ma5 < ma20  → downtrend, skip
+
+## Ranking Criteria (for survivors):
+- Best entry: high_price_diff between -1%% and -3%% (pulled back from high, ready to bounce)
+- Volume quality: net_buy_qty > 0 + strength increasing = accumulation signal
+- MACD: macd_line > macd_signal preferred (upward momentum)
+- Avoid: open_price_diff > 10%% (stocks that already ran too far today)
+
+Ranking data (JSON):
+%s
+Available cash: %.0f KRW
+
+Respond with ONLY a valid JSON array — no explanation, no markdown, no extra text.
+If no stock passes, respond with exactly: []
+Best entry first:
+[{"stock_code":"6-digit","reason":"고점(X원) 대비 -Y%% 눌림, 5분봉 MA 지지, 순매수 우세로 반등 기대"},...]`,
+			string(rankJSON), availableCash)
+	}
 
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.model),
-		MaxTokens: 512,
+		MaxTokens: 2048,
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 		},
@@ -102,19 +147,38 @@ Order from best to worst. Include only stocks worth buying (skip clearly bad one
 	}
 
 	raw := strings.TrimSpace(msg.Content[0].AsText().Text)
-	if strings.HasPrefix(raw, "```") {
-		lines := strings.Split(raw, "\n")
-		if len(lines) >= 3 {
-			raw = strings.Join(lines[1:len(lines)-1], "\n")
+
+	// Extract JSON array portion: find first '[' and its matching ']'
+	start := strings.Index(raw, "[")
+	if start == -1 {
+		return nil, fmt.Errorf("claude response has no JSON array (raw: %s)", raw)
+	}
+	depth, end := 0, -1
+	for i := start; i < len(raw); i++ {
+		switch raw[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				end = i
+			}
+		}
+		if end != -1 {
+			break
 		}
 	}
+	if end == -1 {
+		return nil, fmt.Errorf("claude response JSON array not closed (raw: %s)", raw)
+	}
+	raw = raw[start : end+1]
 
 	var candidates []StockCandidate
 	if err := json.Unmarshal([]byte(raw), &candidates); err != nil {
 		return nil, fmt.Errorf("claude response parse error: %w (raw: %s)", err, raw)
 	}
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("claude returned empty candidate list")
+		return nil, fmt.Errorf("claude: 조건에 맞는 종목 없음 (Hard Rejection Rule 적용)")
 	}
 
 	return candidates, nil

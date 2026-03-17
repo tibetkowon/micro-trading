@@ -502,6 +502,18 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"us_ranking_price_max":  ts.USRankingPriceMax,
 		"us_ranking_vol_rang":   ts.USRankingVolRang,
 		"us_ranking_top_n":      ts.USRankingTopN,
+		// 거래대금 하한선
+		"min_trading_value": ts.MinTradingValue,
+		// 매수 중단 시간대
+		"buy_pause_start": ts.BuyPauseStart,
+		"buy_pause_end":   ts.BuyPauseEnd,
+		// 트레일링 스탑
+		"trailing_trigger_pct": ts.TrailingTriggerPct,
+		"trailing_stop_pct":    ts.TrailingStopPct,
+		// 일일 최대 손실
+		"daily_max_loss_pct": ts.DailyMaxLossPct,
+		// 지수 필터
+		"index_codes": ts.IndexCodes,
 	})
 }
 
@@ -545,6 +557,18 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		USRankingPriceMax  string   `json:"us_ranking_price_max"`
 		USRankingVolRang   string   `json:"us_ranking_vol_rang"`
 		USRankingTopN      *int     `json:"us_ranking_top_n"`
+		// 거래대금 하한선
+		MinTradingValue *float64 `json:"min_trading_value"`
+		// 매수 중단 시간대
+		BuyPauseStart string `json:"buy_pause_start"`
+		BuyPauseEnd   string `json:"buy_pause_end"`
+		// 트레일링 스탑
+		TrailingTriggerPct *float64 `json:"trailing_trigger_pct"`
+		TrailingStopPct    *float64 `json:"trailing_stop_pct"`
+		// 일일 최대 손실
+		DailyMaxLossPct *float64 `json:"daily_max_loss_pct"`
+		// 지수 필터 (nil = 변경 안 함)
+		IndexCodes []string `json:"index_codes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -805,6 +829,71 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.USRankingTopN != nil {
 		if !save("us_ranking_top_n", strconv.Itoa(*req.USRankingTopN)) {
+			return
+		}
+	}
+
+	if req.MinTradingValue != nil {
+		if *req.MinTradingValue < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "min_trading_value는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("min_trading_value", strconv.FormatFloat(*req.MinTradingValue, 'f', -1, 64)) {
+			return
+		}
+	}
+
+	if req.BuyPauseStart != "" {
+		if _, err := time.Parse("15:04", req.BuyPauseStart); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "buy_pause_start 형식이 잘못되었습니다 (HH:MM)"})
+			return
+		}
+		if !save("buy_pause_start", req.BuyPauseStart) {
+			return
+		}
+	}
+	if req.BuyPauseEnd != "" {
+		if _, err := time.Parse("15:04", req.BuyPauseEnd); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "buy_pause_end 형식이 잘못되었습니다 (HH:MM)"})
+			return
+		}
+		if !save("buy_pause_end", req.BuyPauseEnd) {
+			return
+		}
+	}
+
+	if req.TrailingTriggerPct != nil {
+		if *req.TrailingTriggerPct < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "trailing_trigger_pct는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("trailing_trigger_pct", strconv.FormatFloat(*req.TrailingTriggerPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.TrailingStopPct != nil {
+		if *req.TrailingStopPct <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "trailing_stop_pct는 0보다 커야 합니다"})
+			return
+		}
+		if !save("trailing_stop_pct", strconv.FormatFloat(*req.TrailingStopPct, 'f', -1, 64)) {
+			return
+		}
+	}
+
+	if req.DailyMaxLossPct != nil {
+		if *req.DailyMaxLossPct < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "daily_max_loss_pct는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("daily_max_loss_pct", strconv.FormatFloat(*req.DailyMaxLossPct, 'f', -1, 64)) {
+			return
+		}
+	}
+
+	if req.IndexCodes != nil {
+		b, _ := json.Marshal(req.IndexCodes)
+		if !save("index_codes", string(b)) {
 			return
 		}
 	}

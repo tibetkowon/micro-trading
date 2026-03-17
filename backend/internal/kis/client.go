@@ -58,6 +58,9 @@ type StockPriceResponse struct {
 	CurrentPrice string `json:"stck_prpr"`      // 주식 현재가
 	ChangeRate   string `json:"prdy_ctrt"`      // 전일대비율
 	Volume       string `json:"acml_vol"`       // 누적 거래량
+	DayOpen      string `json:"stck_oprc"`      // 당일 시가
+	DayHigh      string `json:"stck_hgpr"`      // 당일 고가
+	DayLow       string `json:"stck_lwpr"`      // 당일 저가
 }
 
 // AvailableOrderResponse holds response from inquire-psbl-order (매수가능조회 TTTC8908R).
@@ -235,6 +238,37 @@ func (c *Client) GetStockPrice(ctx context.Context, stockCode string) (*StockPri
 		return nil, fmt.Errorf("parse stock price: %w", err)
 	}
 	return &result.Output, nil
+}
+
+// GetIndexPrice fetches the current price and opening price for a domestic index.
+// indexCode: "0001"=코스피, "1001"=코스닥 (업종 지수 코드).
+// Uses inquire-index-price endpoint (FHPUP02100000).
+// Returns a StockPriceResponse with CurrentPrice and DayOpen populated.
+// If the endpoint fails (e.g., sandbox mode), returns an error — caller should skip the filter gracefully.
+func (c *Client) GetIndexPrice(ctx context.Context, indexCode string) (*StockPriceResponse, error) {
+	endpoint := "/uapi/domestic-stock/v1/quotations/inquire-index-price"
+	params := fmt.Sprintf("?FID_COND_MRKT_DIV_CODE=U&FID_INPUT_ISCD=%s", indexCode)
+
+	raw, err := c.get(ctx, endpoint, params, "FHPUP02100000")
+	if err != nil {
+		return nil, err
+	}
+
+	// KIS 업종지수 응답 필드는 stock과 다른 접두사를 사용함.
+	var result struct {
+		Output struct {
+			CurrentPrice string `json:"bstp_nmix_prpr"` // 업종지수 현재가
+			DayOpen      string `json:"bstp_nmix_oprc"` // 업종지수 시가
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("parse index price: %w", err)
+	}
+	return &StockPriceResponse{
+		StockCode:    indexCode,
+		CurrentPrice: result.Output.CurrentPrice,
+		DayOpen:      result.Output.DayOpen,
+	}, nil
 }
 
 // GetAvailableOrder checks order feasibility for a specific stock (매수가능조회 TTTC8908R).
@@ -652,7 +686,21 @@ type OverseasPriceResponse struct {
 	Diff string `json:"diff"` // 전일대비
 	Rate string `json:"rate"` // 등락율
 	TVol string `json:"tvol"` // 거래량
+	Tamt string `json:"tamt"` // 거래대금
 	Zdiv string `json:"zdiv"` // 소수점자리수
+	Open string `json:"open"` // 시가
+	High string `json:"high"` // 고가
+	Low  string `json:"low"`  // 저가
+}
+
+// OverseasDailyBar holds one daily OHLCV bar from the overseas daily chart API.
+type OverseasDailyBar struct {
+	Xymd string // 일자 (YYYYMMDD)
+	Open string // 시가
+	High string // 고가
+	Low  string // 저가
+	Clos string // 종가
+	TVol string // 거래량
 }
 
 // OverseasRankItem holds one entry from the overseas volume ranking API.
@@ -821,6 +869,59 @@ func (c *Client) GetOverseasPrice(ctx context.Context, excd, symb string) (*Over
 		return nil, fmt.Errorf("parse overseas price: %w", err)
 	}
 	return &result.Output, nil
+}
+
+// GetOverseasDailyChart fetches overseas daily (일봉) OHLCV bars for a symbol (HHDFS76240000).
+// excd: NAS/NYS/AMS. symb: e.g. "AAPL". count: number of bars to return (max ~100).
+// Returns bars in reverse chronological order (newest first) as returned by the API.
+func (c *Client) GetOverseasDailyChart(ctx context.Context, excd, symb string, count int) ([]OverseasDailyBar, error) {
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	bymd := time.Now().In(kst).Format("20060102")
+
+	endpoint := "/uapi/overseas-price/v1/quotations/dailyprice"
+	params := fmt.Sprintf("?AUTH=&EXCD=%s&SYMB=%s&GUBN=0&BYMD=%s&MODP=1&KEYB=",
+		excd, symb, bymd)
+
+	raw, err := c.get(ctx, endpoint, params, "HHDFS76240000")
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Output2 []struct {
+			Xymd string `json:"xymd"`
+			Open string `json:"open"`
+			High string `json:"high"`
+			Low  string `json:"low"`
+			Clos string `json:"clos"`
+			TVol string `json:"tvol"`
+		} `json:"output2"`
+		MsgCode string `json:"msg_cd"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse overseas daily chart: %w", err)
+	}
+	if result.Output2 == nil {
+		return []OverseasDailyBar{}, nil
+	}
+
+	bars := result.Output2
+	if count > 0 && len(bars) > count {
+		bars = bars[:count]
+	}
+	out := make([]OverseasDailyBar, len(bars))
+	for i, b := range bars {
+		out[i] = OverseasDailyBar{
+			Xymd: b.Xymd,
+			Open: b.Open,
+			High: b.High,
+			Low:  b.Low,
+			Clos: b.Clos,
+			TVol: b.TVol,
+		}
+	}
+	return out, nil
 }
 
 // GetOverseasVolumeRank fetches the overseas volume ranking (HHDFS76310010).

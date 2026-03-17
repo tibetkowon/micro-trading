@@ -200,6 +200,27 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	}
 	e.setState(StateSelecting)
 
+	// 매수 중단 시간대 체크
+	if settings.BuyPauseStart != "" && settings.BuyPauseEnd != "" {
+		now := time.Now().Format("15:04")
+		if now >= settings.BuyPauseStart && now < settings.BuyPauseEnd {
+			e.setState(StateMonitoring)
+			return fmt.Errorf("매수 중단 시간대 (%s~%s)", settings.BuyPauseStart, settings.BuyPauseEnd)
+		}
+	}
+
+	// 지수 필터: 지수가 시가 대비 -1% 이상 하락 시 매수 중단
+	for _, code := range settings.IndexCodes {
+		if idx, idxErr := e.kisClient.GetIndexPrice(ctx, code); idxErr == nil {
+			open, _ := strconv.ParseFloat(idx.DayOpen, 64)
+			cur, _ := strconv.ParseFloat(idx.CurrentPrice, 64)
+			if open > 0 && cur > 0 && (cur-open)/open*100 <= -1.0 {
+				e.setState(StateMonitoring)
+				return fmt.Errorf("지수 -1%% 이상 하락 (지수:%s %.2f%%↓), 매수 일시 중단", code, (cur-open)/open*100)
+			}
+		}
+	}
+
 	// Build today's exclusion list from DB orders.
 	excludedCodes := e.getTodayTradedCodes(ctx)
 
@@ -254,6 +275,23 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		rankings[i].RSI14 = info.RSI14
 		rankings[i].MACDLine = info.MACDLine
 		rankings[i].MACDSignal = info.MACDSignal
+		rankings[i].DayOpen = info.DayOpen
+		rankings[i].DayHigh = info.DayHigh
+		rankings[i].DayLow = info.DayLow
+		rankings[i].HighPriceDiff = info.HighPriceDiff
+		rankings[i].OpenPriceDiff = info.OpenPriceDiff
+		rankings[i].DisparityM5 = info.DisparityM5
+	}
+	// 거래대금 하한선 필터
+	if settings.MinTradingValue > 0 {
+		filtered := rankings[:0]
+		for _, item := range rankings {
+			info, err := agent.GetStockInfo(ctx, e.kisClient, item.StockCode)
+			if err != nil || info.TradingValue >= settings.MinTradingValue {
+				filtered = append(filtered, item)
+			}
+		}
+		rankings = filtered
 	}
 
 	// Get available cash.
@@ -266,6 +304,63 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	if availableCash <= 0 {
 		e.setState(StateMonitoring)
 		return fmt.Errorf("no available cash")
+	}
+
+	// 일일 최대 손실 한도 체크
+	if settings.DailyMaxLossPct > 0 {
+		pnl := e.db.GetTodayRealizedPnL(ctx)
+		if pnl < 0 {
+			totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
+			if totalEval <= 0 {
+				totalEval = availableCash
+			}
+			lossLimit := totalEval * settings.DailyMaxLossPct / 100
+			if -pnl >= lossLimit {
+				e.setState(StateMonitoring)
+				return fmt.Errorf("일일 최대 손실 한도 도달 (%.0f원 손실 >= 한도 %.0f원)", -pnl, lossLimit)
+			}
+		}
+	}
+
+	// Filter out stocks whose current price exceeds available cash (can't buy even 1 share).
+	{
+		filtered := rankings[:0]
+		for _, item := range rankings {
+			price, _ := strconv.ParseFloat(item.CurrentPrice, 64)
+			if price > 0 && price <= availableCash {
+				filtered = append(filtered, item)
+			}
+		}
+		rankings = filtered
+	}
+	if len(rankings) == 0 {
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no affordable stocks after price filter (cash: %.0f)", availableCash)
+	}
+
+	// 하드 필터: LLM 전달 전 과열/이격 과대 종목 제거
+	{
+		filtered := rankings[:0]
+		for _, item := range rankings {
+			// RSI 과열 (80 이상) 제외
+			if item.RSI14 > 0 && item.RSI14 >= 80 {
+				continue
+			}
+			// 5분봉 이격도 3% 초과 제외
+			if item.DisparityM5 > 3.0 {
+				continue
+			}
+			// 고가 대비 너무 많이 흘러내린 종목 (-5% 이하) 제외
+			if item.HighPriceDiff != 0 && item.HighPriceDiff < -5.0 {
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		rankings = filtered
+	}
+	if len(rankings) == 0 {
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no stocks passed hard filter (RSI/disparity/high-price)")
 	}
 
 	// Persist selection log to DB (Claude 호출 전 INSERT — 실패해도 로그 남김).
@@ -282,7 +377,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 
 	// Ask Claude to rank all viable candidates (single API call).
 	// excludedCodes are already filtered server-side above; pass nil here.
-	candidates, err := e.claude.SelectStocks(ctx, rankings, availableCash, nil)
+	candidates, err := e.claude.SelectStocks(ctx, rankings, availableCash, nil, "KR")
 	if err != nil {
 		if selectionLogID > 0 {
 			e.db.ExecContext(ctx, //nolint:errcheck
@@ -425,13 +520,15 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 
 	// Register with monitor.
 	entry := monitor.MonitoredEntry{
-		StockCode:   stockCode,
-		StockName:   stockName,
-		FilledPrice: filledPrice,
-		TargetPrice: filledPrice * (1 + settings.TakeProfitPct/100),
-		StopPrice:   filledPrice * (1 - settings.StopLossPct/100),
-		OrderID:     result.OrderID,
-		SoldCh:      e.soldCh,
+		StockCode:          stockCode,
+		StockName:          stockName,
+		FilledPrice:        filledPrice,
+		TargetPrice:        filledPrice * (1 + settings.TakeProfitPct/100),
+		StopPrice:          filledPrice * (1 - settings.StopLossPct/100),
+		OrderID:            result.OrderID,
+		SoldCh:             e.soldCh,
+		TrailingTriggerPct: settings.TrailingTriggerPct,
+		TrailingStopPct:    settings.TrailingStopPct,
 	}
 	if regErr := e.mon.Register(ctx, entry); regErr != nil {
 		logger.Error("engine: Register position failed",
@@ -586,6 +683,24 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	priceMin := settings.RankingPriceMin
 	priceMax := settings.RankingPriceMax
 
+	// KIS API price filter params may be ignored by some ranking endpoints,
+	// so we enforce the price range ourselves after each API call.
+	priceMinF, _ := strconv.ParseFloat(priceMin, 64)
+	priceMaxF, _ := strconv.ParseFloat(priceMax, 64)
+	withinPriceRange := func(currentPrice string) bool {
+		p, err := strconv.ParseFloat(currentPrice, 64)
+		if err != nil || p <= 0 {
+			return false
+		}
+		if priceMinF > 0 && p < priceMinF {
+			return false
+		}
+		if priceMaxF > 0 && p > priceMaxF {
+			return false
+		}
+		return true
+	}
+
 	// byType holds filtered results per ranking type: stockCode → RankItem
 	byType := make(map[string]map[string]RankItem) // rankingType → code → item
 
@@ -603,6 +718,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			for _, item := range items {
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
+				}
+				if !withinPriceRange(item.CurrentPrice) {
+					continue
 				}
 				if settings.RankingVolumeMinIncrRate > 0 {
 					rate, _ := strconv.ParseFloat(item.VolIncrRate, 64)
@@ -629,6 +747,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
 				}
+				if !withinPriceRange(item.CurrentPrice) {
+					continue
+				}
 				if settings.RankingStrengthMin > 0 {
 					str, _ := strconv.ParseFloat(item.Strength, 64)
 					if str < settings.RankingStrengthMin {
@@ -654,6 +775,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
 				}
+				if !withinPriceRange(item.CurrentPrice) {
+					continue
+				}
 				if settings.RankingExecCountNetBuyOnly {
 					netBuy, _ := strconv.ParseFloat(item.NetBuyQty, 64)
 					if netBuy <= 0 {
@@ -678,6 +802,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			for _, item := range items {
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
+				}
+				if !withinPriceRange(item.CurrentPrice) {
+					continue
 				}
 				if settings.RankingDisparityD20Min > 0 || settings.RankingDisparityD20Max > 0 {
 					d20, _ := strconv.ParseFloat(item.D20, 64)
@@ -708,7 +835,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			StrengthCount:     -1,
 			ExecCountCount:    -1,
 			DisparityCount:    -1,
+			RankingCondition:  settings.RankingCondition,
 			IntersectionCount: 0,
+			ResultStocks:      "[]",
 			ErrorMessage:      "no ranking types configured",
 		})
 		return nil, fmt.Errorf("no ranking types configured")
@@ -807,6 +936,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		return len(m)
 	}
 	typesJSON, _ := json.Marshal(settings.RankingTypes)
+	resultStocksJSON, _ := json.Marshal(result)
 	if err := e.db.InsertRankingLog(ctx, models.TraderRankingLog{
 		RankingTypes:      string(typesJSON),
 		PriceMin:          settings.RankingPriceMin,
@@ -815,7 +945,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		StrengthCount:     countFor("strength"),
 		ExecCountCount:    countFor("exec_count"),
 		DisparityCount:    countFor("disparity"),
+		RankingCondition:  settings.RankingCondition,
 		IntersectionCount: len(result),
+		ResultStocks:      string(resultStocksJSON),
 	}); err != nil {
 		logger.Warn("engine: InsertRankingLog failed", map[string]any{"error": err.Error()})
 	}
@@ -889,6 +1021,15 @@ func excdToExchCode(excd string) string {
 func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSettings) error {
 	e.setState(StateSelecting)
 
+	// 매수 중단 시간대 체크
+	if settings.BuyPauseStart != "" && settings.BuyPauseEnd != "" {
+		now := time.Now().UTC().Format("15:04") // US market hours in UTC
+		if now >= settings.BuyPauseStart && now < settings.BuyPauseEnd {
+			e.setState(StateMonitoring)
+			return fmt.Errorf("매수 중단 시간대 (%s~%s)", settings.BuyPauseStart, settings.BuyPauseEnd)
+		}
+	}
+
 	excludedCodes := e.getTodayTradedCodes(ctx)
 
 	rankings, err := e.getRankings(ctx, settings)
@@ -925,19 +1066,6 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 	}
 	exchCode := excdToExchCode(excd)
 
-	// Persist selection log
-	var selectionLogID int64
-	{
-		candidatesJSON, _ := json.Marshal(rankings)
-		res, dbErr := e.db.ExecContext(ctx,
-			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result) VALUES (?,?,?)`,
-			len(rankings), string(candidatesJSON), "")
-		if dbErr == nil {
-			selectionLogID, _ = res.LastInsertId()
-		}
-	}
-
-	// Ask Claude to rank US candidates
 	// Get available USD amount (use first candidate's price for estimate)
 	availableUSD := float64(10000) // fallback default
 	if len(rankings) > 0 {
@@ -952,7 +1080,113 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		}
 	}
 
-	candidates, err := e.claude.SelectStocks(ctx, rankings, availableUSD, nil)
+	// 일일 최대 손실 한도 체크
+	if settings.DailyMaxLossPct > 0 {
+		pnl := e.db.GetTodayRealizedPnL(ctx)
+		if pnl < 0 {
+			lossLimit := availableUSD * settings.DailyMaxLossPct / 100
+			if -pnl >= lossLimit {
+				e.setState(StateMonitoring)
+				return fmt.Errorf("일일 최대 손실 한도 도달 ($%.2f 손실 >= 한도 $%.2f)", -pnl, lossLimit)
+			}
+		}
+	}
+
+	// Enrich each candidate with technical indicators (MA5/MA20/HighPriceDiff/OpenPriceDiff).
+	for i, r := range rankings {
+		priceResp, priceErr := e.kisClient.GetOverseasPrice(ctx, excd, r.StockCode)
+		if priceErr != nil {
+			logger.Warn("engine US: GetOverseasPrice failed for enrichment",
+				map[string]any{"stock_code": r.StockCode, "error": priceErr.Error()})
+			continue
+		}
+		last, _ := strconv.ParseFloat(priceResp.Last, 64)
+		high, _ := strconv.ParseFloat(priceResp.High, 64)
+		open, _ := strconv.ParseFloat(priceResp.Open, 64)
+		if last > 0 && high > 0 {
+			rankings[i].HighPriceDiff = (last - high) / high * 100
+		}
+		if last > 0 && open > 0 {
+			rankings[i].OpenPriceDiff = (last - open) / open * 100
+		}
+
+		// MA5/MA20 from daily chart
+		bars, chartErr := e.kisClient.GetOverseasDailyChart(ctx, excd, r.StockCode, 22)
+		if chartErr != nil {
+			logger.Warn("engine US: GetOverseasDailyChart failed",
+				map[string]any{"stock_code": r.StockCode, "error": chartErr.Error()})
+			continue
+		}
+		if len(bars) >= 5 {
+			var sum5 float64
+			for j := 0; j < 5; j++ {
+				v, _ := strconv.ParseFloat(bars[j].Clos, 64)
+				sum5 += v
+			}
+			rankings[i].MA5 = sum5 / 5
+		}
+		if len(bars) >= 20 {
+			var sum20 float64
+			for j := 0; j < 20; j++ {
+				v, _ := strconv.ParseFloat(bars[j].Clos, 64)
+				sum20 += v
+			}
+			rankings[i].MA20 = sum20 / 20
+		}
+	}
+
+	// 최소 거래대금 필터 (USD)
+	if settings.MinTradingValue > 0 {
+		filtered := rankings[:0]
+		for _, item := range rankings {
+			price, _ := strconv.ParseFloat(item.CurrentPrice, 64)
+			tvol, _ := strconv.ParseFloat(item.Volume, 64)
+			tradingValueUSD := price * tvol
+			if price <= 0 || tradingValueUSD >= settings.MinTradingValue {
+				filtered = append(filtered, item)
+			}
+		}
+		rankings = filtered
+	}
+	if len(rankings) == 0 {
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no US stocks passed min trading value filter")
+	}
+
+	// 하드 필터: LLM 전달 전 부적격 종목 제거
+	{
+		filtered := rankings[:0]
+		for _, item := range rankings {
+			// 고가 대비 5% 초과 하락 종목 제거 (매도 압력 심함)
+			if item.HighPriceDiff != 0 && item.HighPriceDiff < -5.0 {
+				continue
+			}
+			// MA5 < MA20: 하락 추세 종목 제거
+			if item.MA5 > 0 && item.MA20 > 0 && item.MA5 < item.MA20 {
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		rankings = filtered
+	}
+	if len(rankings) == 0 {
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no US stocks passed hard filter (high-price/MA trend)")
+	}
+
+	// Persist selection log
+	var selectionLogID int64
+	{
+		candidatesJSON, _ := json.Marshal(rankings)
+		res, dbErr := e.db.ExecContext(ctx,
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result) VALUES (?,?,?)`,
+			len(rankings), string(candidatesJSON), "")
+		if dbErr == nil {
+			selectionLogID, _ = res.LastInsertId()
+		}
+	}
+
+	candidates, err := e.claude.SelectStocks(ctx, rankings, availableUSD, nil, "US")
 	if err != nil {
 		if selectionLogID > 0 {
 			e.db.ExecContext(ctx, //nolint:errcheck
@@ -1054,7 +1288,6 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		if !filled {
 			logger.Warn("engine US: fill timeout, trying next candidate",
 				map[string]any{"stock_code": code})
-			// Mark as failed
 			e.db.ExecContext(ctx, //nolint:errcheck
 				`UPDATE orders SET status = 'FAILED' WHERE id = ?`, dbOrderID)
 			continue
@@ -1112,17 +1345,19 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		`UPDATE orders SET filled_price = ?, status = ? WHERE id = ?`,
 		filledPrice, string(models.OrderStatusFilled), orderID)
 
-	// Register with monitor
+	// Register with monitor (트레일링 스탑 파라미터 포함)
 	entry := monitor.MonitoredEntry{
-		StockCode:   stockCode,
-		StockName:   stockName,
-		FilledPrice: filledPrice,
-		TargetPrice: filledPrice * (1 + settings.TakeProfitPct/100),
-		StopPrice:   filledPrice * (1 - settings.StopLossPct/100),
-		OrderID:     orderID,
-		Market:      "US",
-		ExchCode:    exchCode,
-		SoldCh:      e.soldCh,
+		StockCode:          stockCode,
+		StockName:          stockName,
+		FilledPrice:        filledPrice,
+		TargetPrice:        filledPrice * (1 + settings.TakeProfitPct/100),
+		StopPrice:          filledPrice * (1 - settings.StopLossPct/100),
+		OrderID:            orderID,
+		Market:             "US",
+		ExchCode:           exchCode,
+		SoldCh:             e.soldCh,
+		TrailingTriggerPct: settings.TrailingTriggerPct,
+		TrailingStopPct:    settings.TrailingStopPct,
 	}
 	if regErr := e.mon.Register(ctx, entry); regErr != nil {
 		logger.Error("engine US: Register position failed", map[string]any{"error": regErr.Error()})

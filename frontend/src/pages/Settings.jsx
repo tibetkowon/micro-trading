@@ -90,6 +90,19 @@ export default function Settings() {
   const [stagnationThresholdPct, setStagnationThresholdPct] = useState('1.0')
   const [stagnationDurationMin, setStagnationDurationMin] = useState('30')
 
+  // ── 매수 품질 필터 ──
+  const [minTradingValue, setMinTradingValue] = useState('0')
+  const [buyPauseStart, setBuyPauseStart] = useState('11:00')
+  const [buyPauseEnd, setBuyPauseEnd] = useState('14:00')
+
+  // ── 트레일링 스탑 ──
+  const [trailingTriggerPct, setTrailingTriggerPct] = useState('0')
+  const [trailingStopPct, setTrailingStopPct] = useState('1.0')
+
+  // ── 리스크 관리 ──
+  const [dailyMaxLossPct, setDailyMaxLossPct] = useState('0')
+  const [indexCodes, setIndexCodes] = useState([])
+
   // ── AI 설정 ──
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
 
@@ -140,6 +153,14 @@ export default function Settings() {
     if (data.indicator_macd_bearish_sell != null) setMacdBearish(data.indicator_macd_bearish_sell)
     if (data.stagnation_threshold_pct != null) setStagnationThresholdPct(String(data.stagnation_threshold_pct))
     if (data.stagnation_duration_min != null) setStagnationDurationMin(String(data.stagnation_duration_min))
+
+    if (data.min_trading_value != null) setMinTradingValue(String(data.min_trading_value))
+    if (data.buy_pause_start) setBuyPauseStart(data.buy_pause_start)
+    if (data.buy_pause_end) setBuyPauseEnd(data.buy_pause_end)
+    if (data.trailing_trigger_pct != null) setTrailingTriggerPct(String(data.trailing_trigger_pct))
+    if (data.trailing_stop_pct != null) setTrailingStopPct(String(data.trailing_stop_pct))
+    if (data.daily_max_loss_pct != null) setDailyMaxLossPct(String(data.daily_max_loss_pct))
+    if (Array.isArray(data.index_codes)) setIndexCodes(data.index_codes)
 
     if (data.claude_model) setClaudeModel(data.claude_model)
 
@@ -214,6 +235,13 @@ export default function Settings() {
       indicator_macd_bearish_sell: macdBearish,
       stagnation_threshold_pct: parseFloat(stagnationThresholdPct) || 1.0,
       stagnation_duration_min: parseInt(stagnationDurationMin) || 30,
+      min_trading_value: parseFloat(minTradingValue) || 0,
+      buy_pause_start: buyPauseStart,
+      buy_pause_end: buyPauseEnd,
+      trailing_trigger_pct: parseFloat(trailingTriggerPct) || 0,
+      trailing_stop_pct: parseFloat(trailingStopPct) || 1.0,
+      daily_max_loss_pct: parseFloat(dailyMaxLossPct) || 0,
+      index_codes: indexCodes,
       claude_model: claudeModel,
       us_trading_enabled: usTradingEnabled,
       us_dst_enabled: usDstEnabled,
@@ -312,6 +340,49 @@ export default function Settings() {
             </label>
           </div>
           <p className="text-xs text-gray-600">기본값: 09:15 ~ 15:15. 변경 시 다음 거래일부터 적용됩니다.</p>
+
+          {/* 매수 중단 시간 */}
+          <div className="grid grid-cols-2 gap-4 pt-1 border-t border-gray-800">
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">매수 중단 시작</span>
+              <input
+                type="time"
+                value={buyPauseStart}
+                onChange={(e) => setBuyPauseStart(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">매수 중단 종료</span>
+              <input
+                type="time"
+                value={buyPauseEnd}
+                onChange={(e) => setBuyPauseEnd(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+          </div>
+          <p className="text-xs text-gray-600">기본값: 11:00 ~ 14:00 매수 중단 (점심시간 유동성 저하 방지)</p>
+
+          {/* 지수 필터 */}
+          <div className="space-y-1 pt-1 border-t border-gray-800">
+            <span className="text-xs text-gray-400 block">지수 필터 (체크된 지수가 시가 대비 -1% 이상 하락 시 매수 중단)</span>
+            <div className="flex gap-4">
+              {[{ code: '0001', label: '코스피' }, { code: '1001', label: '코스닥' }].map(({ code, label }) => (
+                <label key={code} className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={indexCodes.includes(code)}
+                    onChange={(e) => setIndexCodes(prev =>
+                      e.target.checked ? [...prev, code] : prev.filter(c => c !== code)
+                    )}
+                    className="accent-blue-500"
+                  />
+                  <span className="text-sm text-gray-300">{label} ({code})</span>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* ── 섹션 2: 종목 선정 (순위 조회) ── */}
@@ -518,6 +589,22 @@ export default function Settings() {
               />
             </label>
           </div>
+
+          {/* 최소 거래대금 */}
+          <div className="pt-1 border-t border-gray-800">
+            <label className="space-y-1 block">
+              <span className="text-xs text-gray-400">최소 거래대금 (원, 0=필터없음)</span>
+              <input
+                type="number" step="any" min="0"
+                value={minTradingValue}
+                onChange={(e) => setMinTradingValue(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+            <p className="text-xs text-gray-600 mt-1">
+              예: 5000000000 = 50억원. 거래대금 미달 종목은 LLM 후보에서 제외됩니다.
+            </p>
+          </div>
         </div>
 
         {/* ── 섹션 4: 매도 설정 ── */}
@@ -606,6 +693,47 @@ export default function Settings() {
                 className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
               <span className="text-sm text-gray-300">MACD 데드크로스 시 매도</span>
             </label>
+          </div>
+
+          {/* 트레일링 스탑 */}
+          <div className="space-y-3 pt-3 border-t border-gray-800">
+            <p className="text-xs text-gray-400">트레일링 스탑</p>
+            <p className="text-xs text-gray-600">수익률이 활성화 기준에 도달하면, 이후 최고가 대비 일정 % 하락 시 자동 매도합니다. 활성화 기준 0=비활성.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <label className="space-y-1">
+                <span className="text-xs text-gray-400">활성화 기준 수익률 (%, 0=비활성)</span>
+                <input
+                  type="number" step="0.1" min="0"
+                  value={trailingTriggerPct}
+                  onChange={(e) => setTrailingTriggerPct(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-gray-400">최고가 대비 하락 허용폭 (%)</span>
+                <input
+                  type="number" step="0.1" min="0.1"
+                  value={trailingStopPct}
+                  onChange={(e) => setTrailingStopPct(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* 일일 최대 손실 */}
+          <div className="space-y-2 pt-3 border-t border-gray-800">
+            <p className="text-xs text-gray-400">일일 최대 손실 한도</p>
+            <label className="space-y-1 block">
+              <span className="text-xs text-gray-400">총자산 대비 최대 손실 (%, 0=제한없음)</span>
+              <input
+                type="number" step="0.1" min="0"
+                value={dailyMaxLossPct}
+                onChange={(e) => setDailyMaxLossPct(e.target.value)}
+                className="w-40 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+            <p className="text-xs text-gray-600">당일 실현 손실이 한도 초과 시 매수를 중단합니다.</p>
           </div>
 
           {/* 횡보 감지 설정 (stagnation 조건 활성 시에만 표시) */}

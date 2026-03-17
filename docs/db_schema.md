@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-16 (rev 11 — orders/monitored_positions에 market 컬럼 추가)
+> Last updated: 2026-03-16 (rev 13 — orders/monitored_positions market 컬럼 추가, index_code → index_codes JSON 배열 변경)
 
 ---
 
@@ -44,6 +44,14 @@
 | `trading_end_time` | `"15:15"` | 자율 거래 엔진 종료 시간 및 전량 청산 트리거 (`HH:MM` 형식, KST) |
 | `stagnation_threshold_pct` | `"1.0"` | 횡보 감지 기준 변동폭 (%). 진입가 대비 ±이 값 이내이면 횡보로 판단 |
 | `stagnation_duration_min` | `"30"` | 횡보 지속 기준 시간 (분). 이 시간 이상 지속 시 `stagnation` 매도 조건 트리거 |
+| `ranking_condition` | `"AND"` | 순위 조건: `"AND"`=교집합, `"OR"`=합집합 |
+| `min_trading_value` | `"0"` | 최소 거래대금 (원). 0=필터없음. 미달 종목은 LLM 후보에서 제외 |
+| `buy_pause_start` | `"11:00"` | 매수 중단 시작 시간 (`HH:MM`, KST). 이 시간부터 `buy_pause_end`까지 매수 시도 안 함 |
+| `buy_pause_end` | `"14:00"` | 매수 중단 종료 시간 (`HH:MM`, KST) |
+| `trailing_trigger_pct` | `"0"` | 트레일링 스탑 활성화 기준 수익률 (%). 0=비활성. 이 수익률 도달 시 최고가 추적 시작 |
+| `trailing_stop_pct` | `"1.0"` | 트레일링 스탑 최고가 대비 하락 허용폭 (%). `trailing_trigger_pct > 0`일 때만 유효 |
+| `daily_max_loss_pct` | `"0"` | 일일 최대 손실 한도 (총자산 대비 %). 0=제한없음. 초과 시 당일 매수 중단 |
+| `index_codes` | `"[]"` | 지수 필터 코드 JSON 배열 (`"[\"0001\",\"1001\"]"` 형식). 빈 배열=비활성. 체크된 지수가 시가 대비 -1% 이상 하락 시 매수 중단 |
 
 ---
 
@@ -130,11 +138,11 @@
 | `order_id` | INTEGER | NOT NULL, DEFAULT 0 | 연결된 `orders.id` |
 | `created_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 모니터링 등록 시각 |
 
-> `MonitoredEntry.SoldCh` (인메모리 전용) — DB에는 저장되지 않음. 엔진이 살아있을 때만 유효.
+> `MonitoredEntry.SoldCh`, `TrailingTriggerPct`, `TrailingStopPct`, `TrailingActivated`, `PeakPrice` (인메모리 전용) — DB에는 저장되지 않음. 서버 재시작 시 트레일링 스탑 상태는 초기화됨.
 
 **생애주기:**
 1. 트레이딩 엔진: 체결 확인 후 `Monitor.Register()` → INSERT
-2. `HandlePrice()`: 목표가/손절가 도달 → `executeSell()` → `SoldCh <- code` → `Remove()` → DELETE
+2. `HandlePrice()`: 목표가/손절가/트레일링스탑 도달 → `executeSell()` → `SoldCh <- code` → `Remove()` → DELETE
 3. `StartIndicatorChecker()`: RSI/MACD/횡보 감지 조건 충족 → `executeSell()` → `SoldCh <- code` → `Remove()` → DELETE
 4. 15:15 `LiquidateAll()` → DELETE
 5. `DELETE /api/monitor/positions/:code` → DELETE
