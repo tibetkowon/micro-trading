@@ -79,10 +79,10 @@ type Balance struct {
 // ServiceLog records service-level errors and warnings for central display.
 type ServiceLog struct {
 	ID        int64     `json:"id"`
-	Source    string    `json:"source"`    // TRADER / MONITOR / SYSTEM
-	Level     string    `json:"level"`     // ERROR / WARN
+	Source    string    `json:"source"` // TRADER / MONITOR / SYSTEM
+	Level     string    `json:"level"`  // ERROR / WARN
 	Message   string    `json:"message"`
-	Detail    string    `json:"detail"`    // 추가 정보 (JSON 또는 평문)
+	Detail    string    `json:"detail"` // 추가 정보 (JSON 또는 평문)
 	Timestamp time.Time `json:"timestamp"`
 }
 

@@ -475,7 +475,6 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 				code, pos.StockName, qty, pos.FilledPrice, kisOrderID, "일일 자동 청산", time.Now().UTC())
 		}
 
-
 		m.Remove(ctx, code)
 	}
 }

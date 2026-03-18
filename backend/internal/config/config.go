@@ -29,15 +29,15 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		KISAppKey:      mustEnv("KIS_APP_KEY"),
-		KISAppSecret:   mustEnv("KIS_APP_SECRET"),
-		KISAccountNo:   mustEnv("KIS_ACCOUNT_NO"),
-		KISAccountType: getEnv("KIS_ACCOUNT_TYPE", "01"),
-		KISBaseURL:     getEnv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443"),
-		KISHTSID:       getEnv("KIS_HTS_ID", ""),
-		DatabasePath:   getEnv("DATABASE_PATH", "./data/trading.db"),
-		ServerPort:     getEnv("SERVER_PORT", "8080"),
-		FrontendDist:   getEnv("FRONTEND_DIST_PATH", "./frontend/dist"),
+		KISAppKey:       mustEnv("KIS_APP_KEY"),
+		KISAppSecret:    mustEnv("KIS_APP_SECRET"),
+		KISAccountNo:    mustEnv("KIS_ACCOUNT_NO"),
+		KISAccountType:  getEnv("KIS_ACCOUNT_TYPE", "01"),
+		KISBaseURL:      getEnv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443"),
+		KISHTSID:        getEnv("KIS_HTS_ID", ""),
+		DatabasePath:    getEnv("DATABASE_PATH", "./data/trading.db"),
+		ServerPort:      getEnv("SERVER_PORT", "8080"),
+		FrontendDist:    getEnv("FRONTEND_DIST_PATH", "./frontend/dist"),
 		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
 	}
 
