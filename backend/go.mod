@@ -1,6 +1,6 @@
 module github.com/micro-trading-for-agent/backend
 
-go 1.24.0
+go 1.26.1
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.26.0
