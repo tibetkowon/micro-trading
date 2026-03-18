@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-17 (rev 14 — trader_selection_logs/trader_ranking_logs market 컬럼 추가, settings 하드 필터 5개 키 추가)
+> Last updated: 2026-03-18 (rev 15 — service_logs 테이블 추가, settings us_daily_max_loss_pct/us_min_trading_value 키 추가)
 
 ---
 
@@ -57,6 +57,8 @@
 | `filter_high_price_diff_min` | `"-5.0"` | 하드 필터: 당일 고점 낙폭 하한 (%) (미달 시 후보 제외, 음수값) |
 | `filter_open_price_diff_max` | `"20.0"` | 하드 필터: 당일 시가 대비 상승률 상한 (%) (초과 시 후보 제외) |
 | `index_drop_threshold_pct` | `"-1.0"` | 지수 낙폭 필터 임계값 (%). 지수가 이 값 이하로 하락 시 매수 중단 (음수값) |
+| `us_daily_max_loss_pct` | `"0"` | 미장 일일 최대 손실 한도 (USD 기준 가용 자산 대비 %). 0=국장 `daily_max_loss_pct` 값 공유 |
+| `us_min_trading_value` | `"0"` | 미장 최소 거래대금 (USD). 0=국장 `min_trading_value` 값 공유 |
 
 ---
 
@@ -125,6 +127,27 @@
 | `timestamp` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 오류 발생 시각 |
 
 **보존 정책:** `GET /api/logs/kis` 호출 시 2일 이상 된 로그 자동 삭제.
+
+---
+
+## Table: `service_logs`
+
+**Purpose:** 서비스 전체 에러/경고 중앙 수집 테이블. TRADER·MONITOR·SYSTEM 출처의 운영 이벤트 기록. UI `/logs` 화면 "서비스 로그" 탭에서 조회.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 대리 키 |
+| `source` | TEXT | NOT NULL, DEFAULT 'SYSTEM' | 출처: `TRADER` / `MONITOR` / `SYSTEM` |
+| `level` | TEXT | NOT NULL, DEFAULT 'ERROR' | 심각도: `ERROR` / `WARN` |
+| `message` | TEXT | NOT NULL, DEFAULT '' | 한국어 요약 메시지 |
+| `detail` | TEXT | NOT NULL, DEFAULT '' | 추가 컨텍스트 (JSON 또는 `key=value` 평문) |
+| `timestamp` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 이벤트 발생 시각 |
+
+**보존 정책:** `GET /api/logs/service` 호출 시 7일 이상 된 로그 자동 삭제.
+
+**주요 삽입 지점:**
+- `trader/engine.go`: 일일 최대 손실 한도 도달(KR/US), 미체결 타임아웃(KR/US)
+- `monitor/monitor.go`: GetHoldings 실패, PlaceSellOrder 실패(KR/US 각각)
 
 ---
 

@@ -182,10 +182,6 @@ export default function Monitor() {
         </>
       )}
 
-      <p className="mt-6 text-xs text-gray-600">
-        목표가/손절가 도달 시 MQTT <code className="bg-gray-800 px-1 rounded">trading/alert/&#123;code&#125;</code> 토픽으로 알림이 발행됩니다.
-        15:15에 서버가 전량 자동 청산합니다.
-      </p>
     </div>
   )
 }

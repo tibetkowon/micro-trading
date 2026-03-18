@@ -4,7 +4,7 @@ import PropTypes from 'prop-types'
 import Dashboard from './pages/Dashboard'
 import Orders from './pages/Orders'
 import Monitor from './pages/Monitor'
-import KISLogs from './pages/KISLogs'
+import ErrorLogs from './pages/ErrorLogs'
 import SelectionLogs from './pages/SelectionLogs'
 import RankingLogs from './pages/RankingLogs'
 import Settings from './pages/Settings'
@@ -13,7 +13,7 @@ const navItems = [
   { to: '/', label: '대시보드', end: true },
   { to: '/monitor', label: '모니터' },
   { to: '/orders', label: '주문 내역' },
-  { to: '/logs', label: 'KIS 에러 로그' },
+  { to: '/logs', label: '에러 로그' },
   { to: '/selection-logs', label: '선정 로그' },
   { to: '/ranking-logs', label: '순위 조회 로그' },
   { to: '/settings', label: '설정' },
@@ -109,7 +109,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/monitor" element={<Monitor />} />
           <Route path="/orders" element={<Orders />} />
-          <Route path="/logs" element={<KISLogs />} />
+          <Route path="/logs" element={<ErrorLogs />} />
           <Route path="/selection-logs" element={<SelectionLogs />} />
           <Route path="/ranking-logs" element={<RankingLogs />} />
           <Route path="/settings" element={<Settings />} />

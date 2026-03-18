@@ -28,6 +28,7 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		api.GET("/orders/feasibility", h.GetFeasibility)
 		api.GET("/logs/kis", h.GetKISLogs)
 		api.DELETE("/logs/kis/:id", h.DeleteKISLog)
+		api.GET("/logs/service", h.GetServiceLogs)
 		api.GET("/logs/selection", h.GetSelectionLogs)
 		api.GET("/logs/ranking", h.GetRankingLogs)
 		api.GET("/settings", h.GetSettings)

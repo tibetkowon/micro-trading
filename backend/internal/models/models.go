@@ -76,6 +76,16 @@ type Balance struct {
 	RecordedAt      time.Time `json:"recorded_at"`
 }
 
+// ServiceLog records service-level errors and warnings for central display.
+type ServiceLog struct {
+	ID        int64     `json:"id"`
+	Source    string    `json:"source"`    // TRADER / MONITOR / SYSTEM
+	Level     string    `json:"level"`     // ERROR / WARN
+	Message   string    `json:"message"`
+	Detail    string    `json:"detail"`    // 추가 정보 (JSON 또는 평문)
+	Timestamp time.Time `json:"timestamp"`
+}
+
 // KISAPILog records every KIS API error response for audit and debugging.
 type KISAPILog struct {
 	ID          int64     `json:"id"`

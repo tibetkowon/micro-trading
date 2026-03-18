@@ -124,6 +124,8 @@ export default function Settings() {
   const [usRankingPriceMax, setUsRankingPriceMax] = useState('500')
   const [usRankingVolRang, setUsRankingVolRang] = useState('0')
   const [usRankingTopN, setUsRankingTopN] = useState('20')
+  const [usDailyMaxLossPct, setUsDailyMaxLossPct] = useState('0')
+  const [usMinTradingValue, setUsMinTradingValue] = useState('0')
 
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
@@ -187,6 +189,8 @@ export default function Settings() {
     if (data.us_ranking_price_max) setUsRankingPriceMax(data.us_ranking_price_max)
     if (data.us_ranking_vol_rang != null) setUsRankingVolRang(String(data.us_ranking_vol_rang))
     if (data.us_ranking_top_n != null) setUsRankingTopN(String(data.us_ranking_top_n))
+    if (data.us_daily_max_loss_pct != null) setUsDailyMaxLossPct(String(data.us_daily_max_loss_pct))
+    if (data.us_min_trading_value != null) setUsMinTradingValue(String(data.us_min_trading_value))
   }, [data])
 
   function toggleBit(i) {
@@ -266,6 +270,8 @@ export default function Settings() {
       us_ranking_price_max: usRankingPriceMax,
       us_ranking_vol_rang: usRankingVolRang,
       us_ranking_top_n: parseInt(usRankingTopN) || 20,
+      us_daily_max_loss_pct: parseFloat(usDailyMaxLossPct) || 0,
+      us_min_trading_value: parseFloat(usMinTradingValue) || 0,
       filter_rsi_max: parseFloat(filterRsiMax) || 80,
       filter_disparity_m5_max: parseFloat(filterDisparityM5Max) || 3.0,
       filter_high_price_diff_min: parseFloat(filterHighPriceDiffMin) || -5.0,
@@ -980,6 +986,26 @@ export default function Settings() {
                   onChange={e => setUsRankingTopN(e.target.value)}
                   className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200" />
               </label>
+
+              {/* 미장 일일 최대 손실 한도 */}
+              <div className="space-y-2 pt-2 border-t border-gray-800">
+                <label className="space-y-1 block">
+                  <span className="text-xs text-gray-400">미장 일일 최대 손실 한도 (%)</span>
+                  <input type="number" step="0.1" min="0"
+                    value={usDailyMaxLossPct}
+                    onChange={e => setUsDailyMaxLossPct(e.target.value)}
+                    className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200" />
+                  <p className="text-xs text-gray-600">가용 USD 대비 최대 손실 기준. 0 = 국장 손실 한도 공유.</p>
+                </label>
+                <label className="space-y-1 block">
+                  <span className="text-xs text-gray-400">미장 최소 거래대금 (USD)</span>
+                  <input type="number" step="1" min="0"
+                    value={usMinTradingValue}
+                    onChange={e => setUsMinTradingValue(e.target.value)}
+                    className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200" />
+                  <p className="text-xs text-gray-600">0 = 국장 최소 거래대금(원) 설정 공유.</p>
+                </label>
+              </div>
             </div>
           )}
         </div>
@@ -1017,8 +1043,6 @@ export default function Settings() {
               <Badge ok={data.hts_id_configured} falseLabel="미설정 (체결통보 비활성)" />
             </Row>
             <Row label="WebSocket 연결"><WsBadge connected={data.ws_connected} /></Row>
-            <Row label="MQTT 브로커"><span className="font-mono text-xs">{data.mqtt_broker_url || '-'}</span></Row>
-            <Row label="MQTT 클라이언트 ID"><span className="font-mono text-xs">{data.mqtt_client_id || '-'}</span></Row>
           </div>
         </div>
       )}
