@@ -401,6 +401,22 @@ func (h *Handler) GetKISLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
 
+// GET /api/logs/service?limit=100&source=ALL — 서비스 전체 에러 로그 조회
+func (h *Handler) GetServiceLogs(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	source := c.DefaultQuery("source", "ALL")
+
+	logs, err := h.db.GetServiceLogs(c.Request.Context(), source, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"logs": logs})
+}
+
 // GET /api/logs/selection?limit=20 — LLM 종목 선정 로그 조회 (최신 순)
 // 30일 이상 된 로그는 자동 삭제됨
 func (h *Handler) GetSelectionLogs(c *gin.Context) {
@@ -502,8 +518,6 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"kis_configured":       h.cfg.KISAppKey != "" && h.cfg.KISAppSecret != "",
 		"hts_id_configured":    h.cfg.KISHTSID != "",
 		"anthropic_configured": h.cfg.AnthropicAPIKey != "",
-		"mqtt_broker_url":      h.cfg.MQTTBrokerURL,
-		"mqtt_client_id":       h.cfg.MQTTClientID,
 		"ws_connected":         wsConnected,
 		"trading_enabled":      tradingEnabled,
 		"ranking_excl_cls":     rankingExclCls,
@@ -551,7 +565,9 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"trailing_trigger_pct": ts.TrailingTriggerPct,
 		"trailing_stop_pct":    ts.TrailingStopPct,
 		// 일일 최대 손실
-		"daily_max_loss_pct": ts.DailyMaxLossPct,
+		"daily_max_loss_pct":    ts.DailyMaxLossPct,
+		"us_daily_max_loss_pct": ts.USDailyMaxLossPct,
+		"us_min_trading_value":  ts.USMinTradingValue,
 		// 지수 필터
 		"index_codes": ts.IndexCodes,
 		// 하드 필터
@@ -613,7 +629,9 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		TrailingTriggerPct *float64 `json:"trailing_trigger_pct"`
 		TrailingStopPct    *float64 `json:"trailing_stop_pct"`
 		// 일일 최대 손실
-		DailyMaxLossPct *float64 `json:"daily_max_loss_pct"`
+		DailyMaxLossPct   *float64 `json:"daily_max_loss_pct"`
+		USDailyMaxLossPct *float64 `json:"us_daily_max_loss_pct"`
+		USMinTradingValue *float64 `json:"us_min_trading_value"`
 		// 지수 필터 (nil = 변경 안 함)
 		IndexCodes []string `json:"index_codes"`
 		// 하드 필터
@@ -941,6 +959,24 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			return
 		}
 		if !save("daily_max_loss_pct", strconv.FormatFloat(*req.DailyMaxLossPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.USDailyMaxLossPct != nil {
+		if *req.USDailyMaxLossPct < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "us_daily_max_loss_pct는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("us_daily_max_loss_pct", strconv.FormatFloat(*req.USDailyMaxLossPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.USMinTradingValue != nil {
+		if *req.USMinTradingValue < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "us_min_trading_value는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("us_min_trading_value", strconv.FormatFloat(*req.USMinTradingValue, 'f', -1, 64)) {
 			return
 		}
 	}

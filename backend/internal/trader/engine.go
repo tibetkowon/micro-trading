@@ -15,7 +15,6 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
-	mqttpkg "github.com/micro-trading-for-agent/backend/internal/mqtt"
 )
 
 // EngineState represents the current phase of the trading engine.
@@ -37,7 +36,6 @@ type Engine struct {
 	kisClient *kis.Client
 	wsClient  *kis.WebSocketClient
 	mon       *monitor.Monitor
-	mqttPub   *mqttpkg.Publisher
 	claude    *ClaudeClient
 
 	mu     sync.RWMutex
@@ -54,7 +52,6 @@ func NewEngine(
 	kisClient *kis.Client,
 	wsClient *kis.WebSocketClient,
 	mon *monitor.Monitor,
-	mqttPub *mqttpkg.Publisher,
 	claude *ClaudeClient,
 	market string,
 ) *Engine {
@@ -67,7 +64,6 @@ func NewEngine(
 		kisClient: kisClient,
 		wsClient:  wsClient,
 		mon:       mon,
-		mqttPub:   mqttPub,
 		claude:    claude,
 		state:     StateIdle,
 		soldCh:    make(chan string, 16),
@@ -310,9 +306,9 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no available cash")
 	}
 
-	// 일일 최대 손실 한도 체크
+	// 일일 최대 손실 한도 체크 (KR — KRW 기준)
 	if settings.DailyMaxLossPct > 0 {
-		pnl := e.db.GetTodayRealizedPnL(ctx)
+		pnl := e.db.GetTodayRealizedPnLByMarket(ctx, "KR")
 		if pnl < 0 {
 			totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
 			if totalEval <= 0 {
@@ -321,7 +317,9 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			lossLimit := totalEval * settings.DailyMaxLossPct / 100
 			if -pnl >= lossLimit {
 				e.setState(StateMonitoring)
-				return fmt.Errorf("일일 최대 손실 한도 도달 (%.0f원 손실 >= 한도 %.0f원)", -pnl, lossLimit)
+				msg := fmt.Sprintf("일일 최대 손실 한도 도달 (%.0f원 손실 >= 한도 %.0f원)", -pnl, lossLimit)
+				e.db.InsertServiceLog(ctx, "TRADER", "WARN", msg, "")
+				return fmt.Errorf("%s", msg)
 			}
 		}
 	}
@@ -494,6 +492,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			}
 			logger.Warn("engine: fill timeout, trying next candidate",
 				map[string]any{"stock_code": code})
+			e.db.InsertServiceLog(ctx, "TRADER", "WARN", "미체결 타임아웃 (5분)", fmt.Sprintf("stock_code=%s order_id=%d", code, res.OrderID))
 			continue
 		}
 
@@ -1115,14 +1114,22 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		}
 	}
 
-	// 일일 최대 손실 한도 체크
-	if settings.DailyMaxLossPct > 0 {
-		pnl := e.db.GetTodayRealizedPnL(ctx)
-		if pnl < 0 {
-			lossLimit := availableUSD * settings.DailyMaxLossPct / 100
-			if -pnl >= lossLimit {
-				e.setState(StateMonitoring)
-				return fmt.Errorf("일일 최대 손실 한도 도달 ($%.2f 손실 >= 한도 $%.2f)", -pnl, lossLimit)
+	// 일일 최대 손실 한도 체크 (US — USD 기준)
+	{
+		usDailyMaxLoss := settings.USDailyMaxLossPct
+		if usDailyMaxLoss == 0 {
+			usDailyMaxLoss = settings.DailyMaxLossPct // fallback: 국장 손실 한도 공유
+		}
+		if usDailyMaxLoss > 0 {
+			pnl := e.db.GetTodayRealizedPnLByMarket(ctx, "US")
+			if pnl < 0 {
+				lossLimit := availableUSD * usDailyMaxLoss / 100
+				if -pnl >= lossLimit {
+					e.setState(StateMonitoring)
+					msg := fmt.Sprintf("미장 일일 최대 손실 한도 도달 ($%.2f 손실 >= 한도 $%.2f)", -pnl, lossLimit)
+					e.db.InsertServiceLog(ctx, "TRADER", "WARN", msg, "")
+					return fmt.Errorf("%s", msg)
+				}
 			}
 		}
 	}
@@ -1148,14 +1155,18 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		rankings[i].DisparityM5 = info.DisparityM5
 	}
 
-	// 최소 거래대금 필터 (USD)
-	if settings.MinTradingValue > 0 {
+	// 최소 거래대금 필터 (USD) — us_min_trading_value 우선, 0이면 min_trading_value fallback
+	usMinTV := settings.USMinTradingValue
+	if usMinTV == 0 {
+		usMinTV = settings.MinTradingValue
+	}
+	if usMinTV > 0 {
 		filtered := rankings[:0]
 		for _, item := range rankings {
 			price, _ := strconv.ParseFloat(item.CurrentPrice, 64)
 			tvol, _ := strconv.ParseFloat(item.Volume, 64)
 			tradingValueUSD := price * tvol
-			if price <= 0 || tradingValueUSD >= settings.MinTradingValue {
+			if price <= 0 || tradingValueUSD >= usMinTV {
 				filtered = append(filtered, item)
 			}
 		}
@@ -1338,6 +1349,7 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		if !filled {
 			logger.Warn("engine US: fill timeout, trying next candidate",
 				map[string]any{"stock_code": code})
+			e.db.InsertServiceLog(ctx, "TRADER", "WARN", "미장 미체결 타임아웃 (5분)", fmt.Sprintf("stock_code=%s order_id=%d", code, dbOrderID))
 			e.db.ExecContext(ctx, //nolint:errcheck
 				`UPDATE orders SET status = 'FAILED' WHERE id = ?`, dbOrderID)
 			continue

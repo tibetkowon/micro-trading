@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-03-18 — UI B스타일 전체 적용 (Settings.jsx 포함)
+
+### Task 4: UI 개선 — B스타일 (미니멀 클린) + 한국식 색상 통일
+- **Settings.jsx**: zinc 팔레트 전환, `rounded-xl` 카드, `rounded-lg` 입력, `rounded-full` 뱃지, 익절=빨강·손절=파랑 레이블 힌트, AND/OR·거래소·거래량 버튼 zinc ring 스타일, 저장 버튼 `rounded-xl`
+- **Badge/WsBadge**: `rounded-full` pill + border 스타일
+- **Dashboard/Monitor/Orders/ErrorLogs**: B스타일 + 한국식 색상 (매수=빨강, 매도=파랑, 목표가=빨강, 손절가=파랑) 전면 적용
+- **App.jsx**: `bg-zinc-950` 배경, `bg-zinc-900` 네비, active nav `bg-zinc-800 ring-1 ring-zinc-700`
+- **Card.jsx**: zinc 팔레트, `rounded-xl`
+
+---
+
+## 2026-03-18 — MQTT 제거, KR/US 손실 한도 분리, 서비스 에러 로그 확장
+
+### Task 6: MQTT 코드 전면 제거
+- **mqtt/publisher.go** 파일 및 `mqtt/` 디렉터리 완전 삭제
+- **config/config.go**: `MQTTBrokerURL`, `MQTTClientID` 필드 제거
+- **cmd/server/main.go**: MQTT Publisher 초기화 블록 제거, `monitor.New()` / `NewEngine()` 인자에서 mqttPub 제거
+- **monitor/monitor.go**: `mqttPub` 필드·파라미터·`PublishAlert` 호출 5곳 제거, 미사용 `sellQty` 변수 정리
+- **trader/engine.go**: `mqttPub` 필드·파라미터 제거
+- **api/handlers.go**: 상태 응답에서 `mqtt_broker_url`, `mqtt_client_id` 제거
+- **go.mod**: `paho.mqtt.golang` 의존성 제거 + `go mod tidy`
+- **Settings.jsx**: MQTT 브로커/클라이언트 ID 표시 행 제거
+- **Monitor.jsx**: MQTT 토픽 안내 문구 제거
+- **docs/guides/mqtt-setup.md** 삭제
+- **docs/architecture.md**: MQTT 디렉터리·데이터 흐름·토픽 맵 섹션 제거
+
+### Task 1: KR/US 손실 한도 및 최소 거래대금 분리
+- **database/db.go**: `GetTodayRealizedPnLByMarket(ctx, market)` 추가 (market 필터); `TradingSettings`에 `USDailyMaxLossPct`, `USMinTradingValue` 추가; `defaultSettings`에 `us_daily_max_loss_pct`(0), `us_min_trading_value`(0) 추가
+- **trader/engine.go**: KR 손실 체크 → `GetTodayRealizedPnLByMarket("KR")`; US 손실 체크 → USD 기준 `USDailyMaxLossPct` (0이면 KR 값 fallback); US 최소 거래대금 → `USMinTradingValue` (0이면 KR 값 fallback)
+- **api/handlers.go**: `GetSettings`/`UpdateSettings`에 두 신규 필드 추가
+- **Settings.jsx**: 미장 설정 블록에 `us_daily_max_loss_pct`, `us_min_trading_value` 입력 필드 추가
+
+### Task 3: 서비스 에러 로그 확장
+- **database/db.go**: `service_logs` 테이블 마이그레이션 추가; `InsertServiceLog()`, `GetServiceLogs()` (7일 자동 삭제, source 필터) 추가
+- **models/models.go**: `ServiceLog` 구조체 추가
+- **api/handlers.go**: `GetServiceLogs` 핸들러 추가 (`GET /api/logs/service?limit=100&source=ALL`)
+- **api/router.go**: `/api/logs/service` 라우트 등록
+- **trader/engine.go**: 일일 손실 한도 도달(KR/US), 미체결 타임아웃(KR/US) 4곳에 `InsertServiceLog` 추가
+- **monitor/monitor.go**: GetHoldings/PlaceSellOrder 실패(KR/US) 4곳에 `InsertServiceLog` 추가
+- **frontend/src/pages/ErrorLogs.jsx** 신규 생성: 탭 2개 — "서비스 로그"(source 필터, ERROR=빨강/WARN=노랑 배지) + "KIS API 에러"(기존 KISLogs UI 통합)
+- **App.jsx**: `KISLogs` → `ErrorLogs` import 교체, 네비 레이블 "KIS 에러 로그" → "에러 로그"
+
 ## 2026-03-17 — 하드 필터 설정화, market 컬럼 추가, UI 개선
 
 - **models/models.go**: `TraderSelectionLog`, `TraderRankingLog`에 `Market string` 필드 추가

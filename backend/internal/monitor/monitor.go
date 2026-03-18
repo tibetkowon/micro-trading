@@ -11,7 +11,6 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
-	mqttpkg "github.com/micro-trading-for-agent/backend/internal/mqtt"
 )
 
 // IndicatorSnapshot holds key technical indicators for sell condition evaluation.
@@ -40,12 +39,11 @@ type MonitoredEntry struct {
 }
 
 // Monitor watches registered positions for target/stop price hits and
-// publishes MQTT alerts. It also handles end-of-day liquidation.
+// handles end-of-day liquidation.
 type Monitor struct {
 	mu        sync.RWMutex
 	positions map[string]*MonitoredEntry // stockCode → entry
 
-	mqttPub   *mqttpkg.Publisher
 	kisClient *kis.Client
 	wsClient  *kis.WebSocketClient
 	db        *database.DB
@@ -57,12 +55,11 @@ type Monitor struct {
 	stagnationDurationMin  int                   // 횡보 지속 기준 시간 (분, 0=비활성)
 }
 
-// New creates a Monitor. mqttPub may be nil (alerts are only logged).
-func New(db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mqttPub *mqttpkg.Publisher) *Monitor {
+// New creates a Monitor.
+func New(db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient) *Monitor {
 	return &Monitor{
 		positions:     make(map[string]*MonitoredEntry),
 		stagnantSince: make(map[string]*time.Time),
-		mqttPub:       mqttPub,
 		kisClient:     kisClient,
 		wsClient:      wsClient,
 		db:            db,
@@ -200,14 +197,8 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 				if price < stopThreshold {
 					logger.Info("monitor: TRAILING STOP hit",
 						map[string]any{"stock_code": stockCode, "price": price, "peak": pos.PeakPrice, "stop_threshold": stopThreshold})
-					sellQty := 0
 					if !isTest {
-						sellQty = m.executeSell(stockCode, pos, "트레일링 스탑")
-					}
-					if m.mqttPub != nil {
-						m.mqttPub.PublishAlert(mqttpkg.EventTargetHit,
-							pos.StockCode, pos.StockName, price,
-							pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, isTest)
+						m.executeSell(stockCode, pos, "트레일링 스탑")
 					}
 					m.Remove(context.Background(), stockCode)
 					return
@@ -220,28 +211,16 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 	case price >= pos.TargetPrice:
 		logger.Info("monitor: TARGET hit",
 			map[string]any{"stock_code": stockCode, "price": price, "target": pos.TargetPrice})
-		sellQty := 0
 		if !isTest {
-			sellQty = m.executeSell(stockCode, pos, "목표가 도달")
-		}
-		if m.mqttPub != nil {
-			m.mqttPub.PublishAlert(mqttpkg.EventTargetHit,
-				pos.StockCode, pos.StockName, price,
-				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, isTest)
+			m.executeSell(stockCode, pos, "목표가 도달")
 		}
 		m.Remove(context.Background(), stockCode)
 
 	case price <= pos.StopPrice:
 		logger.Info("monitor: STOP hit",
 			map[string]any{"stock_code": stockCode, "price": price, "stop": pos.StopPrice})
-		sellQty := 0
 		if !isTest {
-			sellQty = m.executeSell(stockCode, pos, "손절가 도달")
-		}
-		if m.mqttPub != nil {
-			m.mqttPub.PublishAlert(mqttpkg.EventStopHit,
-				pos.StockCode, pos.StockName, price,
-				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, isTest)
+			m.executeSell(stockCode, pos, "손절가 도달")
 		}
 		m.Remove(context.Background(), stockCode)
 
@@ -278,6 +257,7 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	if err != nil {
 		logger.Error("auto-sell: GetHoldings failed",
 			map[string]any{"stock_code": stockCode, "error": err.Error()})
+		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "자동 매도 실패: GetHoldings 오류", fmt.Sprintf("stock_code=%s error=%s", stockCode, err.Error()))
 		return 0
 	}
 
@@ -302,6 +282,7 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	if err != nil {
 		logger.Error("auto-sell: PlaceSellOrder failed",
 			map[string]any{"stock_code": stockCode, "qty": qty, "error": err.Error()})
+		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "자동 매도 실패: 주문 오류", fmt.Sprintf("stock_code=%s qty=%d error=%s", stockCode, qty, err.Error()))
 		return 0
 	}
 
@@ -336,6 +317,7 @@ func (m *Monitor) executeOverseasSell(stockCode string, pos *MonitoredEntry, rea
 	if err != nil {
 		logger.Error("auto-sell US: GetOverseasHoldings failed",
 			map[string]any{"stock_code": stockCode, "error": err.Error()})
+		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "미장 자동 매도 실패: GetOverseasHoldings 오류", fmt.Sprintf("stock_code=%s error=%s", stockCode, err.Error()))
 		return 0
 	}
 
@@ -355,6 +337,7 @@ func (m *Monitor) executeOverseasSell(stockCode string, pos *MonitoredEntry, rea
 	if err != nil {
 		logger.Error("auto-sell US: PlaceOverseasSellOrder failed",
 			map[string]any{"stock_code": stockCode, "qty": qty, "error": err.Error()})
+		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "미장 자동 매도 실패: 주문 오류", fmt.Sprintf("stock_code=%s qty=%d error=%s", stockCode, qty, err.Error()))
 		return 0
 	}
 
@@ -470,7 +453,6 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 			continue
 		}
 
-		sellQty := 0
 		liqResp, err := m.kisClient.PlaceSellOrder(ctx, kis.OrderRequest{
 			StockCode: code,
 			OrderDivn: "01", // 시장가
@@ -481,7 +463,6 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 			logger.Error("liquidate: sell order failed",
 				map[string]any{"stock_code": code, "error": err.Error()})
 		} else {
-			sellQty = qty
 			logger.Info("liquidate: sell order placed",
 				map[string]any{"stock_code": code, "qty": qty})
 			kisOrderID := ""
@@ -494,11 +475,6 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 				code, pos.StockName, qty, pos.FilledPrice, kisOrderID, "일일 자동 청산", time.Now().UTC())
 		}
 
-		if m.mqttPub != nil {
-			m.mqttPub.PublishAlert(mqttpkg.EventLiquidation,
-				pos.StockCode, pos.StockName, currentPrice,
-				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, false)
-		}
 
 		m.Remove(ctx, code)
 	}
@@ -837,12 +813,7 @@ func (m *Monitor) checkIndicators(
 
 		logger.Info("indicator check: sell condition triggered",
 			map[string]any{"stock_code": code, "reason": triggerReason})
-		sellQty := m.executeSell(code, pos, triggerReason)
-		if m.mqttPub != nil && sellQty > 0 {
-			m.mqttPub.PublishAlert(mqttpkg.EventTargetHit,
-				pos.StockCode, pos.StockName, 0,
-				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, false)
-		}
+		m.executeSell(code, pos, triggerReason)
 		m.Remove(ctx, code)
 	}
 }

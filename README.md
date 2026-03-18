@@ -10,7 +10,6 @@ NCP Micro (1GB RAM) 환경에서 효율적으로 동작하도록 설계되었습
 | Backend | Go 1.24, Gin, SQLite (go-sqlite3) |
 | AI | Anthropic Claude API (`anthropic-sdk-go`) |
 | Realtime | KIS WebSocket (`gorilla/websocket`) |
-| Alerting | MQTT (`paho.mqtt.golang`) + Mosquitto |
 | Frontend | React 18, Vite, TailwindCSS |
 | Database | SQLite (WAL mode) |
 | CI/CD | GitHub Actions |
@@ -28,7 +27,7 @@ NCP Micro (1GB RAM) 환경에서 효율적으로 동작하도록 설계되었습
 
 **US (미장):**
 ```
-해외 거래량 순위 조회 → 품질 필터(MA5/MA20 등) → Claude 종목 선정 → 해외 시장가 매수
+해외 거래량 순위 조회 → 품질 필터(MA5/MA20/RSI/MACD/5분봉이격도) → Claude 종목 선정 → 해외 시장가 매수
   → WebSocket 체결 확인 → 포지션 모니터 등록
   → 목표가/손절가 감시 → 자동 매도 → 다음 사이클
 ```
@@ -55,8 +54,6 @@ cp .env.example .env
 | `KIS_BASE_URL` | | 실전: `https://openapi.koreainvestment.com:9443` |
 | `KIS_HTS_ID` | | HTS 아이디 — 실시간 체결통보 수신 시 필요 |
 | `ANTHROPIC_API_KEY` | ✅ | Claude API 키 — 자율 트레이딩 엔진 동작에 필요 |
-| `MQTT_BROKER_URL` | | MQTT 브로커 주소 (기본: `tcp://localhost:1883`) |
-| `MQTT_CLIENT_ID` | | MQTT 클라이언트 ID (기본: `micro-trading-server`) |
 
 > `ANTHROPIC_API_KEY` 미설정 시 서버는 기동되지만 자율 매매 엔진이 비활성화됩니다.
 
@@ -118,29 +115,84 @@ IDLE → SEARCHING → SELECTING → ORDERING → WAITING_FILL → MONITORING
 
 Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
 
-| 설정 | 기본값 | 설명 |
+### 공통 설정
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
+| `trading_enabled` | true | OFF 시 주문 API 차단 |
+| `take_profit_pct` | 3.0 | 익절 기준 (%) |
+| `stop_loss_pct` | 2.0 | 손절 기준 (%) |
+| `max_positions` | 1 | 동시 보유 최대 종목 수 |
+| `order_amount_pct` | 95 | 주문가능금액 대비 실제 주문 비율 (%) |
+| `trading_start_time` | 09:15 | KR 엔진 시작 시간 (KST) |
+| `trading_end_time` | 15:15 | KR 엔진 종료 + 전량 청산 시간 (KST) |
+| `buy_pause_start` | "" | 매수 중단 시작 시간 |
+| `buy_pause_end` | "" | 매수 중단 종료 시간 |
+| `daily_max_loss_pct` | 0 | 일일 최대 손실 한도 (국장 KRW 기준, 0=비활성) |
+| `min_trading_value` | 0 | 최소 거래대금 (국장 KRW 기준, 0=비활성) |
+| `trailing_trigger_pct` | 0 | 트레일링 스탑 활성화 기준 수익률 (0=비활성) |
+| `trailing_stop_pct` | 1.0 | 트레일링 스탑 고점 대비 허용 하락폭 (%) |
+| `stagnation_threshold_pct` | 1.0 | 횡보 감지 기준 변동폭 (%) |
+| `stagnation_duration_min` | 30 | 횡보 지속 기준 시간 (분) |
+| `sell_conditions` | ["target_pct","stop_pct"] | 매도 조건 우선순위 배열 |
+| `indicator_check_interval_min` | 5 | 지표 확인 주기 (분) |
+| `indicator_rsi_sell_threshold` | 70 | RSI 과매수 기준값 |
+| `indicator_macd_bearish_sell` | false | MACD 데드크로스 시 매도 여부 |
+| `claude_model` | claude-sonnet-4-6 | 종목 선정·리포트에 사용할 모델 |
+
+### 국장(KR) 순위 조회 설정
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
+| `ranking_types` | ["volume","strength","exec_count","disparity"] | 순위 유형 |
+| `ranking_condition` | AND | AND=교집합, OR=합집합 |
+| `ranking_price_min` | 5000 | 최소 주가 (원) |
+| `ranking_price_max` | 100000 | 최대 주가 (원) |
+| `ranking_top_n` | 20 | 타입별 상위 N개 제한 |
+| `ranking_volume_min_incrrate` | 0 | 거래량 전일대비 최소 증가율 (%) |
+| `ranking_strength_min` | 100 | 최소 체결강도 (%) |
+| `ranking_execcount_net_buy_only` | true | 순매수체결량 > 0 종목만 허용 |
+| `ranking_disparity_d20_min` | 0 | 20일 이격도 최솟값 |
+| `ranking_disparity_d20_max` | 0 | 20일 이격도 최댓값 |
+
+### 국장(KR) 하드 필터
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
+| `filter_rsi_max` | 80 | RSI 상한 (이상이면 후보 제외) |
+| `filter_disparity_m5_max` | 3.0 | 5분봉 이격도 상한 (%) |
+| `filter_high_price_diff_min` | -5.0 | 당일 고점 낙폭 하한 (%) |
+| `filter_open_price_diff_max` | 20.0 | 당일 시가 대비 상승률 상한 (%) |
+| `index_drop_threshold_pct` | -1.0 | 지수 낙폭 임계값 (%) |
+| `index_codes` | [] | 지수 필터 코드 JSON 배열 |
+| `ranking_excl_cls` | 1111111111 | 순위 조회 제외 종목 플래그 |
+
+### 미장(US) 설정
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
+| `us_trading_enabled` | false | US 엔진 ON/OFF |
+| `us_exchange` | NAS | 거래소 코드 (NAS/NYS/AMS) |
+| `us_trading_start_time` | 22:30 | US 엔진 시작 시간 (KST) |
+| `us_trading_end_time` | 05:00 | US 엔진 종료 + 전량 청산 시간 (KST) |
+| `us_price_min` | "" | 최소 주가 (USD) |
+| `us_price_max` | "" | 최대 주가 (USD) |
+| `us_daily_max_loss_pct` | 0 | 미장 일일 최대 손실 한도 (USD 기준, 0=국장 값 공유) |
+| `us_min_trading_value` | 0 | 미장 최소 거래대금 (USD, 0=국장 값 공유) |
+
+---
+
+## UI 페이지
+
+| 경로 | 페이지 | 설명 |
 |------|--------|------|
-| 거래 ON/OFF | ON | OFF 시 주문 API 차단 |
-| 익절 기준 | 3.0% | 목표가 도달 시 자동 매도 |
-| 손절 기준 | 2.0% | 손절가 도달 시 자동 매도 |
-| 최대 동시 보유 종목 | 1 | 이 수에 도달하면 매도 신호 대기 |
-| 주문 금액 비율 | 95% | 주문가능금액 대비 실제 주문 비율 |
-| 순위 조회 유형 | volume, strength, exec_count, disparity | Claude에 제공할 데이터 소스 |
-| 순위 가격 범위 | 5,000~100,000원 | 주가 필터 |
-| 매도 조건 | target_pct, stop_pct | 조건 우선순위 배열 |
-| 지표 확인 주기 | 5분 | RSI/MACD 체크 간격 |
-| RSI 과매수 기준 | 70 | RSI ≥ 이 값이면 매도 트리거 |
-| MACD 데드크로스 매도 | OFF | MACD선 < 시그널선 시 매도 |
-| 트레일링 스탑 트리거 | 0% (비활성) | 이 수익률 달성 시 트레일링 스탑 활성화 |
-| 트레일링 스탑 간격 | 0% (비활성) | 고점 대비 이 % 하락 시 매도 |
-| 매수 중단 시간대 | "" (비활성) | 예: `11:20~13:00` → 해당 시간대 매수 안 함 |
-| 최소 거래대금 | 0 (비활성) | KRW/USD 기준, 이 미만 종목 제거 |
-| 일일 최대 손실 한도 | 0% (비활성) | 당일 실현손실이 총평가 대비 이 % 초과 시 매수 중단 |
-| 지수 필터 | [] (비활성) | 예: `["0001","1001"]` — 지수 -1% 이상 하락 시 매수 중단 |
-| US 거래 활성화 | OFF | US 엔진 ON/OFF |
-| US 거래 거래소 | NAS | NAS/NYS/AMS |
-| US 가격 범위 | "" (제한없음) | USD 기준 최소/최대 주가 필터 |
-| Claude 모델 | claude-sonnet-4-6 | 종목 선정 및 리포트 생성에 사용 |
+| `/` | 대시보드 | 서버 상태, 잔고, 국장/미장 트레이더 상태 |
+| `/monitor` | 모니터 | 모니터링 중인 포지션 목록 (목표가/손절가/현재가) |
+| `/orders` | 주문 내역 | 전체 주문 이력 (KR/US 배지, 수동 동기화) |
+| `/logs` | 에러 로그 | 서비스 로그(TRADER/MONITOR/SYSTEM) + KIS API 에러 로그 탭 |
+| `/selection-logs` | 선정 로그 | LLM 종목 선정 시도 기록 (후보 목록, LLM 결과, 선정 사유) |
+| `/ranking-logs` | 순위 조회 로그 | 순위 조회 파라미터 + 결과 종목 수 기록 |
+| `/settings` | 설정 | KIS 자격증명 + 모든 트레이딩 설정 변경 |
 
 ---
 
@@ -193,18 +245,6 @@ Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
 | GET | `/api/server/status` | 통합 서버 상태 |
 | GET | `/api/market/status` | 장운영 여부 (KIS 영업일 기준) |
 
-`GET /api/server/status` 응답 예시:
-```json
-{
-  "market_open": true,
-  "trading_enabled": true,
-  "available_cash": 500000,
-  "ws_connected": true,
-  "monitored_count": 1,
-  "trader_state": "MONITORING"
-}
-```
-
 ### 설정
 
 | Method | Path | Description |
@@ -225,6 +265,7 @@ Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
 |--------|------|-------------|
 | GET | `/api/logs/kis` | KIS API 에러 로그 (`?summary=true` raw 제외) |
 | DELETE | `/api/logs/kis/:id` | 에러 로그 단건 삭제 |
+| GET | `/api/logs/service` | 서비스 전체 로그 (`?limit=100&source=ALL\|TRADER\|MONITOR\|SYSTEM`) |
 | GET | `/api/logs/selection` | LLM 종목 선정 로그 (`?limit=20`, 최신 순, 30일 자동 삭제) |
 | GET | `/api/logs/ranking` | 순위 조회 로그 (최신 순, 30일 자동 삭제) |
 
@@ -243,37 +284,6 @@ Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
 
 ---
 
-## MQTT 알림 (사용자 알림용)
-
-매도 이벤트 발생 시 Mosquitto MQTT 브로커로 알림을 발행합니다.
-
-| 토픽 | 이벤트 | 발행 시점 |
-|------|--------|----------|
-| `trading/alert/{stock_code}` | `TARGET_HIT` | 현재가 ≥ 목표가 → 자동 매도 |
-| `trading/alert/{stock_code}` | `STOP_HIT` | 현재가 ≤ 손절가 → 자동 매도 |
-| `trading/liquidation` | `LIQUIDATION` | 15:15 전량 청산 |
-
-페이로드 예시:
-```json
-{
-  "event": "TARGET_HIT",
-  "stock_code": "005930",
-  "stock_name": "삼성전자",
-  "trigger_price": 73100,
-  "target_price": 73000,
-  "stop_price": 69700,
-  "sell_qty": 10,
-  "profit_pct": 3.5,
-  "profit_amount": 31000,
-  "timestamp": "2026-03-06T10:30:00+09:00",
-  "is_test": false
-}
-```
-
-MQTT 브로커 설치 가이드: [`docs/guides/mqtt-setup.md`](docs/guides/mqtt-setup.md)
-
----
-
 ## Project Structure
 
 자세한 구조와 패키지 역할: [`docs/architecture.md`](docs/architecture.md)
@@ -286,7 +296,7 @@ DB 스키마 상세: [`docs/db_schema.md`](docs/db_schema.md)
 
 - 모든 민감 정보 (API 키, 계좌번호, Anthropic 키)는 `.env` 파일로만 관리
 - `.env` 파일은 `.gitignore`에 의해 절대 커밋되지 않습니다
-- KIS API 에러는 `kis_api_logs` 테이블에 자동 기록됩니다
+- KIS API 에러는 `kis_api_logs` 테이블에, 서비스 운영 이벤트는 `service_logs` 테이블에 자동 기록됩니다
 
 ## License
 

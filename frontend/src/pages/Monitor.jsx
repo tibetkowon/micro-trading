@@ -39,97 +39,95 @@ export default function Monitor() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold">실시간 모니터</h1>
+        <div>
+          <h1 className="text-xl font-semibold text-white">실시간 모니터</h1>
           {!loading && (
-            <span className="text-xs px-2 py-0.5 rounded bg-blue-900/50 text-blue-300 font-semibold">
-              {positions.length}개
-            </span>
+            <p className="text-sm text-zinc-500 mt-0.5">모니터링 중 {positions.length}개</p>
           )}
         </div>
         <button
           onClick={refetch}
-          className="text-sm px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded"
+          className="text-sm px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
         >
           새로고침
         </button>
       </div>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-700 text-red-300 rounded p-4 mb-4 text-sm">
+        <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl p-4 mb-4 text-sm">
           {error}
         </div>
       )}
 
       {loading ? (
-        <p className="text-gray-500">로딩 중...</p>
+        <p className="text-zinc-500">로딩 중...</p>
       ) : positions.length === 0 ? (
-        <div className="text-center py-16 text-gray-500 border border-gray-800 rounded-lg">
+        <div className="text-center py-16 text-zinc-500 border border-zinc-800 rounded-xl">
           <p className="font-medium">모니터링 중인 포지션이 없습니다</p>
-          <p className="text-sm mt-2 text-gray-600">
-            주문 시 <code className="bg-gray-800 px-1 rounded">target_pct</code>와{' '}
-            <code className="bg-gray-800 px-1 rounded">stop_pct</code>를 포함하면 체결 후 자동 등록됩니다.
+          <p className="text-sm mt-2 text-zinc-600">
+            주문 시 <code className="bg-zinc-800 px-1 rounded">target_pct</code>와{' '}
+            <code className="bg-zinc-800 px-1 rounded">stop_pct</code>를 포함하면 체결 후 자동 등록됩니다.
           </p>
         </div>
       ) : (
         <>
-        <div className="hidden sm:block overflow-x-auto">
+        {/* Desktop table */}
+        <div className="hidden sm:block bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-800 text-gray-400 text-left">
-                <th className="pb-2 pr-4">종목</th>
-                <th className="pb-2 pr-4 text-right">체결가</th>
-                <th className="pb-2 pr-4 text-right">목표가</th>
-                <th className="pb-2 pr-4 text-right">손절가</th>
-                <th className="pb-2 pr-4 text-center">목표 수익률</th>
-                <th className="pb-2 pr-4 text-center">손절 비율</th>
-                <th className="pb-2 pr-4">등록시각</th>
-                <th className="pb-2"></th>
+              <tr className="border-b border-zinc-800 text-xs text-zinc-500">
+                <th className="text-left px-5 py-3 font-medium">종목</th>
+                <th className="text-right px-5 py-3 font-medium">체결가</th>
+                <th className="text-right px-5 py-3 font-medium">목표가</th>
+                <th className="text-right px-5 py-3 font-medium">손절가</th>
+                <th className="text-center px-5 py-3 font-medium">목표 수익률</th>
+                <th className="text-center px-5 py-3 font-medium">손절 비율</th>
+                <th className="text-left px-5 py-3 font-medium">등록시각</th>
+                <th className="px-5 py-3"></th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-zinc-800/60">
               {positions.map((p) => {
                 const targetPct = pct(p.target_price, p.filled_price)
                 const stopPct = pct(p.filled_price, p.stop_price)
                 const isRemoving = removingCodes.has(p.stock_code)
                 return (
-                  <tr
-                    key={p.stock_code}
-                    className="border-b border-gray-800/50 hover:bg-gray-900/50"
-                  >
-                    <td className="py-3 pr-4">
-                      <span className="font-semibold">{p.stock_name || p.stock_code}</span>
+                  <tr key={p.stock_code} className="hover:bg-zinc-800/40 transition-colors">
+                    <td className="px-5 py-4">
+                      <span className="font-medium text-white">{p.stock_name || p.stock_code}</span>
                       {p.stock_name && (
-                        <span className="ml-1.5 text-xs text-gray-500 font-mono">{p.stock_code}</span>
+                        <span className="ml-1.5 text-xs text-zinc-500 font-mono">{p.stock_code}</span>
                       )}
                     </td>
-                    <td className="py-3 pr-4 text-right text-gray-300">{fmt(p.filled_price)}</td>
-                    <td className="py-3 pr-4 text-right text-green-400 font-semibold">
+                    <td className="px-5 py-4 text-right text-zinc-400">{fmt(p.filled_price)}</td>
+                    {/* 목표가: 상승 = 빨강 */}
+                    <td className="px-5 py-4 text-right text-red-400 font-medium">
                       {fmt(p.target_price)}
                     </td>
-                    <td className="py-3 pr-4 text-right text-red-400 font-semibold">
+                    {/* 손절가: 하락 = 파랑 */}
+                    <td className="px-5 py-4 text-right text-blue-400 font-medium">
                       {fmt(p.stop_price)}
                     </td>
-                    <td className="py-3 pr-4 text-center">
+                    <td className="px-5 py-4 text-center">
                       {targetPct !== null ? (
-                        <span className="text-xs px-2 py-0.5 rounded bg-green-900/40 text-green-300 font-semibold">
+                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs border bg-red-500/15 text-red-400 border-red-500/20">
                           +{targetPct}%
                         </span>
                       ) : '-'}
                     </td>
-                    <td className="py-3 pr-4 text-center">
+                    <td className="px-5 py-4 text-center">
                       {stopPct !== null ? (
-                        <span className="text-xs px-2 py-0.5 rounded bg-red-900/40 text-red-300 font-semibold">
+                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs border bg-blue-500/15 text-blue-400 border-blue-500/20">
                           -{stopPct}%
                         </span>
                       ) : '-'}
                     </td>
-                    <td className="py-3 pr-4 text-gray-400">{fmtDate(p.created_at)}</td>
-                    <td className="py-3">
+                    <td className="px-5 py-4 text-zinc-500 text-xs">{fmtDate(p.created_at)}</td>
+                    <td className="px-5 py-4">
                       <button
                         onClick={() => handleRemove(p.stock_code)}
                         disabled={isRemoving}
-                        className="text-xs px-2 py-1 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded disabled:opacity-40 transition-colors"
+                        className="text-xs px-2.5 py-1 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-full disabled:opacity-40 transition-colors"
                       >
                         {isRemoving ? '...' : '해제'}
                       </button>
@@ -140,39 +138,40 @@ export default function Monitor() {
             </tbody>
           </table>
         </div>
-        {/* Mobile card grid */}
+
+        {/* Mobile cards */}
         <div className="sm:hidden grid grid-cols-1 gap-3">
           {positions.map((p) => {
             const isRemoving = removingCodes.has(p.stock_code)
             return (
-              <div key={p.stock_code} className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
+              <div key={p.stock_code} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
                   <div>
-                    <span className="font-semibold text-sm">{p.stock_name || p.stock_code}</span>
+                    <span className="font-medium text-white">{p.stock_name || p.stock_code}</span>
                     {p.stock_name && (
-                      <span className="ml-1.5 text-xs text-gray-500 font-mono">{p.stock_code}</span>
+                      <span className="ml-1.5 text-xs text-zinc-500 font-mono">{p.stock_code}</span>
                     )}
                   </div>
                   <button
                     onClick={() => handleRemove(p.stock_code)}
                     disabled={isRemoving}
-                    className="text-xs px-2 py-1 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded disabled:opacity-40 transition-colors"
+                    className="text-xs px-2.5 py-1 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-full disabled:opacity-40 transition-colors"
                   >
                     {isRemoving ? '...' : '해제'}
                   </button>
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="grid grid-cols-3 gap-3 text-xs">
                   <div>
-                    <p className="text-gray-500 mb-0.5">체결가</p>
-                    <p className="text-gray-300">{fmt(p.filled_price)}</p>
+                    <p className="text-zinc-500 mb-1">체결가</p>
+                    <p className="text-zinc-300">{fmt(p.filled_price)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 mb-0.5">목표가</p>
-                    <p className="text-green-400 font-semibold">{fmt(p.target_price)}</p>
+                    <p className="text-zinc-500 mb-1">목표가</p>
+                    <p className="text-red-400 font-medium">{fmt(p.target_price)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 mb-0.5">손절가</p>
-                    <p className="text-red-400 font-semibold">{fmt(p.stop_price)}</p>
+                    <p className="text-zinc-500 mb-1">손절가</p>
+                    <p className="text-blue-400 font-medium">{fmt(p.stop_price)}</p>
                   </div>
                 </div>
               </div>
@@ -181,11 +180,6 @@ export default function Monitor() {
         </div>
         </>
       )}
-
-      <p className="mt-6 text-xs text-gray-600">
-        목표가/손절가 도달 시 MQTT <code className="bg-gray-800 px-1 rounded">trading/alert/&#123;code&#125;</code> 토픽으로 알림이 발행됩니다.
-        15:15에 서버가 전량 자동 청산합니다.
-      </p>
     </div>
   )
 }

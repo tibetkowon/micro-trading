@@ -19,9 +19,6 @@ type Config struct {
 	ServerPort   string
 	FrontendDist string
 
-	MQTTBrokerURL string
-	MQTTClientID  string
-
 	AnthropicAPIKey string
 }
 
@@ -41,9 +38,6 @@ func Load() (*Config, error) {
 		DatabasePath:   getEnv("DATABASE_PATH", "./data/trading.db"),
 		ServerPort:     getEnv("SERVER_PORT", "8080"),
 		FrontendDist:   getEnv("FRONTEND_DIST_PATH", "./frontend/dist"),
-		MQTTBrokerURL:  getEnv("MQTT_BROKER_URL", "tcp://localhost:1883"),
-		MQTTClientID:   getEnv("MQTT_CLIENT_ID", "micro-trading-server"),
-
 		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
 	}
 

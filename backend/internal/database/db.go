@@ -64,7 +64,10 @@ type TradingSettings struct {
 	TrailingTriggerPct float64 // 활성화 기준 수익률(%). 0=비활성
 	TrailingStopPct    float64 // 최고가 대비 하락 허용폭(%)
 	// 일일 최대 손실
-	DailyMaxLossPct float64 // 일일 최대 손실 한도(%). 0=제한없음
+	DailyMaxLossPct   float64 // 일일 최대 손실 한도(%). 0=제한없음 (국장 KRW 기준)
+	USDailyMaxLossPct float64 // 미장 일일 최대 손실 한도(%). 0=국장 값 공유
+	// 미장 최소 거래대금 (USD)
+	USMinTradingValue float64 // 미장 최소 거래대금(USD). 0=국장 MinTradingValue 공유
 	// 지수 필터
 	IndexCodes []string // 지수 코드 목록 ("0001"=코스피, "1001"=코스닥). 빈 배열=비활성
 	// 하드 필터 (매수 품질 필터)
@@ -150,6 +153,15 @@ func (db *DB) migrate() error {
 			error_message TEXT   NOT NULL DEFAULT '',
 			raw_response TEXT    NOT NULL DEFAULT '',
 			timestamp    DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS service_logs (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			source    TEXT    NOT NULL DEFAULT 'SYSTEM',
+			level     TEXT    NOT NULL DEFAULT 'ERROR',
+			message   TEXT    NOT NULL DEFAULT '',
+			detail    TEXT    NOT NULL DEFAULT '',
+			timestamp DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
 
 		`CREATE TABLE IF NOT EXISTS monitored_positions (
@@ -263,6 +275,8 @@ func (db *DB) migrate() error {
 		{"trailing_trigger_pct", "0"},
 		{"trailing_stop_pct", "1.0"},
 		{"daily_max_loss_pct", "0"},
+		{"us_daily_max_loss_pct", "0"},
+		{"us_min_trading_value", "0"},
 		{"index_codes", "[]"},
 		{"filter_rsi_max", "80"},
 		{"filter_disparity_m5_max", "3.0"},
@@ -306,7 +320,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'min_trading_value',`+
 			`'buy_pause_start','buy_pause_end',`+
 			`'trailing_trigger_pct','trailing_stop_pct',`+
-			`'daily_max_loss_pct','index_codes',`+
+			`'daily_max_loss_pct','us_daily_max_loss_pct','us_min_trading_value','index_codes',`+
 			`'filter_rsi_max','filter_disparity_m5_max',`+
 			`'filter_high_price_diff_min','filter_open_price_diff_max',`+
 			`'index_drop_threshold_pct'`+
@@ -481,6 +495,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		TrailingTriggerPct:         f64("trailing_trigger_pct"),
 		TrailingStopPct:            f64("trailing_stop_pct"),
 		DailyMaxLossPct:            f64("daily_max_loss_pct"),
+		USDailyMaxLossPct:          f64("us_daily_max_loss_pct"),
+		USMinTradingValue:          f64("us_min_trading_value"),
 		IndexCodes:                 strSlice("index_codes"),
 		FilterRsiMax:               filterRsiMax,
 		FilterDisparityM5Max:       filterDisparityM5Max,
@@ -523,6 +539,74 @@ func (db *DB) GetTodayRealizedPnL(ctx context.Context) float64 {
 		   AND order_type = 'SELL'
 		   AND source = 'AGENT'
 		   AND filled_price > 0`, today,
+	).Scan(&pnl)
+	return pnl
+}
+
+// InsertServiceLog writes a service-level log entry. Non-fatal — errors are swallowed.
+// source: "TRADER" | "MONITOR" | "SYSTEM"
+// level:  "ERROR"  | "WARN"
+func (db *DB) InsertServiceLog(ctx context.Context, source, level, message, detail string) {
+	db.ExecContext(ctx, //nolint:errcheck
+		`INSERT INTO service_logs (source, level, message, detail, timestamp)
+		 VALUES (?, ?, ?, ?, datetime('now'))`,
+		source, level, message, detail)
+}
+
+// GetServiceLogs returns recent service log entries (newest first).
+// Auto-purges entries older than 7 days.
+// source: "" or "ALL" = all sources; otherwise filter by exact source.
+func (db *DB) GetServiceLogs(ctx context.Context, source string, limit int) ([]models.ServiceLog, error) {
+	db.ExecContext(ctx, //nolint:errcheck
+		`DELETE FROM service_logs WHERE timestamp < datetime('now', '-7 days')`)
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if source == "" || source == "ALL" {
+		rows, err = db.QueryContext(ctx,
+			`SELECT id, source, level, message, detail, timestamp
+			 FROM service_logs ORDER BY id DESC LIMIT ?`, limit)
+	} else {
+		rows, err = db.QueryContext(ctx,
+			`SELECT id, source, level, message, detail, timestamp
+			 FROM service_logs WHERE source = ? ORDER BY id DESC LIMIT ?`, source, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []models.ServiceLog
+	for rows.Next() {
+		var l models.ServiceLog
+		if err := rows.Scan(&l.ID, &l.Source, &l.Level, &l.Message, &l.Detail, &l.Timestamp); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	if logs == nil {
+		logs = []models.ServiceLog{}
+	}
+	return logs, nil
+}
+
+// GetTodayRealizedPnLByMarket returns today's realized P&L for AGENT SELL orders
+// filtered by market ("KR" or "US"). Returns 0 on error or no qualifying orders.
+func (db *DB) GetTodayRealizedPnLByMarket(ctx context.Context, market string) float64 {
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	today := time.Now().In(kst).Format("2006-01-02")
+
+	var pnl float64
+	db.QueryRowContext(ctx, //nolint:errcheck
+		`SELECT COALESCE(SUM((filled_price - price) * qty), 0)
+		 FROM orders
+		 WHERE date(created_at) = date(?)
+		   AND order_type = 'SELL'
+		   AND source = 'AGENT'
+		   AND market = ?
+		   AND filled_price > 0`, today, market,
 	).Scan(&pnl)
 	return pnl
 }

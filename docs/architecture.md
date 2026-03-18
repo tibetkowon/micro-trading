@@ -17,7 +17,7 @@ micro-trading-for-agent/
 │   │       └── main.go         # 진입점; ClaudeClient·Engine 초기화, WebSocket·Monitor, 장운영 스케줄러, 서버 시작/종료
 │   ├── internal/
 │   │   ├── config/
-│   │   │   └── config.go       # .env 로드 (godotenv); KIS·MQTT·Anthropic·서버 설정
+│   │   │   └── config.go       # .env 로드 (godotenv); KIS·Anthropic·서버 설정
 │   │   ├── database/
 │   │   │   └── db.go           # SQLite 초기화 + 스키마 마이그레이션; GetTradingSettings(), SaveReport()
 │   │   ├── models/
@@ -30,8 +30,6 @@ micro-trading-for-agent/
 │   │   │   ├── chart.go        # KIS 차트 API: GetMinuteChart(1분봉), GetDailyChart(일봉)
 │   │   │   ├── token.go        # OAuth 토큰 발급 + 20시간 자동 갱신 + 자격증명 지문 체크
 │   │   │   └── ratelimiter.go  # TPS 리미터 (15 req/s, golang.org/x/time/rate)
-│   │   ├── mqtt/
-│   │   │   └── publisher.go    # Paho MQTT 퍼블리셔; PublishAlert() (목표가/손절가/청산 이벤트)
 │   │   ├── monitor/
 │   │   │   └── monitor.go      # 포지션 모니터; HandlePrice() 가격 체크 + 자동 매도, StartIndicatorChecker() RSI/MACD 주기 평가, LiquidateAll(), SoldCh 엔진 신호
 │   │   ├── agent/
@@ -77,8 +75,6 @@ micro-trading-for-agent/
 │   ├── architecture.md         # 이 파일
 │   ├── db_schema.md            # SQLite 테이블 스키마 문서
 │   ├── changelog.md            # 변경 이력 (최신 항목이 맨 위)
-│   ├── guides/
-│   │   └── mqtt-setup.md       # MQTT 브로커 설치 및 사용자 알림 구독 가이드
 │   ├── kis-api/                # KIS API 공식 명세서 (기본시세/순위분석/종목정보/주문계좌/인증/실시간)
 │   ├── plans/                  # 기능 구현 계획 문서
 │   └── reviews/                # 한국어 코드 리뷰 문서
@@ -95,7 +91,7 @@ micro-trading-for-agent/
 
 ### `backend/internal/config`
 - **Role:** 환경변수에서 모든 설정을 로드 (하드코딩 금지).
-- **현재 관리 항목:** KIS 자격증명, Anthropic API 키, MQTT 브로커, HTS ID, 서버 포트, DB 경로
+- **현재 관리 항목:** KIS 자격증명, Anthropic API 키, HTS ID, 서버 포트, DB 경로
 
 ### `backend/internal/database`
 - **Role:** SQLite 연결 초기화 및 서버 시작 시 스키마 마이그레이션 자동 실행.
@@ -118,15 +114,11 @@ micro-trading-for-agent/
   - `ExecCh chan ExecEvent` — trader.Engine이 체결 확인에 사용 (단일 소비자)
 - **`token.go`** — OAuth 토큰 발급·갱신·캐시, 자격증명 지문 체크
 
-### `backend/internal/mqtt`
-- **Role:** 사용자 알림 전용 MQTT 발행 레이어. 브로커 미연결 시 로그만 남기고 서버 기동 유지.
-- `PublishAlert(event, stockCode, ...)` — TARGET_HIT / STOP_HIT / LIQUIDATION 알림
-
 ### `backend/internal/monitor`
 - **Role:** 보유 포지션 실시간 모니터링.
 - `MonitoredEntry` — `Market string`("KR"/"US"), `ExchCode string`(해외거래소), `TrailingTriggerPct/TrailingStopPct/PeakPrice/TrailingActivated` 트레일링 스탑 필드 포함
 - `Register(ctx, pos MonitoredEntry)` — 포지션 등록; US 종목은 해외 실시간 가격 WebSocket 구독
-- `HandlePrice(stockCode, price, isTest)` — WebSocket 가격 이벤트 처리; 트레일링 스탑 활성화·갱신, 목표/손절 도달 시 `executeSell()`(KR) 또는 `executeOverseasSell()`(US) + MQTT + `SoldCh` 알림
+- `HandlePrice(stockCode, price, isTest)` — WebSocket 가격 이벤트 처리; 트레일링 스탑 활성화·갱신, 목표/손절 도달 시 `executeSell()`(KR) 또는 `executeOverseasSell()`(US) + `SoldCh` 알림
 - `StartIndicatorChecker(ctx, intervalMin, conditions, rsiThreshold, macdBearish, getInfoFn)` — RSI/MACD 주기 평가; `getInfoFn` 콜백으로 순환 임포트 방지
 - `LiquidateAll(ctx, market ...string)` — 전량 시장가 청산; market 인자로 "KR"/"US" 선택 가능 (생략 시 전체)
 
@@ -260,11 +252,9 @@ monitor.StartPriceConsumer()
   ↓ HandlePrice(isTest=false)
   ├─ price ≥ TargetPrice → executeSell() → KIS 시장가 매도
   │                      → SoldCh <- stockCode (엔진 신호)
-  │                      → mqtt.PublishAlert(TARGET_HIT)
   │                      → Remove()
   └─ price ≤ StopPrice  → executeSell() → KIS 시장가 매도
                          → SoldCh <- stockCode (엔진 신호)
-                         → mqtt.PublishAlert(STOP_HIT)
                          → Remove()
 
 KIS WebSocket (H0STCNI0 체결통보)
@@ -277,7 +267,7 @@ monitor.StartIndicatorChecker() (5분 주기, 별도 goroutine)
      → executeSell() → SoldCh <- stockCode → Remove()
 
 15:15 LiquidateAll():
-  → GetHoldings → PlaceSellOrder(시장가) → mqtt.PublishAlert(LIQUIDATION)
+  → GetHoldings → PlaceSellOrder(시장가)
 ```
 
 ---
@@ -315,10 +305,3 @@ monitor.StartIndicatorChecker() (5분 주기, 별도 goroutine)
 
 ---
 
-## MQTT 토픽 맵
-
-| 토픽 | 이벤트 | 발행 조건 |
-|------|--------|----------|
-| `trading/alert/{stock_code}` | `TARGET_HIT` | 현재가 ≥ 목표가 → 자동 매도 완료 |
-| `trading/alert/{stock_code}` | `STOP_HIT` | 현재가 ≤ 손절가 → 자동 매도 완료 |
-| `trading/liquidation` | `LIQUIDATION` | 15:15 전량 청산 |

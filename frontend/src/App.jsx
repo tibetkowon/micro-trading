@@ -4,7 +4,7 @@ import PropTypes from 'prop-types'
 import Dashboard from './pages/Dashboard'
 import Orders from './pages/Orders'
 import Monitor from './pages/Monitor'
-import KISLogs from './pages/KISLogs'
+import ErrorLogs from './pages/ErrorLogs'
 import SelectionLogs from './pages/SelectionLogs'
 import RankingLogs from './pages/RankingLogs'
 import Settings from './pages/Settings'
@@ -13,17 +13,17 @@ const navItems = [
   { to: '/', label: '대시보드', end: true },
   { to: '/monitor', label: '모니터' },
   { to: '/orders', label: '주문 내역' },
-  { to: '/logs', label: 'KIS 에러 로그' },
+  { to: '/logs', label: '에러 로그' },
   { to: '/selection-logs', label: '선정 로그' },
   { to: '/ranking-logs', label: '순위 조회 로그' },
   { to: '/settings', label: '설정' },
 ]
 
 const desktopNavClass = ({ isActive }) =>
-  `px-4 py-2 rounded text-sm font-medium transition-colors ${
+  `px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
     isActive
-      ? 'bg-blue-600 text-white'
-      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+      ? 'bg-zinc-800 text-white ring-1 ring-zinc-700'
+      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
   }`
 
 function MobileNavLink({ to, label, end, onClick }) {
@@ -33,10 +33,10 @@ function MobileNavLink({ to, label, end, onClick }) {
       end={end}
       onClick={onClick}
       className={({ isActive }) =>
-        `block px-4 py-3 text-sm font-medium transition-colors border-b border-gray-800 ${
+        `block px-4 py-3 text-sm font-medium transition-colors border-b border-zinc-800 ${
           isActive
-            ? 'bg-blue-600/20 text-blue-400'
-            : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+            ? 'bg-zinc-800 text-white'
+            : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white'
         }`
       }
     >
@@ -56,10 +56,10 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false)
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <nav className="bg-gray-900 border-b border-gray-800 relative">
+    <div className="min-h-screen flex flex-col bg-zinc-950">
+      <nav className="bg-zinc-900 border-b border-zinc-800 relative">
         <div className="px-4 py-3 flex items-center justify-between">
-          <span className="text-white font-bold">Micro Trading</span>
+          <span className="text-white font-semibold tracking-tight">Micro Trading</span>
 
           {/* 데스크탑 링크 (md 이상) */}
           <div className="hidden md:flex items-center gap-1 flex-wrap">
@@ -72,7 +72,7 @@ export default function App() {
 
           {/* 햄버거 버튼 (md 미만) */}
           <button
-            className="md:hidden text-gray-400 hover:text-white p-2 rounded"
+            className="md:hidden text-zinc-400 hover:text-white p-2 rounded"
             onClick={() => setMenuOpen((o) => !o)}
             aria-label="메뉴 열기"
           >
@@ -90,7 +90,7 @@ export default function App() {
 
         {/* 모바일 드롭다운 메뉴 */}
         {menuOpen && (
-          <div className="md:hidden absolute top-full left-0 right-0 bg-gray-900 border-b border-gray-700 z-50 shadow-lg">
+          <div className="md:hidden absolute top-full left-0 right-0 bg-zinc-900 border-b border-zinc-700 z-50 shadow-lg">
             {navItems.map((item) => (
               <MobileNavLink
                 key={item.to}
@@ -109,7 +109,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/monitor" element={<Monitor />} />
           <Route path="/orders" element={<Orders />} />
-          <Route path="/logs" element={<KISLogs />} />
+          <Route path="/logs" element={<ErrorLogs />} />
           <Route path="/selection-logs" element={<SelectionLogs />} />
           <Route path="/ranking-logs" element={<RankingLogs />} />
           <Route path="/settings" element={<Settings />} />

@@ -17,7 +17,6 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
-	mqttpkg "github.com/micro-trading-for-agent/backend/internal/mqtt"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
 
@@ -66,20 +65,6 @@ func main() {
 		db,
 	)
 
-	// --- MQTT Publisher (optional) ---
-	var mqttPub *mqttpkg.Publisher
-	if cfg.MQTTBrokerURL != "" {
-		pub, mqttErr := mqttpkg.NewPublisher(cfg.MQTTBrokerURL, cfg.MQTTClientID)
-		if mqttErr != nil {
-			logger.Warn("MQTT broker unavailable — alerts will be logged only",
-				map[string]any{"broker": cfg.MQTTBrokerURL, "error": mqttErr.Error()})
-		} else {
-			mqttPub = pub
-			defer mqttPub.Close()
-			logger.Info("MQTT publisher ready", map[string]any{"broker": cfg.MQTTBrokerURL})
-		}
-	}
-
 	// --- KIS WebSocket client (optional — requires credentials) ---
 	var wsClient *kis.WebSocketClient
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" {
@@ -88,7 +73,7 @@ func main() {
 	}
 
 	// --- Position monitor ---
-	mon := monitor.New(db, kisClient, wsClient, mqttPub)
+	mon := monitor.New(db, kisClient, wsClient)
 	if err := mon.LoadFromDB(ctx); err != nil {
 		logger.Warn("failed to restore monitored positions from DB",
 			map[string]any{"error": err.Error()})
@@ -110,8 +95,8 @@ func main() {
 		logger.Warn("ANTHROPIC_API_KEY not set — autonomous trading disabled", nil)
 	}
 
-	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, mqttPub, claudeClient, "KR")
-	usEngine := trader.NewEngine(db, kisClient, wsClient, mon, mqttPub, claudeClient, "US")
+	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, claudeClient, "KR")
+	usEngine := trader.NewEngine(db, kisClient, wsClient, mon, claudeClient, "US")
 
 	// KIS 실제 잔고와 대조하여 누락된 포지션 자동 복구.
 	// DB에 등록되지 않은 보유 종목(버그·장애·수동 주문 등)을 모니터링에 추가.
