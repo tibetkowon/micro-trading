@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-18 — UI B스타일 전체 적용 (Settings.jsx 포함)
+
+### Task 4: UI 개선 — B스타일 (미니멀 클린) + 한국식 색상 통일
+- **Settings.jsx**: zinc 팔레트 전환, `rounded-xl` 카드, `rounded-lg` 입력, `rounded-full` 뱃지, 익절=빨강·손절=파랑 레이블 힌트, AND/OR·거래소·거래량 버튼 zinc ring 스타일, 저장 버튼 `rounded-xl`
+- **Badge/WsBadge**: `rounded-full` pill + border 스타일
+- **Dashboard/Monitor/Orders/ErrorLogs**: B스타일 + 한국식 색상 (매수=빨강, 매도=파랑, 목표가=빨강, 손절가=파랑) 전면 적용
+- **App.jsx**: `bg-zinc-950` 배경, `bg-zinc-900` 네비, active nav `bg-zinc-800 ring-1 ring-zinc-700`
+- **Card.jsx**: zinc 팔레트, `rounded-xl`
+
+---
+
 ## 2026-03-18 — MQTT 제거, KR/US 손실 한도 분리, 서비스 에러 로그 확장
 
 ### Task 6: MQTT 코드 전면 제거
