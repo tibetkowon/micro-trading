@@ -32,40 +32,41 @@ The system is divided into two main roles:
 # Skill Strategy & Context Optimization
 To optimize token usage and maintain focus, do not scan the entire workspace indiscriminately. We strictly separate static documentation (`docs/`) from behavioral skill instructions (`.claude/skills/`).
 
-## MANDATORY POST-TASK CHECKLIST
-**CRITICAL: After EVERY coding task, execute ALL applicable items below WITHOUT waiting for user instruction. Skipping any applicable item is a failure.**
+## 작업 완료 후 자동 실행 규칙
 
-| Condition | MANDATORY Action |
-|-----------|-----------------|
-| Code written or modified | Run `go build ./...` AND `npm run build` BEFORE committing |
-| Any task or bug fix completed | Append to `docs/changelog.md` (newest entry at top) |
-| New feature / significant code change | Create review doc in `docs/reviews/` (Korean, Go+React explained) |
-| SQLite table or column added/modified | Update `docs/db_schema.md` |
-| New package folder or major architecture change | Update `docs/architecture.md` |
-| Major milestone reached | Update root `README.md` |
+사용자가 별도로 요청하지 않아도, 아래 조건에 해당하면 **즉시 자동으로** 실행한다. 건너뛰는 것은 실패로 간주한다.
+
+### 항상 실행 (코드 변경 시)
+
+1. **코드를 작성하거나 수정했다면** → 커밋 전에 반드시 `go build ./...` 와 `npm run build` 실행. 빌드 실패 시 먼저 수정하고 커밋한다.
+
+2. **어떤 작업이든 완료되면** → `docs/changelog.md` 맨 위에 변경 내용 추가. 사용자가 요청하지 않아도 항상 실행.
+
+### 조건부 자동 실행
+
+3. **신규 기능 또는 의미 있는 코드 변경** → `docs/reviews/` 에 한국어 코드 설명 문서 생성 (Go+React 로직 해설).
+
+4. **SQLite 테이블/컬럼 추가 또는 변경** → `docs/db_schema.md` 즉시 업데이트.
+
+5. **새 루트 폴더 또는 주요 패키지 추가** → `docs/architecture.md` 즉시 업데이트.
+
+6. **주요 마일스톤 달성** → `README.md` 업데이트.
 
 ---
 
-**Available Skills (Full Instructions):**
-Read the corresponding `.md` file in `.claude/skills/` for detailed instructions:
+## 스킬 자동 실행 규칙
 
-1. **Feature Planning (`.claude/skills/plan_feature.md`):** - **Trigger:** BEFORE starting any new feature or architectural change — NEVER start coding first.
-   - **Action:** Create a step-by-step plan in `docs/plans/` and wait for user approval.
-2. **Code Verification (`.claude/skills/verify_implementation.md`):** - **Trigger:** After writing/modifying code and BEFORE committing — NO exceptions.
-   - **Action:** Run Go build/tests and React lint/build to ensure no broken code is deployed.
-3. **Changelog Recording (`.claude/skills/record_changelog.md`):** - **Trigger:** After EVERY completed task or bug fix — mandatory, do not skip.
-   - **Action:** Append a brief summary of changes to `docs/changelog.md`.
-4. **Code Tutor (`.claude/skills/write_code_tutor.md`):** - **Trigger:** After EVERY significant feature implementation — do not wait for user to ask.
-   - **Action:** Generate a Korean explanation of Go/React logic in `docs/reviews/` for the user's learning.
-5. **Log Analysis (`.claude/skills/analyze_trade_logs.md`):** - **Trigger:** When investigating KIS API errors or trade failures.
-   - **Action:** Smartly extract and analyze logs using terminal commands without reading entire files.
-6. **DB Schema Update (`.claude/skills/update_db_schema.md`):** - **Trigger:** Whenever a SQLite table or column is created or modified — mandatory.
-   - **Action:** Update the schema documentation in `docs/db_schema.md`.
-7. **Architecture Update (`.claude/skills/update_architecture.md`):** - **Trigger:** Whenever a new root folder or major package is introduced — mandatory.
-   - **Action:** Update the project structure map in `docs/architecture.md`.
-8. **README Update (`.claude/skills/update_readme.md`):** - **Trigger:** After major milestones or initial setup.
-   - **Action:** Update the root `README.md` to reflect the current project state.
-9. **Context Evolution (`.claude/skills/manage_skills.md`):** - **Trigger:** When discovering new API quirks, project rules, or recurring patterns.
-   - **Action:** Document them as new skills or context files so they are not forgotten.
-10. **KIS API 구현 (`.claude/skills/implement_kis_feature.md`):** - **Trigger:** KIS API 신규 기능 구현 또는 기존 기능 개선 시.
-   - **Action:** `docs/kis-api/` 에서 관련 명세 문서(기본시세/순위분석/종목정보/주문계좌/인증/실시간)를 읽고 올바른 스펙으로 구현.
+아래 상황이 발생하면 사용자 지시 없이 해당 스킬 파일을 읽고 즉시 실행한다.
+
+| 상황 | 실행할 스킬 |
+|------|------------|
+| 신규 기능 또는 아키텍처 변경 요청 → **코딩 전** | `.claude/skills/plan_feature.md` — `docs/plans/` 에 계획 작성 후 승인 대기 |
+| 코드 작성/수정 완료 → **커밋 전** | `.claude/skills/verify_implementation.md` — Go 빌드/테스트, React 린트/빌드 실행 |
+| 작업 또는 버그 수정 완료 | `.claude/skills/record_changelog.md` — `docs/changelog.md` 업데이트 |
+| 신규 기능 구현 완료 | `.claude/skills/write_code_tutor.md` — `docs/reviews/` 에 한국어 설명 문서 생성 |
+| KIS API 에러 조사 또는 자동매매 실패 | `.claude/skills/analyze_trade_logs.md` — 로그 스마트 추출 및 분석 |
+| SQLite 테이블/컬럼 생성 또는 변경 | `.claude/skills/update_db_schema.md` — `docs/db_schema.md` 업데이트 |
+| 새 루트 폴더 또는 주요 패키지 추가 | `.claude/skills/update_architecture.md` — `docs/architecture.md` 업데이트 |
+| 주요 마일스톤 달성 | `.claude/skills/update_readme.md` — `README.md` 업데이트 |
+| 새 API 패턴/버그 패턴/프로젝트 규칙 발견 | `.claude/skills/manage_skills.md` — 스킬 또는 문서에 기록 |
+| KIS API 신규 기능 구현 또는 기존 기능 수정 | `.claude/skills/implement_kis_feature.md` — `docs/kis-api/` 명세 확인 후 구현 |
