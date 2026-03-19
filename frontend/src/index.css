@@ -11,6 +11,7 @@
   --th-surface-high:    #EBEBED;
   --th-surface-highest: #E0E0E2;
   --th-surface-low:     #F9F8F6;
+  --th-sidebar:         #f2f4f6;
   --th-on-surface:      #1A1A1C;
   --th-on-muted:        #52525B;
   --th-on-subtle:       #A1A1AA;
@@ -31,6 +32,7 @@
   --th-surface-high:    #2A2A2D;
   --th-surface-highest: #353438;
   --th-surface-low:     #1B1B1E;
+  --th-sidebar:         #0E0E11;
   --th-on-surface:      #E4E1E6;
   --th-on-muted:        #A09D9E;
   --th-on-subtle:       #6B6870;
@@ -65,10 +67,13 @@ body {
 
 /* 글래스 패널 */
 .glass-panel {
-  background: rgba(31, 31, 34, 0.7);
+  background: rgba(242, 244, 246, 0.7);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 0.75rem;
+}
+.dark .glass-panel {
+  background: rgba(31, 31, 34, 0.7);
 }
 
 /* Material Symbols */

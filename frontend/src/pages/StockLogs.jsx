@@ -31,27 +31,27 @@ function RankingResultSection({ log }) {
       {!log.error_message && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {log.volume_count !== -1 && (
-            <div className="bg-[#1B1B1E] rounded-lg px-3 py-2">
-              <p className="text-xs text-gray-600">거래량</p>
-              <p className="text-sm font-data font-medium text-gray-200 mt-0.5">{log.volume_count}개</p>
+            <div className="bg-th-surface-low rounded-lg px-3 py-2">
+              <p className="text-xs text-th-on-subtle">거래량</p>
+              <p className="text-sm font-data font-medium text-th-on-surface mt-0.5">{log.volume_count}개</p>
             </div>
           )}
           {log.strength_count !== -1 && (
-            <div className="bg-[#1B1B1E] rounded-lg px-3 py-2">
-              <p className="text-xs text-gray-600">체결강도</p>
-              <p className="text-sm font-data font-medium text-gray-200 mt-0.5">{log.strength_count}개</p>
+            <div className="bg-th-surface-low rounded-lg px-3 py-2">
+              <p className="text-xs text-th-on-subtle">체결강도</p>
+              <p className="text-sm font-data font-medium text-th-on-surface mt-0.5">{log.strength_count}개</p>
             </div>
           )}
           {log.exec_count_count !== -1 && (
-            <div className="bg-[#1B1B1E] rounded-lg px-3 py-2">
-              <p className="text-xs text-gray-600">대량체결</p>
-              <p className="text-sm font-data font-medium text-gray-200 mt-0.5">{log.exec_count_count}개</p>
+            <div className="bg-th-surface-low rounded-lg px-3 py-2">
+              <p className="text-xs text-th-on-subtle">대량체결</p>
+              <p className="text-sm font-data font-medium text-th-on-surface mt-0.5">{log.exec_count_count}개</p>
             </div>
           )}
           {log.disparity_count !== -1 && (
-            <div className="bg-[#1B1B1E] rounded-lg px-3 py-2">
-              <p className="text-xs text-gray-600">이격도</p>
-              <p className="text-sm font-data font-medium text-gray-200 mt-0.5">{log.disparity_count}개</p>
+            <div className="bg-th-surface-low rounded-lg px-3 py-2">
+              <p className="text-xs text-th-on-subtle">이격도</p>
+              <p className="text-sm font-data font-medium text-th-on-surface mt-0.5">{log.disparity_count}개</p>
             </div>
           )}
         </div>
@@ -60,14 +60,14 @@ function RankingResultSection({ log }) {
       {/* 최종 결과 종목 */}
       {resultStocks.length > 0 ? (
         <div>
-          <p className="text-xs text-gray-600 mb-1.5">
+          <p className="text-xs text-th-on-subtle mb-1.5">
             {isOR ? 'OR 합집합' : 'AND 교집합'} — {types.map(rankingTypeKr).join(separator)} — {resultStocks.length}종목
           </p>
           <div className="flex flex-wrap gap-1.5">
             {resultStocks.map((s) => (
-              <span key={s.stock_code} className="inline-flex items-center gap-1 text-xs bg-[#2A2A2D] border border-white/10 rounded-md px-2 py-0.5">
-                <span className="font-data text-gray-400">{s.stock_code}</span>
-                <span className="text-gray-600">{s.stock_name}</span>
+              <span key={s.stock_code} className="inline-flex items-center gap-1 text-xs bg-th-surface-high border border-black/10 dark:border-white/10 rounded-md px-2 py-0.5">
+                <span className="font-data text-th-on-muted">{s.stock_code}</span>
+                <span className="text-th-on-subtle">{s.stock_name}</span>
               </span>
             ))}
           </div>
@@ -75,7 +75,7 @@ function RankingResultSection({ log }) {
       ) : log.error_message ? (
         <p className="text-xs text-red-400">{log.error_message}</p>
       ) : (
-        <p className="text-xs text-gray-600">적합 종목 없음</p>
+        <p className="text-xs text-th-on-subtle">적합 종목 없음</p>
       )}
     </div>
   )
@@ -88,14 +88,14 @@ RankingResultSection.propTypes = {
 function HardFilterSection({ filteredStocksJson }) {
   const filtered = parseJSON(filteredStocksJson) || []
   if (filtered.length === 0) {
-    return <p className="text-xs text-gray-600">하드필터 제거 종목 없음</p>
+    return <p className="text-xs text-th-on-subtle">하드필터 제거 종목 없음</p>
   }
   return (
     <div className="space-y-1.5">
       {filtered.map((f) => (
         <div key={f.stock_code} className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-data text-gray-400 shrink-0">{f.stock_code}</span>
-          {f.stock_name && <span className="text-xs text-gray-600 shrink-0">{f.stock_name}</span>}
+          <span className="text-xs font-data text-th-on-muted shrink-0">{f.stock_code}</span>
+          {f.stock_name && <span className="text-xs text-th-on-subtle shrink-0">{f.stock_name}</span>}
           <span className="badge bg-th-warn/10 text-amber-400 border-th-warn/20 text-xs shrink-0">{f.filter_reason}</span>
         </div>
       ))}
@@ -108,7 +108,7 @@ HardFilterSection.propTypes = {
 
 /* ── LLM 선정 결과 섹션 ── */
 function SelectionSection({ selLog }) {
-  if (!selLog) return <p className="text-xs text-gray-600">연결된 선정 로그 없음</p>
+  if (!selLog) return <p className="text-xs text-th-on-subtle">연결된 선정 로그 없음</p>
 
   const candidates = parseJSON(selLog.candidates) || []
   const llmResult = parseJSON(selLog.llm_result) || []
@@ -128,11 +128,11 @@ function SelectionSection({ selLog }) {
         ) : (
           <span className="badge bg-th-warn/10 text-amber-400 border-th-warn/20">적합 종목 없음</span>
         )}
-        <span className="text-xs text-gray-600">후보 {selLog.sent_count}종목 전달</span>
+        <span className="text-xs text-th-on-subtle">후보 {selLog.sent_count}종목 전달</span>
       </div>
 
       {hasSelected && selLog.selected_reason && (
-        <p className="text-sm text-gray-400">{selLog.selected_reason}</p>
+        <p className="text-sm text-th-on-muted">{selLog.selected_reason}</p>
       )}
       {hasFailed && (
         <p className="text-xs text-red-400">{selLog.fail_reason}</p>
@@ -141,12 +141,12 @@ function SelectionSection({ selLog }) {
       {/* Claude 순위 결과 */}
       {llmResult.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-xs text-gray-600">Claude 순위</p>
+          <p className="text-xs text-th-on-subtle">Claude 순위</p>
           {llmResult.map((item, idx) => (
             <div key={item.stock_code} className="flex items-start gap-2 text-xs">
-              <span className="text-gray-600 w-4 shrink-0">{idx + 1}.</span>
+              <span className="text-th-on-subtle w-4 shrink-0">{idx + 1}.</span>
               <span className="font-data text-th-primary shrink-0">{item.stock_code}</span>
-              <span className="text-gray-400 leading-relaxed">{item.reason}</span>
+              <span className="text-th-on-muted leading-relaxed">{item.reason}</span>
             </div>
           ))}
         </div>
@@ -155,13 +155,13 @@ function SelectionSection({ selLog }) {
       {/* 전달한 후보 종목 테이블 (접기) */}
       {candidates.length > 0 && (
         <details>
-          <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-400 select-none">
+          <summary className="text-xs text-th-on-subtle cursor-pointer hover:text-th-on-muted select-none">
             전달한 후보 종목 ({candidates.length}개) 상세보기
           </summary>
           <div className="mt-2 overflow-x-auto">
             <table className="text-xs w-full border-collapse">
               <thead>
-                <tr className="text-gray-600 border-b border-white/10">
+                <tr className="text-th-on-subtle border-b border-black/10 dark:border-white/10">
                   <th className="text-left py-1 pr-3 font-medium">코드</th>
                   <th className="text-left py-1 pr-3 font-medium">종목명</th>
                   <th className="text-right py-1 pr-3 font-medium">현재가</th>
@@ -179,9 +179,9 @@ function SelectionSection({ selLog }) {
                   const opd = c.open_price_diff
                   const dm5 = c.disparity_m5
                   return (
-                    <tr key={c.stock_code} className="text-gray-400">
-                      <td className="py-1 pr-3 font-data text-gray-200">{c.stock_code}</td>
-                      <td className="py-1 pr-3 text-gray-400">{c.stock_name}</td>
+                    <tr key={c.stock_code} className="text-th-on-muted">
+                      <td className="py-1 pr-3 font-data text-th-on-surface">{c.stock_code}</td>
+                      <td className="py-1 pr-3 text-th-on-muted">{c.stock_name}</td>
                       <td className="py-1 pr-3 text-right font-data">{fmt(c.current_price)}</td>
                       <td className="py-1 pr-3 text-right font-data">{fmt(c.rsi14, 1)}</td>
                       <td className={`py-1 pr-3 text-right font-data ${dm5 > 3 ? 'text-red-400' : dm5 > 1.5 ? 'text-amber-400' : ''}`}>
@@ -215,10 +215,10 @@ function StagePanel({ step, title, badge, children }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#2A2A2D] text-gray-600 text-xs font-semibold shrink-0">
+        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-th-surface-high text-th-on-subtle text-xs font-semibold shrink-0">
           {step}
         </span>
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{title}</span>
+        <span className="text-xs font-semibold text-th-on-muted uppercase tracking-wide">{title}</span>
         {badge}
       </div>
       <div className="ml-7">{children}</div>
@@ -243,17 +243,17 @@ function RankingCard({ log, selLog }) {
   const separator = isOR ? '|' : '+'
 
   return (
-    <div className="bg-[#1F1F22] border border-white/10 rounded-xl overflow-hidden">
+    <div className="bg-th-surface border border-black/10 dark:border-white/10 rounded-xl overflow-hidden">
       {/* 헤더 — 클릭 시 펼치기 */}
       <button
-        className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-[#2A2A2D] transition-colors text-left"
+        className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-th-surface-high transition-colors text-left"
         onClick={() => setOpen((v) => !v)}
       >
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           {log.market === 'US' ? (
             <span className="badge bg-[#7C3AED]/10 text-[#7C3AED] border-[#7C3AED]/20 dark:bg-[#7C3AED]/15 dark:text-[#A78BFA] dark:border-[#7C3AED]/30 shrink-0">미장</span>
           ) : (
-            <span className="badge bg-[#2A2A2D] text-gray-400 border-white/10 shrink-0">국장</span>
+            <span className="badge bg-th-surface-high text-th-on-muted border-black/10 dark:border-white/10 shrink-0">국장</span>
           )}
 
           {hasError ? (
@@ -283,16 +283,16 @@ function RankingCard({ log, selLog }) {
           )}
 
           {types.length > 0 && (
-            <span className="text-xs text-gray-600 font-data truncate">
+            <span className="text-xs text-th-on-subtle font-data truncate">
               [{types.map(rankingTypeKr).join(separator)}]
             </span>
           )}
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-gray-600">{fmtDate(log.timestamp)}</span>
+          <span className="text-xs text-th-on-subtle">{fmtDate(log.timestamp)}</span>
           <svg
-            className={`w-4 h-4 text-gray-600 transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-th-on-subtle transition-transform ${open ? 'rotate-180' : ''}`}
             fill="none" viewBox="0 0 24 24" stroke="currentColor"
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -302,12 +302,12 @@ function RankingCard({ log, selLog }) {
 
       {/* 상세 3단계 패널 */}
       {open && (
-        <div className="px-4 pb-4 border-t border-white/10 space-y-5 pt-4">
+        <div className="px-4 pb-4 border-t border-black/10 dark:border-white/10 space-y-5 pt-4">
           <StagePanel
             step={1}
             title="순위 조회"
             badge={
-              <span className="text-xs text-gray-600 font-data">
+              <span className="text-xs text-th-on-subtle font-data">
                 {log.price_min && log.price_max
                   ? log.market === 'US'
                     ? `$${Number(log.price_min).toLocaleString()}~$${Number(log.price_max).toLocaleString()}`
@@ -319,7 +319,7 @@ function RankingCard({ log, selLog }) {
             <RankingResultSection log={log} />
           </StagePanel>
 
-          <div className="border-t border-white/10" />
+          <div className="border-t border-black/10 dark:border-white/10" />
 
           <StagePanel
             step={2}
@@ -333,7 +333,7 @@ function RankingCard({ log, selLog }) {
             <HardFilterSection filteredStocksJson={log.filtered_stocks} />
           </StagePanel>
 
-          <div className="border-t border-white/10" />
+          <div className="border-t border-black/10 dark:border-white/10" />
 
           <StagePanel
             step={3}
@@ -424,20 +424,20 @@ export default function StockLogs() {
       {/* 헤더 */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-gray-200">종목 로그</h1>
-          <p className="text-xs text-gray-400 mt-0.5">순위 조회 → 하드 필터 → LLM 선정 3단계 흐름</p>
+          <h1 className="text-xl font-semibold text-th-on-surface">종목 로그</h1>
+          <p className="text-xs text-th-on-muted mt-0.5">순위 조회 → 하드 필터 → LLM 선정 3단계 흐름</p>
         </div>
         <div className="flex items-center gap-2">
           {/* 시장 필터 */}
-          <div className="flex items-center gap-1 bg-[#1F1F22] border border-white/10 rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-th-surface border border-black/10 dark:border-white/10 rounded-lg p-1">
             {MARKET_OPTIONS.map((opt) => (
               <button
                 key={opt.key}
                 onClick={() => setMarket(opt.key)}
                 className={`px-3 py-1 text-xs rounded-md transition-colors ${
                   market === opt.key
-                    ? 'bg-[#2A2A2D] text-gray-200 font-medium'
-                    : 'text-gray-400 hover:text-gray-200'
+                    ? 'bg-th-surface-high text-th-on-surface font-medium'
+                    : 'text-th-on-muted hover:text-th-on-surface'
                 }`}
               >
                 {opt.label}
@@ -447,7 +447,7 @@ export default function StockLogs() {
           <select
             value={refreshInterval}
             onChange={(e) => setRefreshInterval(Number(e.target.value))}
-            className="text-xs px-2 py-2 bg-[#1F1F22] border border-white/10 rounded-lg text-gray-400 focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+            className="text-xs px-2 py-2 bg-th-surface border border-black/10 dark:border-white/10 rounded-lg text-th-on-muted focus:outline-none focus:ring-1 focus:ring-orange-500/50"
           >
             {REFRESH_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -455,7 +455,7 @@ export default function StockLogs() {
           </select>
           <button
             onClick={refetch}
-            className="text-sm px-3 py-2 bg-[#1F1F22] hover:bg-[#2A2A2D] border border-white/10 rounded-lg transition-colors text-gray-400 hover:text-gray-200"
+            className="text-sm px-3 py-2 bg-th-surface hover:bg-th-surface-high border border-black/10 dark:border-white/10 rounded-lg transition-colors text-th-on-muted hover:text-th-on-surface"
           >
             새로고침
           </button>
@@ -467,11 +467,11 @@ export default function StockLogs() {
       )}
 
       {rankingLoading ? (
-        <p className="text-gray-600 text-sm">로딩 중...</p>
+        <p className="text-th-on-subtle text-sm">로딩 중...</p>
       ) : filtered.length === 0 ? (
-        <div className="bg-[#1F1F22] border border-white/10 rounded-xl p-12 text-center">
-          <p className="text-gray-400 font-medium">기록된 종목 로그가 없습니다</p>
-          <p className="text-xs text-gray-600 mt-2">트레이딩 엔진이 실행되면 자동 기록됩니다.</p>
+        <div className="bg-th-surface border border-black/10 dark:border-white/10 rounded-xl p-12 text-center">
+          <p className="text-th-on-muted font-medium">기록된 종목 로그가 없습니다</p>
+          <p className="text-xs text-th-on-subtle mt-2">트레이딩 엔진이 실행되면 자동 기록됩니다.</p>
         </div>
       ) : (
         <div className="space-y-2">

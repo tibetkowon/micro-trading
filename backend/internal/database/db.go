@@ -613,6 +613,47 @@ func (db *DB) GetTodayRealizedPnLByMarket(ctx context.Context, market string) fl
 	return pnl
 }
 
+// DailyPnL holds the realized P&L total for a single trading day.
+type DailyPnL struct {
+	Date string  `json:"date"` // "YYYY-MM-DD"
+	PnL  float64 `json:"pnl"`
+}
+
+// GetDailyPnL returns daily realized P&L for AGENT SELL orders over the past `days` days.
+// Results are ordered by date ascending. Days with no filled SELL orders are omitted.
+func (db *DB) GetDailyPnL(ctx context.Context, days int) ([]DailyPnL, error) {
+	query := fmt.Sprintf(`
+		SELECT date(created_at) AS d,
+		       COALESCE(SUM((filled_price - price) * qty), 0) AS pnl
+		FROM orders
+		WHERE order_type = 'SELL'
+		  AND source = 'AGENT'
+		  AND filled_price > 0
+		  AND date(created_at) >= date('now', '-%d days')
+		GROUP BY d
+		ORDER BY d ASC
+	`, days)
+
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []DailyPnL
+	for rows.Next() {
+		var dp DailyPnL
+		if err := rows.Scan(&dp.Date, &dp.PnL); err != nil {
+			return nil, err
+		}
+		result = append(result, dp)
+	}
+	if result == nil {
+		result = []DailyPnL{}
+	}
+	return result, nil
+}
+
 // InsertRankingLog saves a single getRankings() attempt record and returns the new row ID.
 func (db *DB) InsertRankingLog(ctx context.Context, log models.TraderRankingLog) (int64, error) {
 	res, err := db.ExecContext(ctx,

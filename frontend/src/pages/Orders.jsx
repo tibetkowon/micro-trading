@@ -147,14 +147,14 @@ export default function Orders() {
       {/* 헤더 */}
       <div className="flex items-center justify-between flex-wrap gap-3 pt-2">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">주문 내역</h1>
-          <p className="text-xs text-gray-500 mt-0.5 uppercase tracking-widest">전체 매수·매도 이력</p>
+          <h1 className="text-2xl font-bold text-th-on-surface tracking-tight">주문 내역</h1>
+          <p className="text-xs text-th-on-muted mt-0.5 uppercase tracking-widest">전체 매수·매도 이력</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <select
             value={syncDays}
             onChange={(e) => setSyncDays(Number(e.target.value))}
-            className="text-xs px-2 py-2 bg-[#1F1F22] rounded-lg text-gray-400 focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+            className="text-xs px-2 py-2 bg-th-surface rounded-lg text-th-on-muted focus:outline-none focus:ring-1 focus:ring-orange-500/50"
           >
             {[1, 3, 7, 14, 30, 90].map((d) => (
               <option key={d} value={d}>{d}일</option>
@@ -163,13 +163,13 @@ export default function Orders() {
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="text-xs px-3 py-2 bg-[#1F1F22] hover:bg-[#2A2A2D] rounded-lg disabled:opacity-50 transition-colors text-gray-400 hover:text-white"
+            className="text-xs px-3 py-2 bg-th-surface hover:bg-th-surface-high rounded-lg disabled:opacity-50 transition-colors text-th-on-muted hover:text-th-on-surface"
           >
             {syncing ? '동기화 중...' : 'KIS 동기화'}
           </button>
           <button
             onClick={refetch}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 bg-[#1F1F22] hover:bg-[#2A2A2D] rounded-lg transition-colors text-gray-400 hover:text-white"
+            className="flex items-center gap-1.5 text-xs px-3 py-2 bg-th-surface hover:bg-th-surface-high rounded-lg transition-colors text-th-on-muted hover:text-th-on-surface"
           >
             <span className="material-symbols-outlined text-[16px]">refresh</span>
             새로고침
@@ -188,20 +188,20 @@ export default function Orders() {
 
       {/* 필터 */}
       <div className="flex flex-wrap gap-2">
-        <div className="flex items-center gap-0.5 bg-[#1F1F22] rounded-lg p-1">
+        <div className="flex items-center gap-0.5 bg-th-surface rounded-lg p-1">
           {Object.entries(MARKET_LABELS).map(([k, v]) => (
             <button
               key={k}
               onClick={() => setFilterMarket(k)}
               className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                filterMarket === k ? 'bg-[#2A2A2D] text-white font-medium' : 'text-gray-500 hover:text-white'
+                filterMarket === k ? 'bg-th-surface-high text-th-on-surface font-medium' : 'text-th-on-muted hover:text-th-on-surface'
               }`}
             >
               {v}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-0.5 bg-[#1F1F22] rounded-lg p-1">
+        <div className="flex items-center gap-0.5 bg-th-surface rounded-lg p-1">
           {Object.entries(TYPE_LABELS).map(([k, v]) => (
             <button
               key={k}
@@ -212,44 +212,44 @@ export default function Orders() {
                     ? 'bg-red-500/15 text-red-400 font-medium'
                     : k === 'SELL'
                     ? 'bg-blue-500/15 text-blue-400 font-medium'
-                    : 'bg-[#2A2A2D] text-white font-medium'
-                  : 'text-gray-500 hover:text-white'
+                    : 'bg-th-surface-high text-th-on-surface font-medium'
+                  : 'text-th-on-muted hover:text-th-on-surface'
               }`}
             >
               {v}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-0.5 bg-[#1F1F22] rounded-lg p-1">
+        <div className="flex items-center gap-0.5 bg-th-surface rounded-lg p-1">
           {Object.entries(STATUS_FILTER_LABELS).map(([k, v]) => (
             <button
               key={k}
               onClick={() => setFilterStatus(k)}
               className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                filterStatus === k ? 'bg-[#2A2A2D] text-white font-medium' : 'text-gray-500 hover:text-white'
+                filterStatus === k ? 'bg-th-surface-high text-th-on-surface font-medium' : 'text-th-on-muted hover:text-th-on-surface'
               }`}
             >
               {v}
             </button>
           ))}
         </div>
-        <span className="text-xs text-gray-600 self-center">{filtered.length}건</span>
+        <span className="text-xs text-th-on-subtle self-center">{filtered.length}건</span>
       </div>
 
       {/* 테이블 */}
       {loading ? (
-        <p className="text-gray-600 text-sm">로딩 중...</p>
+        <p className="text-th-on-subtle text-sm">로딩 중...</p>
       ) : filtered.length === 0 ? (
-        <div className="bg-[#1F1F22] rounded-xl p-8 text-center">
-          <span className="material-symbols-outlined text-[36px] text-gray-700 block mb-2">receipt_long</span>
-          <p className="text-gray-500 text-sm">주문 내역이 없습니다.</p>
+        <div className="bg-th-surface rounded-xl p-8 text-center">
+          <span className="material-symbols-outlined text-[36px] text-th-on-subtle block mb-2">receipt_long</span>
+          <p className="text-th-on-muted text-sm">주문 내역이 없습니다.</p>
         </div>
       ) : (
-        <div className="bg-[#1B1B1E] rounded-xl overflow-hidden">
+        <div className="bg-th-surface-low rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-[10px] text-gray-600 uppercase tracking-widest">
+                <tr className="text-[10px] text-th-on-subtle uppercase tracking-widest">
                   <th className="text-left px-4 py-3.5 font-medium hidden sm:table-cell">ID</th>
                   <th className="text-left px-4 py-3.5 font-medium">종목</th>
                   <th className="text-left px-4 py-3.5 font-medium hidden sm:table-cell">시장</th>
@@ -270,11 +270,11 @@ export default function Orders() {
                   const isDelete = deletingIds.has(o.id)
                   return (
                     <tr key={o.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-4 py-3.5 text-gray-600 text-xs font-data hidden sm:table-cell">{o.id}</td>
+                      <td className="px-4 py-3.5 text-th-on-subtle text-xs font-data hidden sm:table-cell">{o.id}</td>
                       <td className="px-4 py-3.5">
-                        <span className="font-medium text-gray-100">{o.stock_name || o.stock_code}</span>
+                        <span className="font-medium text-th-on-surface">{o.stock_name || o.stock_code}</span>
                         {o.stock_name && (
-                          <span className="ml-2 text-xs text-gray-600 font-data">{o.stock_code}</span>
+                          <span className="ml-2 text-xs text-th-on-subtle font-data">{o.stock_code}</span>
                         )}
                         {o.source === 'MANUAL' && (
                           <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-white/5 text-gray-500">수동</span>
@@ -296,23 +296,23 @@ export default function Orders() {
                           {o.order_type === 'BUY' ? '매수' : '매도'}
                         </span>
                       </td>
-                      <td className="px-4 py-3.5 text-right text-gray-400 font-data hidden sm:table-cell">
+                      <td className="px-4 py-3.5 text-right text-th-on-muted font-data hidden sm:table-cell">
                         {(o.qty || 0).toLocaleString()}
                       </td>
                       <td className="px-4 py-3.5 text-right font-data">
                         {isFilled && o.filled_price > 0 ? (
                           <span className="text-amber-400 font-medium">{fmtPrice(o.filled_price, o.market)}</span>
                         ) : o.price > 0 ? (
-                          <span className="text-gray-400">{fmtPrice(o.price, o.market)}</span>
+                          <span className="text-th-on-muted">{fmtPrice(o.price, o.market)}</span>
                         ) : (
-                          <span className="text-gray-600 text-xs">시장가</span>
+                          <span className="text-th-on-subtle text-xs">시장가</span>
                         )}
                       </td>
                       <td className="px-4 py-3.5 hidden md:table-cell">
                         {o.order_type === 'SELL' && o.sell_reason ? (
-                          <span className="text-xs text-gray-400">{o.sell_reason}</span>
+                          <span className="text-xs text-th-on-muted">{o.sell_reason}</span>
                         ) : (
-                          <span className="text-gray-600 text-xs">-</span>
+                          <span className="text-th-on-subtle text-xs">-</span>
                         )}
                       </td>
                       <td className="px-4 py-3.5">
@@ -320,7 +320,7 @@ export default function Orders() {
                           {STATUS_LABEL[o.status] || o.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3.5 text-gray-600 text-xs hidden sm:table-cell">{fmtDate(o.created_at)}</td>
+                      <td className="px-4 py-3.5 text-th-on-subtle text-xs hidden sm:table-cell">{fmtDate(o.created_at)}</td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-1">
                           {isPending && (
@@ -335,7 +335,7 @@ export default function Orders() {
                           <button
                             onClick={() => handleDelete(o.id)}
                             disabled={isDelete}
-                            className="text-xs px-2 py-0.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded disabled:opacity-40 transition-colors"
+                            className="text-xs px-2 py-0.5 text-th-on-muted hover:text-red-400 hover:bg-red-500/10 rounded disabled:opacity-40 transition-colors"
                           >
                             {isDelete ? '...' : '삭제'}
                           </button>
@@ -351,9 +351,9 @@ export default function Orders() {
       )}
 
       <div ref={sentinelRef} className="h-4" />
-      {loadingMore && <p className="text-center text-gray-600 text-xs py-2">불러오는 중...</p>}
+      {loadingMore && <p className="text-center text-th-on-subtle text-xs py-2">불러오는 중...</p>}
       {!hasMore && allOrders.length > 0 && (
-        <p className="text-center text-gray-700 text-xs py-2">모든 내역을 불러왔습니다.</p>
+        <p className="text-center text-th-on-subtle text-xs py-2">모든 내역을 불러왔습니다.</p>
       )}
     </div>
   )

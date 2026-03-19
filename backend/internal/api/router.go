@@ -60,6 +60,11 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 			ws.POST("/connect", h.ConnectWebSocket)
 			ws.POST("/disconnect", h.DisconnectWebSocket)
 		}
+
+		stats := api.Group("/stats")
+		{
+			stats.GET("/daily-pnl", h.GetDailyPnL)
+		}
 	}
 
 	// Health check

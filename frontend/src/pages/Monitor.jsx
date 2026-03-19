@@ -24,7 +24,7 @@ const INTERVAL_OPTIONS = [
 ]
 
 function SectionLabel({ children }) {
-  return <p className="text-[10px] text-gray-600 uppercase tracking-widest mb-1">{children}</p>
+  return <p className="text-[10px] text-th-on-subtle uppercase tracking-widest mb-1">{children}</p>
 }
 SectionLabel.propTypes = { children: PropTypes.node }
 
@@ -68,22 +68,22 @@ export default function Monitor() {
       {/* 헤더 */}
       <div className="flex items-center justify-between flex-wrap gap-3 pt-2">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">모니터링</h1>
-          <p className="text-xs text-gray-500 mt-0.5 uppercase tracking-widest">
+          <h1 className="text-2xl font-bold text-th-on-surface tracking-tight">모니터링</h1>
+          <p className="text-xs text-th-on-muted mt-0.5 uppercase tracking-widest">
             {loading ? '로딩 중...' : `모니터링 중 ${positions.length}개`}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {/* 새로고침 주기 */}
-          <div className="flex items-center gap-0.5 bg-[#1F1F22] rounded-lg p-1">
+          <div className="flex items-center gap-0.5 bg-th-surface rounded-lg p-1">
             {INTERVAL_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setIntervalSec(opt.value)}
                 className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                   intervalSec === opt.value
-                    ? 'bg-[#2A2A2D] text-white font-medium'
-                    : 'text-gray-500 hover:text-white'
+                    ? 'bg-th-surface-high text-th-on-surface font-medium'
+                    : 'text-th-on-muted hover:text-th-on-surface'
                 }`}
               >
                 {opt.label}
@@ -92,7 +92,7 @@ export default function Monitor() {
           </div>
           <button
             onClick={refetch}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 bg-[#1F1F22] hover:bg-[#2A2A2D] rounded-lg transition-colors text-gray-400 hover:text-white"
+            className="flex items-center gap-1.5 text-xs px-3 py-2 bg-th-surface hover:bg-th-surface-high rounded-lg transition-colors text-th-on-muted hover:text-th-on-surface"
           >
             <span className="material-symbols-outlined text-[16px]">refresh</span>
             새로고침
@@ -105,23 +105,23 @@ export default function Monitor() {
       )}
 
       {loading ? (
-        <p className="text-gray-600 text-sm">로딩 중...</p>
+        <p className="text-th-on-subtle text-sm">로딩 중...</p>
       ) : positions.length === 0 ? (
-        <div className="bg-[#1F1F22] rounded-xl p-12 text-center">
-          <span className="material-symbols-outlined text-[40px] text-gray-700 block mb-2">monitor_heart</span>
-          <p className="text-gray-400 font-medium">모니터링 중인 포지션이 없습니다</p>
-          <p className="text-xs text-gray-600 mt-2">
-            주문 체결 후 <code className="bg-[#2A2A2D] px-1 rounded text-gray-400">target_pct</code>와{' '}
-            <code className="bg-[#2A2A2D] px-1 rounded text-gray-400">stop_pct</code> 설정 시 자동 등록됩니다.
+        <div className="bg-th-surface rounded-xl p-12 text-center">
+          <span className="material-symbols-outlined text-[40px] text-th-on-subtle block mb-2">monitor_heart</span>
+          <p className="text-th-on-muted font-medium">모니터링 중인 포지션이 없습니다</p>
+          <p className="text-xs text-th-on-subtle mt-2">
+            주문 체결 후 <code className="bg-th-surface-high px-1 rounded text-th-on-muted">target_pct</code>와{' '}
+            <code className="bg-th-surface-high px-1 rounded text-th-on-muted">stop_pct</code> 설정 시 자동 등록됩니다.
           </p>
         </div>
       ) : (
         <>
           {/* 데스크탑 테이블 */}
-          <div className="hidden sm:block bg-[#1B1B1E] rounded-xl overflow-hidden">
+          <div className="hidden sm:block bg-th-surface-low rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-[10px] text-gray-600 uppercase tracking-widest">
+                <tr className="text-[10px] text-th-on-subtle uppercase tracking-widest">
                   <th className="text-left px-5 py-3.5 font-medium">종목</th>
                   <th className="text-left px-5 py-3.5 font-medium">시장</th>
                   <th className="text-right px-5 py-3.5 font-medium">체결가</th>
@@ -141,9 +141,9 @@ export default function Monitor() {
                   return (
                     <tr key={p.stock_code} className="hover:bg-white/[0.02] transition-colors">
                       <td className="px-5 py-4">
-                        <span className="font-medium text-gray-100">{p.stock_name || p.stock_code}</span>
+                        <span className="font-medium text-th-on-surface">{p.stock_name || p.stock_code}</span>
                         {p.stock_name && (
-                          <span className="ml-2 text-xs text-gray-600 font-data">{p.stock_code}</span>
+                          <span className="ml-2 text-xs text-th-on-subtle font-data">{p.stock_code}</span>
                         )}
                       </td>
                       <td className="px-5 py-4">
@@ -153,7 +153,7 @@ export default function Monitor() {
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-blue-500/10 text-blue-400">국내</span>
                         )}
                       </td>
-                      <td className="px-5 py-4 text-right text-gray-400 font-data">{fmtKRW(p.filled_price)}</td>
+                      <td className="px-5 py-4 text-right text-th-on-muted font-data">{fmtKRW(p.filled_price)}</td>
                       <td className="px-5 py-4 text-right text-red-400 font-medium font-data">{fmtKRW(p.target_price)}</td>
                       <td className="px-5 py-4 text-right text-blue-400 font-medium font-data">{fmtKRW(p.stop_price)}</td>
                       <td className="px-5 py-4 text-center">
@@ -166,12 +166,12 @@ export default function Monitor() {
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-blue-500/10 text-blue-400 font-data">-{stopPct}%</span>
                         ) : '-'}
                       </td>
-                      <td className="px-5 py-4 text-gray-600 text-xs">{fmtDate(p.created_at)}</td>
+                      <td className="px-5 py-4 text-th-on-subtle text-xs">{fmtDate(p.created_at)}</td>
                       <td className="px-5 py-4">
                         <button
                           onClick={() => handleRemove(p.stock_code)}
                           disabled={isRemoving}
-                          className="text-xs px-3 py-1 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-full disabled:opacity-40 transition-colors"
+                          className="text-xs px-3 py-1 text-th-on-muted hover:text-red-400 hover:bg-red-500/10 rounded-full disabled:opacity-40 transition-colors"
                         >
                           {isRemoving ? '...' : '해제'}
                         </button>
@@ -188,18 +188,18 @@ export default function Monitor() {
             {positions.map((p) => {
               const isRemoving = removingCodes.has(p.stock_code)
               return (
-                <div key={p.stock_code} className="bg-[#1F1F22] rounded-xl p-4">
+                <div key={p.stock_code} className="bg-th-surface rounded-xl p-4">
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <span className="font-medium text-gray-100">{p.stock_name || p.stock_code}</span>
+                      <span className="font-medium text-th-on-surface">{p.stock_name || p.stock_code}</span>
                       {p.stock_name && (
-                        <span className="ml-2 text-xs text-gray-600 font-data">{p.stock_code}</span>
+                        <span className="ml-2 text-xs text-th-on-subtle font-data">{p.stock_code}</span>
                       )}
                     </div>
                     <button
                       onClick={() => handleRemove(p.stock_code)}
                       disabled={isRemoving}
-                      className="text-xs px-2.5 py-1 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-full disabled:opacity-40 transition-colors"
+                      className="text-xs px-2.5 py-1 text-th-on-muted hover:text-red-400 hover:bg-red-500/10 rounded-full disabled:opacity-40 transition-colors"
                     >
                       {isRemoving ? '...' : '해제'}
                     </button>
@@ -207,7 +207,7 @@ export default function Monitor() {
                   <div className="grid grid-cols-3 gap-3 text-xs">
                     <div>
                       <SectionLabel>체결가</SectionLabel>
-                      <p className="text-gray-400 font-data">{fmtKRW(p.filled_price)}</p>
+                      <p className="text-th-on-muted font-data">{fmtKRW(p.filled_price)}</p>
                     </div>
                     <div>
                       <SectionLabel>목표가</SectionLabel>
@@ -218,7 +218,7 @@ export default function Monitor() {
                       <p className="text-blue-400 font-medium font-data">{fmtKRW(p.stop_price)}</p>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-600 mt-3">{fmtDate(p.created_at)}</p>
+                  <p className="text-xs text-th-on-subtle mt-3">{fmtDate(p.created_at)}</p>
                 </div>
               )
             })}

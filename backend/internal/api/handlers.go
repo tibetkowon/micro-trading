@@ -1219,3 +1219,18 @@ func (h *Handler) DisconnectWebSocket(c *gin.Context) {
 	h.wsClient.Disconnect()
 	c.JSON(http.StatusOK, gin.H{"message": "WebSocket disconnected"})
 }
+
+// GET /api/stats/daily-pnl?days=7|30
+// 최근 N일간 일별 실현 손익을 반환합니다 (1 ≤ days ≤ 365, default 30).
+func (h *Handler) GetDailyPnL(c *gin.Context) {
+	days, err := strconv.Atoi(c.DefaultQuery("days", "30"))
+	if err != nil || days < 1 || days > 365 {
+		days = 30
+	}
+	data, dbErr := h.db.GetDailyPnL(c.Request.Context(), days)
+	if dbErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": dbErr.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"days": days, "data": data})
+}

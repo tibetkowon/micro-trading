@@ -14,6 +14,7 @@ export default {
         'th-surface-high':    'var(--th-surface-high)',
         'th-surface-highest': 'var(--th-surface-highest)',
         'th-surface-low':     'var(--th-surface-low)',
+        'th-sidebar':         'var(--th-sidebar)',
         'th-on-surface':      'var(--th-on-surface)',
         'th-on-muted':        'var(--th-on-muted)',
         'th-on-subtle':       'var(--th-on-subtle)',

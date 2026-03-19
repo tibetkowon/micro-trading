@@ -400,4 +400,27 @@ export const handlers = [
 
   http.get('/api/settings', () => HttpResponse.json(settings)),
   http.patch('/api/settings', () => HttpResponse.json({ message: '설정이 저장되었습니다.' })),
+
+  // ── 일별 손익 ──
+  http.get('/api/stats/daily-pnl', ({ request }) => {
+    const url = new URL(request.url)
+    const days = parseInt(url.searchParams.get('days') || '30')
+    const data = []
+    const pnlSeed = [45000, -12000, 0, 68000, -23000, 32000, 0, 15000, -8000, 52000,
+                     0, 27000, -18000, 41000, 0, 63000, -5000, 29000, 0, 38000,
+                     -31000, 0, 55000, 12000, -9000, 47000, 0, 22000, -14000, 71000]
+    let idx = 0
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const dow = d.getDay()
+      if (dow === 0 || dow === 6) continue // 주말 제외
+      data.push({
+        date: d.toISOString().split('T')[0],
+        pnl: pnlSeed[idx % pnlSeed.length],
+      })
+      idx++
+    }
+    return HttpResponse.json({ days, data })
+  }),
 ]
