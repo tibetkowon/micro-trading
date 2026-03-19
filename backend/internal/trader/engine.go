@@ -17,6 +17,19 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
 )
 
+// filteredStockEntry records a single stock removed by the hard filter with the reason.
+type filteredStockEntry struct {
+	StockCode     string  `json:"stock_code"`
+	StockName     string  `json:"stock_name"`
+	FilterReason  string  `json:"filter_reason"`
+	RSI14         float64 `json:"rsi14,omitempty"`
+	DisparityM5   float64 `json:"disparity_m5,omitempty"`
+	HighPriceDiff float64 `json:"high_price_diff,omitempty"`
+	OpenPriceDiff float64 `json:"open_price_diff,omitempty"`
+	MA5           float64 `json:"ma5,omitempty"`
+	MA20          float64 `json:"ma20,omitempty"`
+}
+
 // EngineState represents the current phase of the trading engine.
 type EngineState string
 
@@ -225,7 +238,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	excludedCodes := e.getTodayTradedCodes(ctx)
 
 	// Fetch rankings based on configured types.
-	rankings, err := e.getRankings(ctx, settings)
+	rankings, rankingLogID, err := e.getRankings(ctx, settings)
 	if err != nil {
 		e.setState(StateMonitoring)
 		return fmt.Errorf("getRankings: %w", err)
@@ -340,7 +353,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no affordable stocks after price filter (cash: %.0f)", availableCash)
 	}
 
-	// 하드 필터: LLM 전달 전 과열/이격 과대 종목 제거
+	// 하드 필터: LLM 전달 전 과열/이격 과대 종목 제거 (제거된 종목은 ranking log에 기록)
 	{
 		filterRsiMax := settings.FilterRsiMax
 		if filterRsiMax == 0 {
@@ -358,37 +371,42 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		if filterOpenPriceDiffMax == 0 {
 			filterOpenPriceDiffMax = 20.0
 		}
-		filtered := rankings[:0]
+		var filteredOut []filteredStockEntry
+		var passed []RankItem
 		for _, item := range rankings {
-			// RSI 과열 제외
 			if item.RSI14 > 0 && item.RSI14 >= filterRsiMax {
 				logger.Info("engine: hard filter RSI", map[string]any{"stock_code": item.StockCode, "rsi": item.RSI14, "threshold": filterRsiMax})
+				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("RSI 과열 (%.1f >= %.1f)", item.RSI14, filterRsiMax), RSI14: item.RSI14})
 				continue
 			}
-			// 5분봉 이격도 초과 제외
 			if item.DisparityM5 > filterDisparityM5Max {
 				logger.Info("engine: hard filter disparity_m5", map[string]any{"stock_code": item.StockCode, "disparity_m5": item.DisparityM5, "threshold": filterDisparityM5Max})
+				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("5분봉 이격도 초과 (%.1f > %.1f)", item.DisparityM5, filterDisparityM5Max), DisparityM5: item.DisparityM5})
 				continue
 			}
-			// 고가 대비 너무 많이 흘러내린 종목 제외
 			if item.HighPriceDiff != 0 && item.HighPriceDiff < filterHighPriceDiffMin {
 				logger.Info("engine: hard filter high_price_diff", map[string]any{"stock_code": item.StockCode, "high_price_diff": item.HighPriceDiff, "threshold": filterHighPriceDiffMin})
+				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("고가 대비 과다 하락 (%.1f%% < %.1f%%)", item.HighPriceDiff, filterHighPriceDiffMin), HighPriceDiff: item.HighPriceDiff})
 				continue
 			}
-			// 당일 상한가 영역 (시가 대비 과도 상승) 제외
 			if item.OpenPriceDiff > filterOpenPriceDiffMax {
 				logger.Info("engine: hard filter open_price_diff", map[string]any{"stock_code": item.StockCode, "open_price_diff": item.OpenPriceDiff, "threshold": filterOpenPriceDiffMax})
+				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("시가 대비 과다 상승 (%.1f%% > %.1f%%)", item.OpenPriceDiff, filterOpenPriceDiffMax), OpenPriceDiff: item.OpenPriceDiff})
 				continue
 			}
-			filtered = append(filtered, item)
+			passed = append(passed, item)
 		}
-		rankings = filtered
+		rankings = passed
+		if rankingLogID > 0 && len(filteredOut) > 0 {
+			filteredJSON, _ := json.Marshal(filteredOut)
+			e.db.ExecContext(ctx, `UPDATE trader_ranking_logs SET filtered_stocks=? WHERE id=?`, string(filteredJSON), rankingLogID) //nolint:errcheck
+		}
 	}
 	if len(rankings) == 0 {
 		const failMsg = "no stocks passed hard filter (RSI/disparity/high-price/open-price)"
 		e.db.ExecContext(ctx, //nolint:errcheck
-			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, fail_reason, market) VALUES (?,?,?,?,?)`,
-			0, "[]", "", failMsg, "KR")
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, fail_reason, market, ranking_log_id) VALUES (?,?,?,?,?,?)`,
+			0, "[]", "", failMsg, "KR", rankingLogID)
 		e.setState(StateMonitoring)
 		return fmt.Errorf("%s", failMsg)
 	}
@@ -398,8 +416,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	{
 		candidatesJSON, _ := json.Marshal(rankings)
 		res, dbErr := e.db.ExecContext(ctx,
-			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, market) VALUES (?,?,?,?)`,
-			len(rankings), string(candidatesJSON), "", "KR")
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, market, ranking_log_id) VALUES (?,?,?,?,?)`,
+			len(rankings), string(candidatesJSON), "", "KR", rankingLogID)
 		if dbErr == nil {
 			selectionLogID, _ = res.LastInsertId()
 		}
@@ -706,7 +724,8 @@ func (e *Engine) getTodayTradedCodes(ctx context.Context) []string {
 // getRankings calls each configured ranking API, applies per-type filters,
 // then returns only stocks that passed ALL enabled ranking types (AND logic).
 // Fields from each ranking type are merged into a single RankItem per stock.
-func (e *Engine) getRankings(ctx context.Context, settings database.TradingSettings) ([]RankItem, error) {
+// The second return value is the ranking log ID (0 if log insert failed).
+func (e *Engine) getRankings(ctx context.Context, settings database.TradingSettings) ([]RankItem, int64, error) {
 	if e.market == "US" {
 		return e.getRankingsUS(ctx, settings)
 	}
@@ -858,7 +877,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 
 	if len(byType) == 0 {
 		typesJSON, _ := json.Marshal(settings.RankingTypes)
-		e.db.InsertRankingLog(ctx, models.TraderRankingLog{ //nolint:errcheck
+		_, _ = e.db.InsertRankingLog(ctx, models.TraderRankingLog{
 			RankingTypes:      string(typesJSON),
 			PriceMin:          settings.RankingPriceMin,
 			PriceMax:          settings.RankingPriceMax,
@@ -872,7 +891,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			ErrorMessage:      "no ranking types configured",
 			Market:            "KR",
 		})
-		return nil, fmt.Errorf("no ranking types configured")
+		return nil, 0, fmt.Errorf("no ranking types configured")
 	}
 
 	var result []RankItem
@@ -969,7 +988,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	}
 	typesJSON, _ := json.Marshal(settings.RankingTypes)
 	resultStocksJSON, _ := json.Marshal(result)
-	if err := e.db.InsertRankingLog(ctx, models.TraderRankingLog{
+	rankingLogID, logErr := e.db.InsertRankingLog(ctx, models.TraderRankingLog{
 		RankingTypes:      string(typesJSON),
 		PriceMin:          settings.RankingPriceMin,
 		PriceMax:          settings.RankingPriceMax,
@@ -981,15 +1000,17 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		IntersectionCount: len(result),
 		ResultStocks:      string(resultStocksJSON),
 		Market:            "KR",
-	}); err != nil {
-		logger.Warn("engine: InsertRankingLog failed", map[string]any{"error": err.Error()})
+	})
+	if logErr != nil {
+		logger.Warn("engine: InsertRankingLog failed", map[string]any{"error": logErr.Error()})
 	}
 
-	return result, nil
+	return result, rankingLogID, nil
 }
 
 // getRankingsUS fetches overseas volume ranking for US market.
-func (e *Engine) getRankingsUS(ctx context.Context, settings database.TradingSettings) ([]RankItem, error) {
+// The second return value is the ranking log ID (0 if log insert failed).
+func (e *Engine) getRankingsUS(ctx context.Context, settings database.TradingSettings) ([]RankItem, int64, error) {
 	excd := settings.USRankingExchange
 	if excd == "" {
 		excd = "NAS"
@@ -1007,7 +1028,7 @@ func (e *Engine) getRankingsUS(ctx context.Context, settings database.TradingSet
 
 	items, err := e.kisClient.GetOverseasVolumeRank(ctx, excd, prc1, prc2, volRang)
 	if err != nil {
-		return nil, fmt.Errorf("GetOverseasVolumeRank: %w", err)
+		return nil, 0, fmt.Errorf("GetOverseasVolumeRank: %w", err)
 	}
 
 	result := make([]RankItem, 0, len(items))
@@ -1026,7 +1047,7 @@ func (e *Engine) getRankingsUS(ctx context.Context, settings database.TradingSet
 	}
 
 	typesJSON, _ := json.Marshal(settings.USRankingTypes)
-	e.db.InsertRankingLog(ctx, models.TraderRankingLog{ //nolint:errcheck
+	rankingLogID, logErr := e.db.InsertRankingLog(ctx, models.TraderRankingLog{
 		RankingTypes:      string(typesJSON),
 		PriceMin:          prc1,
 		PriceMax:          prc2,
@@ -1034,8 +1055,11 @@ func (e *Engine) getRankingsUS(ctx context.Context, settings database.TradingSet
 		IntersectionCount: len(result),
 		Market:            "US",
 	})
+	if logErr != nil {
+		logger.Warn("engine US: InsertRankingLog failed", map[string]any{"error": logErr.Error()})
+	}
 
-	return result, nil
+	return result, rankingLogID, nil
 }
 
 // excdToExchCode converts WebSocket EXCD to order OVRS_EXCG_CD.
@@ -1066,7 +1090,7 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 
 	excludedCodes := e.getTodayTradedCodes(ctx)
 
-	rankings, err := e.getRankings(ctx, settings)
+	rankings, rankingLogID, err := e.getRankings(ctx, settings)
 	if err != nil {
 		e.setState(StateMonitoring)
 		return fmt.Errorf("getRankings US: %w", err)
@@ -1177,7 +1201,7 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		return fmt.Errorf("no US stocks passed min trading value filter")
 	}
 
-	// 하드 필터: LLM 전달 전 부적격 종목 제거
+	// 하드 필터: LLM 전달 전 부적격 종목 제거 (제거된 종목은 ranking log에 기록)
 	{
 		filterRsiMax := settings.FilterRsiMax
 		if filterRsiMax == 0 {
@@ -1195,42 +1219,47 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		if filterOpenPriceDiffMax == 0 {
 			filterOpenPriceDiffMax = 20.0
 		}
-		filtered := rankings[:0]
+		var filteredOut []filteredStockEntry
+		var passed []RankItem
 		for _, item := range rankings {
-			// 고가 대비 초과 하락 종목 제거 (매도 압력 심함)
 			if item.HighPriceDiff != 0 && item.HighPriceDiff < filterHighPriceDiffMin {
 				logger.Info("engine US: hard filter high_price_diff", map[string]any{"stock_code": item.StockCode, "high_price_diff": item.HighPriceDiff, "threshold": filterHighPriceDiffMin})
+				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("고가 대비 과다 하락 (%.1f%% < %.1f%%)", item.HighPriceDiff, filterHighPriceDiffMin), HighPriceDiff: item.HighPriceDiff})
 				continue
 			}
-			// MA5 < MA20: 하락 추세 종목 제거
 			if item.MA5 > 0 && item.MA20 > 0 && item.MA5 < item.MA20 {
 				logger.Info("engine US: hard filter MA trend", map[string]any{"stock_code": item.StockCode, "ma5": item.MA5, "ma20": item.MA20})
+				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("MA 하락추세 (MA5=%.2f < MA20=%.2f)", item.MA5, item.MA20), MA5: item.MA5, MA20: item.MA20})
 				continue
 			}
-			// RSI 과열 제외
 			if item.RSI14 > 0 && item.RSI14 >= filterRsiMax {
 				logger.Info("engine US: hard filter RSI", map[string]any{"stock_code": item.StockCode, "rsi": item.RSI14, "threshold": filterRsiMax})
+				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("RSI 과열 (%.1f >= %.1f)", item.RSI14, filterRsiMax), RSI14: item.RSI14})
 				continue
 			}
-			// 5분봉 이격도 초과 제외
 			if item.DisparityM5 > filterDisparityM5Max {
 				logger.Info("engine US: hard filter disparity_m5", map[string]any{"stock_code": item.StockCode, "disparity_m5": item.DisparityM5, "threshold": filterDisparityM5Max})
+				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("5분봉 이격도 초과 (%.1f > %.1f)", item.DisparityM5, filterDisparityM5Max), DisparityM5: item.DisparityM5})
 				continue
 			}
-			// 당일 극단 고가 영역 (시가 대비 과도 상승) 제외
 			if item.OpenPriceDiff > filterOpenPriceDiffMax {
 				logger.Info("engine US: hard filter open_price_diff", map[string]any{"stock_code": item.StockCode, "open_price_diff": item.OpenPriceDiff, "threshold": filterOpenPriceDiffMax})
+				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("시가 대비 과다 상승 (%.1f%% > %.1f%%)", item.OpenPriceDiff, filterOpenPriceDiffMax), OpenPriceDiff: item.OpenPriceDiff})
 				continue
 			}
-			filtered = append(filtered, item)
+			passed = append(passed, item)
 		}
-		rankings = filtered
+		rankings = passed
+		if rankingLogID > 0 && len(filteredOut) > 0 {
+			filteredJSON, _ := json.Marshal(filteredOut)
+			e.db.ExecContext(ctx, `UPDATE trader_ranking_logs SET filtered_stocks=? WHERE id=?`, string(filteredJSON), rankingLogID) //nolint:errcheck
+		}
 	}
 	if len(rankings) == 0 {
 		const failMsg = "no US stocks passed hard filter (high-price/MA trend/RSI/disparity/open-price)"
 		e.db.ExecContext(ctx, //nolint:errcheck
-			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, fail_reason, market) VALUES (?,?,?,?,?)`,
-			0, "[]", "", failMsg, "US")
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, fail_reason, market, ranking_log_id) VALUES (?,?,?,?,?,?)`,
+			0, "[]", "", failMsg, "US", rankingLogID)
 		e.setState(StateMonitoring)
 		return fmt.Errorf("%s", failMsg)
 	}
@@ -1240,8 +1269,8 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 	{
 		candidatesJSON, _ := json.Marshal(rankings)
 		res, dbErr := e.db.ExecContext(ctx,
-			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, market) VALUES (?,?,?,?)`,
-			len(rankings), string(candidatesJSON), "", "US")
+			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, market, ranking_log_id) VALUES (?,?,?,?,?)`,
+			len(rankings), string(candidatesJSON), "", "US", rankingLogID)
 		if dbErr == nil {
 			selectionLogID, _ = res.LastInsertId()
 		}

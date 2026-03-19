@@ -429,7 +429,7 @@ func (h *Handler) GetSelectionLogs(c *gin.Context) {
 		`DELETE FROM trader_selection_logs WHERE timestamp < datetime('now', '-30 days')`)
 
 	rows, err := h.db.QueryContext(c.Request.Context(),
-		`SELECT id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason, fail_reason, market
+		`SELECT id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason, fail_reason, market, ranking_log_id
 		 FROM trader_selection_logs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -440,7 +440,7 @@ func (h *Handler) GetSelectionLogs(c *gin.Context) {
 	var logs []models.TraderSelectionLog
 	for rows.Next() {
 		var l models.TraderSelectionLog
-		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.Candidates, &l.LLMResult, &l.SelectedCode, &l.SelectedReason, &l.FailReason, &l.Market); err != nil {
+		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.Candidates, &l.LLMResult, &l.SelectedCode, &l.SelectedReason, &l.FailReason, &l.Market, &l.RankingLogID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}

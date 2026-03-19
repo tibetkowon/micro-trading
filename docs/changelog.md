@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-19 — 프론트엔드 전면 리뉴얼 + 하드필터 로그 연결
+
+- **frontend/tailwind.config.js, index.css**: CSS 커스텀 속성 기반 다크/라이트 테마 토큰 시스템 도입 (`th-*` 변수), Inter+Manrope 폰트
+- **frontend/src/contexts/ThemeContext.jsx** (신규): 다크모드 토글 컨텍스트, localStorage 영속화
+- **frontend/src/App.jsx**: ThemeProvider 래핑, ThemeToggle 버튼, `/stock-logs` 라우트 추가
+- **frontend/src/pages/Dashboard.jsx**: 수익률 0% 버그 수정 (`calcRate` fallback), th-* 토큰 리뉴얼
+- **frontend/src/pages/Monitor.jsx**: 자동 새로고침 주기 선택(수동/5초/10초/30초/1분), 리뉴얼
+- **frontend/src/pages/Orders.jsx**: 무한스크롤, 시장/유형/상태 필터, PENDING 주문 취소 버튼, 수동 동기화 days 선택
+- **frontend/src/pages/ErrorLogs.jsx**: 서비스로그/KIS API 탭 구조, 출처 필터, 테마 토큰 적용
+- **frontend/src/pages/Settings.jsx**: 저장 버튼 sticky 헤더로 이동 (form association), 테마 토큰 전면 교체
+- **frontend/src/pages/StockLogs.jsx** (신규): 순위조회→하드필터→LLM선정 3단계 통합 뷰, 국장/미장 필터
+- **backend/internal/models/models.go**: `TraderRankingLog.FilteredStocks`, `TraderSelectionLog.RankingLogID` 필드 추가
+- **backend/internal/database/db.go**: `filtered_stocks`/`ranking_log_id` ALTER TABLE, `InsertRankingLog` ID 반환으로 변경
+- **backend/internal/trader/engine.go**: 하드필터 제거 종목+사유 JSON 기록, selection log에 ranking_log_id 연결
+- **backend/internal/api/handlers.go**: `GetSelectionLogs`에 `ranking_log_id` 스캔 추가
+
 ## 2026-03-18 — UI B스타일 전체 적용 (Settings.jsx 포함)
 
 ### Task 4: UI 개선 — B스타일 (미니멀 클린) + 한국식 색상 통일
