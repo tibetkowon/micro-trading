@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-03-19 — UI 개선: ThemeToggle 복원, 설정 섹션 재배치, 자동새로고침, 로그 레벨 정리
+
+- **App.jsx**: ThemeToggle 복원 (사이드바 하단), 모바일 햄버거 버튼 LEFT 이동
+- **Settings.jsx**: `(FID_TRGT_EXLS_CLS_CODE)` 레이블 제거, "현재 값" 이진 표시 제거, `step="60"` 추가 (time input 초 단위 숨김), 지수하락임계값 → 거래 제어 섹션, 최소거래대금 → 하드 필터 섹션, AI 설정 → 최하단 이동
+- **StockLogs.jsx**: 순위 유형 한글 표시 (volume→거래량 등), 자동 새로고침 셀렉터 추가
+- **Dashboard.jsx**: 자동 새로고침 셀렉터 추가 (10초/30초/1분/5분)
+- **ErrorLogs.jsx**: 서비스 로그 레벨 표시를 ERROR 고정 (INFO/WARN 개념 제거)
+- **trader/engine.go**: `InsertServiceLog` WARN → ERROR로 통일 (일일손실한도, 미체결타임아웃)
+- **mocks/handlers.js**: 서비스 로그 더미 데이터 모두 ERROR 레벨로 수정
+
+## 2026-03-19 — MSW Mock 데이터 환경 구성
+
+- **frontend/src/mocks/handlers.js** (신규): 전 API 엔드포인트 더미 데이터 핸들러 (서버상태, 잔고, 보유종목, 주문, 모니터, 로그, 설정)
+- **frontend/src/mocks/browser.js** (신규): MSW Service Worker 셋업
+- **frontend/src/main.jsx**: `VITE_USE_MOCK=true` 환경변수 시 MSW 자동 활성화
+- **frontend/.env.development.local** (신규): 로컬 개발 시 mock 모드 ON
+- **frontend/.eslintignore** (신규): `public/` 폴더 ESLint 제외 (mockServiceWorker.js)
+
+## 2026-03-19 — Stitch "Digital Obsidian" 디자인 시스템 적용
+
+- **App.jsx**: 상단 Navbar → 좌측 고정 사이드바(w-64, `#0E0E11`) + 모바일 드로어로 레이아웃 전환, Material Symbols Outlined 아이콘 적용
+- **Dashboard.jsx**: 자산 총액 히어로 패널(glassmorphism, `text-4xl~5xl`), 서버 상태 tonal 배경, 보유종목 테이블 `divide-white/[0.04]` + `hover:bg-white/[0.02]`
+- **Monitor.jsx / Orders.jsx / ErrorLogs.jsx**: 카드 보더 제거, `bg-[#1F1F22]` tonal 레이어링, 로그 좌측 accent `border-l-2` 적용
+- **Settings.jsx**: 인라인 `th-*` 토큰 → 다크 전용 `gray-*` / Tailwind 색상으로 교체, glass-panel 스티키 헤더
+- **index.css**: No-Line Rule 적용 (`.card` 보더 제거), `.glass-panel` 유틸 추가, Material Symbols 기본 font-variation-settings
+- **index.html**: Material Symbols Outlined Google Fonts 링크 추가
+- **StockLogs.jsx**: `th-*` 다크 클래스 교체, useMemo 의존성 경고 수정
+- **ThemeContext.jsx**: `eslint-disable react-refresh/only-export-components` 추가 (lint 경고 해소)
+
 ## 2026-03-19 — 프론트엔드 전면 리뉴얼 + 하드필터 로그 연결
 
 - **frontend/tailwind.config.js, index.css**: CSS 커스텀 속성 기반 다크/라이트 테마 토큰 시스템 도입 (`th-*` 변수), Inter+Manrope 폰트

@@ -10,146 +10,163 @@ import StockLogs from './pages/StockLogs'
 import Settings from './pages/Settings'
 
 const navItems = [
-  { to: '/', label: '대시보드', end: true },
-  { to: '/monitor', label: '모니터' },
-  { to: '/orders', label: '주문 내역' },
-  { to: '/logs', label: '에러 로그' },
-  { to: '/stock-logs', label: '종목 로그' },
-  { to: '/settings', label: '설정' },
+  { to: '/', label: '대시보드', end: true, icon: 'dashboard' },
+  { to: '/monitor', label: '모니터', icon: 'monitor_heart' },
+  { to: '/orders', label: '주문 내역', icon: 'receipt_long' },
+  { to: '/logs', label: '에러 로그', icon: 'report' },
+  { to: '/stock-logs', label: '종목 로그', icon: 'candlestick_chart' },
+  { to: '/settings', label: '설정', icon: 'settings' },
 ]
 
-function SunIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
-    </svg>
-  )
-}
-
-function MoonIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-    </svg>
-  )
-}
-
-function ThemeToggle() {
-  const { isDark, toggle } = useTheme()
-  return (
-    <button
-      onClick={toggle}
-      className="p-2 rounded-lg transition-colors text-th-on-muted hover:text-th-on-surface hover:bg-th-surface-high"
-      aria-label={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
-      title={isDark ? '라이트 모드' : '다크 모드'}
-    >
-      {isDark ? <SunIcon /> : <MoonIcon />}
-    </button>
-  )
-}
-
-function MobileNavLink({ to, label, end, onClick }) {
+function NavItem({ to, label, end, icon, onClick }) {
   return (
     <NavLink
       to={to}
       end={end}
       onClick={onClick}
       className={({ isActive }) =>
-        `block px-4 py-3 text-sm font-medium transition-colors border-b border-th-outline ${
+        `flex items-center gap-3 px-4 py-2.5 rounded-r-xl transition-all duration-150 ${
           isActive
-            ? 'bg-th-surface-high text-th-on-surface'
-            : 'text-th-on-muted hover:bg-th-surface-high hover:text-th-on-surface'
+            ? 'text-orange-500 bg-[#1F1F22] border-l-4 border-orange-500 font-semibold translate-x-0'
+            : 'text-gray-500 hover:text-white hover:bg-[#1F1F22] border-l-4 border-transparent'
         }`
       }
     >
-      {label}
+      <span className="material-symbols-outlined text-[20px] shrink-0">{icon}</span>
+      <span className="text-xs uppercase tracking-widest font-medium">{label}</span>
     </NavLink>
   )
 }
-MobileNavLink.propTypes = {
+NavItem.propTypes = {
   to: PropTypes.string.isRequired,
   label: PropTypes.string.isRequired,
   end: PropTypes.bool,
-  onClick: PropTypes.func.isRequired,
+  icon: PropTypes.string.isRequired,
+  onClick: PropTypes.func,
+}
+
+function Sidebar({ onNavigate }) {
+  return (
+    <aside className="fixed left-0 top-0 h-full w-64 z-40 bg-[#0E0E11] flex flex-col py-8 px-0">
+      {/* 로고 */}
+      <div className="px-8 mb-10">
+        <span className="text-orange-500 font-bold text-lg tracking-tight">Micro</span>
+        <span className="text-white font-bold text-lg tracking-tight"> Trading</span>
+        <p className="text-gray-600 text-[10px] uppercase tracking-widest mt-0.5">AI Auto Trader</p>
+      </div>
+
+      {/* 네비게이션 */}
+      <nav className="flex flex-col gap-0.5 flex-1 pr-4">
+        {navItems.map((item) => (
+          <NavItem
+            key={item.to}
+            to={item.to}
+            label={item.label}
+            end={item.end}
+            icon={item.icon}
+            onClick={onNavigate}
+          />
+        ))}
+      </nav>
+
+      {/* 하단 */}
+      <div className="px-8 pt-6 border-t border-white/5 space-y-3">
+        <ThemeToggle />
+        <div>
+          <p className="text-gray-600 text-[10px] uppercase tracking-widest">KIS API</p>
+          <p className="text-gray-500 text-xs mt-0.5">Korea Investment</p>
+        </div>
+      </div>
+    </aside>
+  )
+}
+Sidebar.propTypes = { onNavigate: PropTypes.func }
+
+function ThemeToggle() {
+  const { isDark, toggle } = useTheme()
+  return (
+    <button
+      onClick={toggle}
+      className="flex items-center gap-2 text-gray-500 hover:text-white transition-colors w-full"
+      title={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
+    >
+      <span className="material-symbols-outlined text-[18px]">
+        {isDark ? 'light_mode' : 'dark_mode'}
+      </span>
+      <span className="text-[11px] uppercase tracking-widest">{isDark ? 'Light Mode' : 'Dark Mode'}</span>
+    </button>
+  )
 }
 
 function AppInner() {
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  function closeDrawer() { setDrawerOpen(false) }
 
   return (
-    <div className="min-h-screen flex flex-col bg-th-bg">
-      <nav className="bg-th-surface border-b border-th-outline relative">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <span className="text-th-on-surface font-semibold tracking-tight text-sm">
-            Micro Trading
+    <div className="min-h-screen bg-[#131316]">
+      {/* 데스크탑 사이드바 */}
+      <div className="hidden md:block">
+        <Sidebar />
+      </div>
+
+      {/* 모바일 상단바 */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center gap-3 px-4 py-3 bg-[#0E0E11] border-b border-white/5">
+        <button
+          onClick={() => setDrawerOpen((o) => !o)}
+          className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+          aria-label="메뉴 열기"
+        >
+          <span className="material-symbols-outlined text-[22px]">
+            {drawerOpen ? 'close' : 'menu'}
           </span>
-
-          {/* 데스크탑 링크 */}
-          <div className="hidden md:flex items-center gap-0.5 flex-wrap">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'bg-th-surface-high text-th-on-surface'
-                      : 'text-th-on-muted hover:text-th-on-surface hover:bg-th-surface-high'
-                  }`
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-1">
-            <ThemeToggle />
-            {/* 햄버거 (모바일) */}
-            <button
-              className="md:hidden text-th-on-muted hover:text-th-on-surface p-2 rounded-lg"
-              onClick={() => setMenuOpen((o) => !o)}
-              aria-label="메뉴 열기"
-            >
-              {menuOpen ? (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              )}
-            </button>
-          </div>
+        </button>
+        <div>
+          <span className="text-orange-500 font-bold text-sm">Micro</span>
+          <span className="text-white font-bold text-sm"> Trading</span>
         </div>
+      </div>
 
-        {/* 모바일 드롭다운 */}
-        {menuOpen && (
-          <div className="md:hidden absolute top-full left-0 right-0 bg-th-surface border-b border-th-outline z-50 shadow-lg">
-            {navItems.map((item) => (
-              <MobileNavLink
-                key={item.to}
-                to={item.to}
-                label={item.label}
-                end={item.end}
-                onClick={() => setMenuOpen(false)}
-              />
-            ))}
+      {/* 모바일 드로어 */}
+      {drawerOpen && (
+        <>
+          <div
+            className="md:hidden fixed inset-0 z-40 bg-black/60"
+            onClick={closeDrawer}
+          />
+          <div className="md:hidden fixed top-0 left-0 h-full w-64 z-50 bg-[#0E0E11] flex flex-col py-8 px-0 shadow-2xl">
+            <div className="px-8 mb-10 mt-2">
+              <span className="text-orange-500 font-bold text-lg tracking-tight">Micro</span>
+              <span className="text-white font-bold text-lg tracking-tight"> Trading</span>
+            </div>
+            <nav className="flex flex-col gap-0.5 flex-1 pr-4">
+              {navItems.map((item) => (
+                <NavItem
+                  key={item.to}
+                  to={item.to}
+                  label={item.label}
+                  end={item.end}
+                  icon={item.icon}
+                  onClick={closeDrawer}
+                />
+              ))}
+            </nav>
           </div>
-        )}
-      </nav>
+        </>
+      )}
 
-      <main className="flex-1 p-4 md:p-6 max-w-screen-2xl mx-auto w-full">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/monitor" element={<Monitor />} />
-          <Route path="/orders" element={<Orders />} />
-          <Route path="/logs" element={<ErrorLogs />} />
-          <Route path="/stock-logs" element={<StockLogs />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
+      {/* 메인 콘텐츠 */}
+      <main className="md:ml-64 min-h-screen pt-14 md:pt-0">
+        <div className="p-4 md:p-8 max-w-screen-xl mx-auto">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/monitor" element={<Monitor />} />
+            <Route path="/orders" element={<Orders />} />
+            <Route path="/logs" element={<ErrorLogs />} />
+            <Route path="/stock-logs" element={<StockLogs />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </div>
       </main>
     </div>
   )

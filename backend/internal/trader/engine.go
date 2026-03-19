@@ -331,7 +331,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			if -pnl >= lossLimit {
 				e.setState(StateMonitoring)
 				msg := fmt.Sprintf("일일 최대 손실 한도 도달 (%.0f원 손실 >= 한도 %.0f원)", -pnl, lossLimit)
-				e.db.InsertServiceLog(ctx, "TRADER", "WARN", msg, "")
+				e.db.InsertServiceLog(ctx, "TRADER", "ERROR", msg, "")
 				return fmt.Errorf("%s", msg)
 			}
 		}
@@ -510,7 +510,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			}
 			logger.Warn("engine: fill timeout, trying next candidate",
 				map[string]any{"stock_code": code})
-			e.db.InsertServiceLog(ctx, "TRADER", "WARN", "미체결 타임아웃 (5분)", fmt.Sprintf("stock_code=%s order_id=%d", code, res.OrderID))
+			e.db.InsertServiceLog(ctx, "TRADER", "ERROR", "미체결 타임아웃 (5분)", fmt.Sprintf("stock_code=%s order_id=%d", code, res.OrderID))
 			continue
 		}
 
@@ -1151,7 +1151,7 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 				if -pnl >= lossLimit {
 					e.setState(StateMonitoring)
 					msg := fmt.Sprintf("미장 일일 최대 손실 한도 도달 ($%.2f 손실 >= 한도 $%.2f)", -pnl, lossLimit)
-					e.db.InsertServiceLog(ctx, "TRADER", "WARN", msg, "")
+					e.db.InsertServiceLog(ctx, "TRADER", "ERROR", msg, "")
 					return fmt.Errorf("%s", msg)
 				}
 			}
@@ -1378,7 +1378,7 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		if !filled {
 			logger.Warn("engine US: fill timeout, trying next candidate",
 				map[string]any{"stock_code": code})
-			e.db.InsertServiceLog(ctx, "TRADER", "WARN", "미장 미체결 타임아웃 (5분)", fmt.Sprintf("stock_code=%s order_id=%d", code, dbOrderID))
+			e.db.InsertServiceLog(ctx, "TRADER", "ERROR", "미장 미체결 타임아웃 (5분)", fmt.Sprintf("stock_code=%s order_id=%d", code, dbOrderID))
 			e.db.ExecContext(ctx, //nolint:errcheck
 				`UPDATE orders SET status = 'FAILED' WHERE id = ?`, dbOrderID)
 			continue

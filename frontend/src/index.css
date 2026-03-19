@@ -57,11 +57,24 @@ body {
   font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
 }
 
-/* 공통 카드 */
+/* 공통 카드 — No-Line Rule: 보더 없이 배경색 레이어링으로만 구분 */
 .card {
   background-color: var(--th-surface);
-  border: 1px solid var(--th-outline);
   border-radius: 0.75rem;
+}
+
+/* 글래스 패널 */
+.glass-panel {
+  background: rgba(31, 31, 34, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 0.75rem;
+}
+
+/* Material Symbols */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
 }
 
 /* 공통 배지 베이스 */

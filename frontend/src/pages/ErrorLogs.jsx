@@ -22,16 +22,15 @@ function ServiceLogsTab() {
 
   return (
     <div>
-      {/* 출처 필터 */}
-      <div className="flex items-center gap-1 bg-th-surface border border-th-outline rounded-lg p-1 w-fit mb-4">
+      <div className="flex items-center gap-0.5 bg-[#1F1F22] rounded-lg p-1 w-fit mb-5">
         {SOURCE_OPTIONS.map((s) => (
           <button
             key={s.key}
             onClick={() => setSource(s.key)}
             className={`px-3 py-1 text-xs rounded-md transition-colors ${
               source === s.key
-                ? 'bg-th-surface-high text-th-on-surface font-medium'
-                : 'text-th-on-muted hover:text-th-on-surface'
+                ? 'bg-[#2A2A2D] text-white font-medium'
+                : 'text-gray-500 hover:text-white'
             }`}
           >
             {s.label}
@@ -39,40 +38,37 @@ function ServiceLogsTab() {
         ))}
       </div>
 
-      {error && <div className="bg-th-loss/10 border border-th-loss/20 text-th-loss rounded-xl p-4 text-sm mb-3">{error}</div>}
+      {error && <div className="bg-red-500/10 text-red-400 rounded-xl p-4 text-sm mb-3">{error}</div>}
       {loading ? (
-        <p className="text-th-on-subtle text-sm">로딩 중...</p>
+        <p className="text-gray-600 text-sm">로딩 중...</p>
       ) : logs.length === 0 ? (
-        <p className="text-th-on-subtle text-sm">기록된 서비스 로그가 없습니다.</p>
+        <div className="bg-[#1F1F22] rounded-xl p-8 text-center">
+          <span className="material-symbols-outlined text-[36px] text-gray-700 block mb-2">check_circle</span>
+          <p className="text-gray-500 text-sm">기록된 서비스 로그가 없습니다.</p>
+        </div>
       ) : (
         <div className="space-y-2">
           {logs.map((log) => (
             <div
               key={log.id}
-              className={`bg-th-surface border rounded-xl px-4 py-3 ${
-                log.level === 'ERROR' ? 'border-th-loss/20' : 'border-th-warn/20'
-              }`}
+              className="rounded-xl px-4 py-3 border-l-2 bg-[#1F1F22] border-red-500/50"
             >
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={`badge shrink-0 ${
-                  log.level === 'ERROR'
-                    ? 'bg-th-loss/10 text-th-loss border-th-loss/20'
-                    : 'bg-th-warn/10 text-th-warn border-th-warn/20'
-                }`}>
-                  {log.level}
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0 bg-red-500/10 text-red-400">
+                  ERROR
                 </span>
-                <span className="badge bg-th-surface-high text-th-on-muted border-th-outline shrink-0">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-white/5 text-gray-500 shrink-0">
                   {log.source}
                 </span>
-                <span className="text-sm text-th-on-surface flex-1 min-w-0">{log.message}</span>
-                <span className="text-xs text-th-on-subtle shrink-0">{fmtDate(log.timestamp)}</span>
+                <span className="text-sm text-gray-200 flex-1 min-w-0">{log.message}</span>
+                <span className="text-xs text-gray-600 shrink-0">{fmtDate(log.timestamp)}</span>
               </div>
               {log.detail && (
                 <details className="mt-2">
-                  <summary className="text-xs text-th-on-subtle cursor-pointer hover:text-th-on-muted select-none">
+                  <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-400 select-none">
                     상세 보기
                   </summary>
-                  <pre className="mt-1.5 text-xs text-th-on-muted bg-th-surface-low rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+                  <pre className="mt-1.5 text-xs text-gray-400 bg-[#131316] rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
                     {log.detail}
                   </pre>
                 </details>
@@ -100,41 +96,46 @@ function KISLogsTab() {
     }
   }
 
-  if (error) return <div className="bg-th-loss/10 border border-th-loss/20 text-th-loss rounded-xl p-4 text-sm">{error}</div>
-  if (loading) return <p className="text-th-on-subtle text-sm">로딩 중...</p>
-  if (logs.length === 0) return <p className="text-th-on-subtle text-sm">기록된 KIS API 에러가 없습니다.</p>
+  if (error) return <div className="bg-red-500/10 text-red-400 rounded-xl p-4 text-sm">{error}</div>
+  if (loading) return <p className="text-gray-600 text-sm">로딩 중...</p>
+  if (logs.length === 0) return (
+    <div className="bg-[#1F1F22] rounded-xl p-8 text-center">
+      <span className="material-symbols-outlined text-[36px] text-gray-700 block mb-2">check_circle</span>
+      <p className="text-gray-500 text-sm">기록된 KIS API 에러가 없습니다.</p>
+    </div>
+  )
 
   return (
     <div className="space-y-2">
       {logs.map((log) => (
-        <div key={log.id} className="bg-th-surface border border-th-loss/20 rounded-xl px-4 py-3">
+        <div key={log.id} className="bg-[#1F1F22] border-l-2 border-red-500/40 rounded-xl px-4 py-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="badge bg-th-loss/10 text-th-loss border-th-loss/20 shrink-0 font-data">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-500/10 text-red-400 shrink-0 font-data">
                 {log.error_code || 'ERR'}
               </span>
-              <span className="text-xs text-th-on-subtle font-data truncate">{log.endpoint}</span>
+              <span className="text-xs text-gray-500 font-data truncate">{log.endpoint}</span>
             </div>
             <div className="flex items-center gap-3 shrink-0">
-              <span className="text-xs text-th-on-subtle">{fmtDate(log.timestamp)}</span>
+              <span className="text-xs text-gray-600">{fmtDate(log.timestamp)}</span>
               <button
                 onClick={() => handleDelete(log.id)}
                 disabled={deletingIds.has(log.id)}
-                className="text-xs px-2.5 py-0.5 text-th-on-subtle hover:text-th-loss hover:bg-th-loss/10 rounded-full disabled:opacity-40 transition-colors"
+                className="text-xs px-2.5 py-0.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-full disabled:opacity-40 transition-colors"
               >
                 {deletingIds.has(log.id) ? '...' : '삭제'}
               </button>
             </div>
           </div>
           {log.error_message && (
-            <p className="text-xs text-th-on-muted mt-1.5">{log.error_message}</p>
+            <p className="text-xs text-gray-400 mt-1.5">{log.error_message}</p>
           )}
           {log.raw_response && (
             <details className="mt-1.5">
-              <summary className="text-xs text-th-on-subtle cursor-pointer hover:text-th-on-muted select-none">
+              <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-400 select-none">
                 Raw Response
               </summary>
-              <pre className="mt-1 text-xs text-th-on-muted bg-th-surface-low rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+              <pre className="mt-1 text-xs text-gray-400 bg-[#131316] rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
                 {log.raw_response}
               </pre>
             </details>
@@ -154,21 +155,21 @@ export default function ErrorLogs() {
   const [tab, setTab] = useState('service')
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-th-on-surface">에러 로그</h1>
-        <p className="text-xs text-th-on-muted mt-0.5">서비스 운영 이벤트 및 KIS API 오류</p>
+    <div className="space-y-6">
+      <div className="pt-2">
+        <h1 className="text-2xl font-bold text-white tracking-tight">에러 로그</h1>
+        <p className="text-xs text-gray-500 mt-0.5 uppercase tracking-widest">서비스 운영 이벤트 및 KIS API 오류</p>
       </div>
 
-      <div className="flex gap-0 border-b border-th-outline">
+      <div className="flex gap-0 border-b border-white/5">
         {TABS.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === key
-                ? 'border-th-primary text-th-on-surface'
-                : 'border-transparent text-th-on-muted hover:text-th-on-surface'
+                ? 'border-orange-500 text-white'
+                : 'border-transparent text-gray-500 hover:text-white'
             }`}
           >
             {label}
