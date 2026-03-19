@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-20 — 라이트/다크 테마 완전 동작 + 실현 손익 그래프 추가
+
+- **전 페이지 테마 토큰화**: 모든 hardcoded hex 색상(`bg-[#131316]` 등) → CSS semantic token (`bg-th-*`) 교체, 라이트/다크 모드 완전 분리
+- **index.css**: `--th-sidebar` 토큰 추가, `.glass-panel` 라이트 모드 지원
+- **tailwind.config.js**: `th-sidebar` 토큰 등록
+- **Dashboard.jsx**: 실현 손익 그래프 추가 (recharts, 1주일/1달 탭, 일별 Bar + 누적 Line)
+- **Backend `db.go`**: `GetDailyPnL(days)` 함수 추가 — AGENT SELL 기준 일별 집계
+- **Backend `handlers.go`**: `GET /api/stats/daily-pnl?days=N` 핸들러 추가
+- **Backend `router.go`**: `/api/stats` 라우트 그룹 등록
+- **MSW mock**: `/api/stats/daily-pnl` 목 데이터 추가
+
 ## 2026-03-19 — UI 개선: ThemeToggle 복원, 설정 섹션 재배치, 자동새로고침, 로그 레벨 정리
 
 - **App.jsx**: ThemeToggle 복원 (사이드바 하단), 모바일 햄버거 버튼 LEFT 이동
