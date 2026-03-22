@@ -429,7 +429,7 @@ func (h *Handler) GetSelectionLogs(c *gin.Context) {
 		`DELETE FROM trader_selection_logs WHERE timestamp < datetime('now', '-30 days')`)
 
 	rows, err := h.db.QueryContext(c.Request.Context(),
-		`SELECT id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason, fail_reason, market
+		`SELECT id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason, fail_reason, market, ranking_log_id
 		 FROM trader_selection_logs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -440,7 +440,7 @@ func (h *Handler) GetSelectionLogs(c *gin.Context) {
 	var logs []models.TraderSelectionLog
 	for rows.Next() {
 		var l models.TraderSelectionLog
-		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.Candidates, &l.LLMResult, &l.SelectedCode, &l.SelectedReason, &l.FailReason, &l.Market); err != nil {
+		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.Candidates, &l.LLMResult, &l.SelectedCode, &l.SelectedReason, &l.FailReason, &l.Market, &l.RankingLogID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -577,6 +577,23 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"filter_open_price_diff_max": ts.FilterOpenPriceDiffMax,
 		// 지수 하락 임계값
 		"index_drop_threshold_pct": ts.IndexDropThresholdPct,
+		// 요일 스케줄
+		"trading_days": ts.TradingDays,
+		// AI 매매 기준값 — 하드 리젝션
+		"hard_disparity_m5_min":   ts.HardDisparityM5Min,
+		"hard_disparity_m5_max":   ts.HardDisparityM5Max,
+		"hard_high_price_diff_max": ts.HardHighPriceDiffMax,
+		"hard_high_price_diff_min": ts.HardHighPriceDiffMin,
+		"hard_prev_vol_ratio_max":  ts.HardPrevVolRatioMax,
+		"hard_strength_min":        ts.HardStrengthMin,
+		"hard_rsi_max":             ts.HardRSIMax,
+		"hard_open_price_diff_max": ts.HardOpenPriceDiffMax,
+		// AI 매매 기준값 — 랭킹 기준
+		"vwap_diff_min":    ts.VWAPDiffMin,
+		"vwap_diff_max":    ts.VWAPDiffMax,
+		"rsi_buy_min":      ts.RSIBuyMin,
+		"rsi_buy_max":      ts.RSIBuyMax,
+		"bid_ask_ratio_min": ts.BidAskRatioMin,
 	})
 }
 
@@ -641,6 +658,23 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		FilterOpenPriceDiffMax *float64 `json:"filter_open_price_diff_max"`
 		// 지수 하락 임계값
 		IndexDropThresholdPct *float64 `json:"index_drop_threshold_pct"`
+		// 요일 스케줄
+		TradingDays []int `json:"trading_days"`
+		// AI 매매 기준값 — 하드 리젝션 룰
+		HardDisparityM5Min    *float64 `json:"hard_disparity_m5_min"`
+		HardDisparityM5Max    *float64 `json:"hard_disparity_m5_max"`
+		HardHighPriceDiffMax  *float64 `json:"hard_high_price_diff_max"`
+		HardHighPriceDiffMin  *float64 `json:"hard_high_price_diff_min"`
+		HardPrevVolRatioMax   *float64 `json:"hard_prev_vol_ratio_max"`
+		HardStrengthMin       *float64 `json:"hard_strength_min"`
+		HardRSIMax            *float64 `json:"hard_rsi_max"`
+		HardOpenPriceDiffMax  *float64 `json:"hard_open_price_diff_max"`
+		// AI 매매 기준값 — 랭킹 기준
+		VWAPDiffMin      *float64 `json:"vwap_diff_min"`
+		VWAPDiffMax      *float64 `json:"vwap_diff_max"`
+		RSIBuyMin        *float64 `json:"rsi_buy_min"`
+		RSIBuyMax        *float64 `json:"rsi_buy_max"`
+		BidAskRatioMin   *float64 `json:"bid_ask_ratio_min"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1014,6 +1048,82 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	// 요일 스케줄 (trading_days)
+	if req.TradingDays != nil {
+		b, _ := json.Marshal(req.TradingDays)
+		if !save("trading_days", string(b)) {
+			return
+		}
+	}
+
+	// AI 매매 기준값 — 하드 리젝션 룰
+	if req.HardDisparityM5Min != nil {
+		if !save("hard_disparity_m5_min", strconv.FormatFloat(*req.HardDisparityM5Min, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardDisparityM5Max != nil {
+		if !save("hard_disparity_m5_max", strconv.FormatFloat(*req.HardDisparityM5Max, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardHighPriceDiffMax != nil {
+		if !save("hard_high_price_diff_max", strconv.FormatFloat(*req.HardHighPriceDiffMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardHighPriceDiffMin != nil {
+		if !save("hard_high_price_diff_min", strconv.FormatFloat(*req.HardHighPriceDiffMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardPrevVolRatioMax != nil {
+		if !save("hard_prev_vol_ratio_max", strconv.FormatFloat(*req.HardPrevVolRatioMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardStrengthMin != nil {
+		if !save("hard_strength_min", strconv.FormatFloat(*req.HardStrengthMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardRSIMax != nil {
+		if !save("hard_rsi_max", strconv.FormatFloat(*req.HardRSIMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardOpenPriceDiffMax != nil {
+		if !save("hard_open_price_diff_max", strconv.FormatFloat(*req.HardOpenPriceDiffMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	// AI 매매 기준값 — 랭킹 기준
+	if req.VWAPDiffMin != nil {
+		if !save("vwap_diff_min", strconv.FormatFloat(*req.VWAPDiffMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.VWAPDiffMax != nil {
+		if !save("vwap_diff_max", strconv.FormatFloat(*req.VWAPDiffMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RSIBuyMin != nil {
+		if !save("rsi_buy_min", strconv.FormatFloat(*req.RSIBuyMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RSIBuyMax != nil {
+		if !save("rsi_buy_max", strconv.FormatFloat(*req.RSIBuyMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.BidAskRatioMin != nil {
+		if !save("bid_ask_ratio_min", strconv.FormatFloat(*req.BidAskRatioMin, 'f', -1, 64)) {
+			return
+		}
+	}
+
 	if !changed {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "변경할 항목이 없습니다"})
 		return
@@ -1218,4 +1328,109 @@ func (h *Handler) DisconnectWebSocket(c *gin.Context) {
 	}
 	h.wsClient.Disconnect()
 	c.JSON(http.StatusOK, gin.H{"message": "WebSocket disconnected"})
+}
+
+// GET /api/stats/daily-pnl?days=7|30
+// 최근 N일간 일별 실현 손익을 반환합니다 (1 ≤ days ≤ 365, default 30).
+func (h *Handler) GetDailyPnL(c *gin.Context) {
+	days, err := strconv.Atoi(c.DefaultQuery("days", "30"))
+	if err != nil || days < 1 || days > 365 {
+		days = 30
+	}
+	data, dbErr := h.db.GetDailyPnL(c.Request.Context(), days)
+	if dbErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": dbErr.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"days": days, "data": data})
+}
+
+// ─── Settings Presets ─────────────────────────────────────────────────────────
+
+// GET /api/presets — 프리셋 목록 반환
+func (h *Handler) ListPresets(c *gin.Context) {
+	presets, err := h.db.ListSettingsPresets(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"presets": presets})
+}
+
+// POST /api/presets — 현재 설정 스냅샷을 새 프리셋으로 저장
+func (h *Handler) CreatePreset(c *gin.Context) {
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name은 필수입니다"})
+		return
+	}
+
+	// 현재 settings 테이블의 모든 키-값 스냅샷
+	rows, err := h.db.QueryContext(c.Request.Context(), `SELECT key, value FROM settings`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+	snapshot := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err == nil {
+			snapshot[k] = v
+		}
+	}
+	b, _ := json.Marshal(snapshot)
+
+	id, err := h.db.CreateSettingsPreset(c.Request.Context(), req.Name, req.Description, string(b))
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "이미 동일한 이름의 프리셋이 있습니다: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "프리셋이 저장되었습니다."})
+}
+
+// POST /api/presets/:id/apply — 프리셋 값을 현재 settings에 적용
+func (h *Handler) ApplyPreset(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "잘못된 프리셋 ID"})
+		return
+	}
+	preset, err := h.db.GetSettingsPreset(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "프리셋을 찾을 수 없습니다"})
+		return
+	}
+	var snapshot map[string]string
+	if err := json.Unmarshal([]byte(preset.SettingsJSON), &snapshot); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "프리셋 파싱 실패"})
+		return
+	}
+	ctx := c.Request.Context()
+	for k, v := range snapshot {
+		if err := h.db.SetSetting(ctx, k, v); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "설정 적용 실패: " + err.Error()})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"message": preset.Name + " 프리셋이 적용되었습니다."})
+}
+
+// DELETE /api/presets/:id — 프리셋 삭제
+func (h *Handler) DeletePreset(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "잘못된 프리셋 ID"})
+		return
+	}
+	if err := h.db.DeleteSettingsPreset(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "프리셋이 삭제되었습니다."})
 }

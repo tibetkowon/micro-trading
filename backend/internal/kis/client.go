@@ -271,6 +271,38 @@ func (c *Client) GetIndexPrice(ctx context.Context, indexCode string) (*StockPri
 	}, nil
 }
 
+// GetBidAskRatio fetches the bid/ask ratio for a domestic stock using the order book API.
+// API: GET /uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn (FHKST01010200).
+// Returns total_bidp_rsqn / total_askp_rsqn (매수잔량 / 매도잔량).
+// Returns 0 if the ratio cannot be computed (e.g., zero ask volume).
+func (c *Client) GetBidAskRatio(ctx context.Context, stockCode string) (float64, error) {
+	endpoint := "/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn"
+	params := fmt.Sprintf("?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=%s", stockCode)
+
+	raw, err := c.get(ctx, endpoint, params, "FHKST01010200")
+	if err != nil {
+		return 0, err
+	}
+
+	// KIS 호가 응답: output1 에 총잔량 합계가 존재
+	var result struct {
+		Output1 struct {
+			TotalAskRsqn string `json:"total_askp_rsqn"` // 총 매도호가 잔량
+			TotalBidRsqn string `json:"total_bidp_rsqn"` // 총 매수호가 잔량
+		} `json:"output1"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return 0, fmt.Errorf("parse bid ask ratio: %w", err)
+	}
+
+	askVol, _ := strconv.ParseFloat(result.Output1.TotalAskRsqn, 64)
+	bidVol, _ := strconv.ParseFloat(result.Output1.TotalBidRsqn, 64)
+	if askVol <= 0 {
+		return 0, nil
+	}
+	return bidVol / askVol, nil
+}
+
 // GetAvailableOrder checks order feasibility for a specific stock (매수가능조회 TTTC8908R).
 // stockCode: 종목코드 (e.g. "005930"). ORD_DVSN=01(시장가), ORD_UNPR=0.
 // Returns ord_psbl_qty (주문가능수량) and ord_psbl_cash (주문가능현금).

@@ -1,5 +1,91 @@
 # Changelog
 
+## 2026-03-22 — 트레이딩 고도화 Phase 4 (프리셋 시스템) 완료
+
+### Phase 4 — 매매 프리셋 시스템
+- **`db.go`**: `settings_presets` 테이블 신규 생성 (id, name, description, settings_json, created_at, updated_at)
+- **`db.go`**: `ListSettingsPresets`, `CreateSettingsPreset`, `GetSettingsPreset`, `DeleteSettingsPreset` CRUD 함수 추가
+- **`handlers.go`**: `ListPresets`, `CreatePreset` (현재 설정 전체 스냅샷), `ApplyPreset`, `DeletePreset` 핸들러 추가
+- **`handlers.go`**: `GetSettings`에 누락된 `trading_days` + AI 매매 기준값 13개 필드 추가
+- **`router.go`**: `/api/presets` 라우트 그룹 추가 (GET/POST + /:id/apply POST + /:id DELETE)
+- **`Settings.jsx`**: 설정 페이지 상단에 프리셋 패널 추가 (목록 조회/적용/삭제 + 현재 설정 저장)
+- **`mocks/handlers.js`**: `/api/presets` CRUD mock 추가
+
+## 2026-03-22 — 트레이딩 고도화 Phase 1-3 + Phase 2d (BidAskRatio) 완료
+
+### Phase 2d — BidAskRatio KIS API 통합
+- **`kis/client.go`**: `GetBidAskRatio(ctx, stockCode)` 신규 함수 추가 (`inquire-asking-price-exp-ccn`, TR_ID `FHKST01010200`)
+- **`agent/stock_info.go`**: `BidAskRatio float64` 필드 추가, `GetStockInfo`에서 호출 (실패 시 0으로 무시)
+- **`trader/claude.go`**: `RankItem.BidAskRatio` 필드 추가
+- **`trader/engine.go`**: KR/US 양쪽 getRankings에서 `rankings[i].BidAskRatio = info.BidAskRatio` 반영
+
+### Phase 3 + Phase 1 — 프론트엔드 완성 (Settings.jsx)
+- **요일 스케줄 체크박스**: 거래 제어 섹션에 월~일 체크박스 추가, `trading_days` 배열로 저장
+- **AI 매매 기준값 섹션 신설**: 하드 리젝션 룰 8개 + 랭킹 기준 5개 수치 입력 UI
+  - 하드 룰: `hard_disparity_m5_min/max`, `hard_high_price_diff_max/min`, `hard_prev_vol_ratio_max`, `hard_strength_min`, `hard_rsi_max`, `hard_open_price_diff_max`
+  - 랭킹 기준: `vwap_diff_min/max`, `rsi_buy_min/max`, `bid_ask_ratio_min`
+- **`handlers.go` UpdateSettings**: `trading_days` JSON 배열 파싱 + 13개 신규 AI 기준값 필드 저장 처리
+- **`mocks/handlers.js`**: 신규 설정 필드 기본값 추가
+
+### Phase 2a-2c — 신규 기술 지표 (이전 커밋)
+- VWAP, VWAPDiff, M5MA10, PrevVolumeRatio 계산 및 Claude 프롬프트 전달
+
+## 2026-03-20 — 라이트/다크 테마 완전 동작 + 실현 손익 그래프 추가
+
+- **전 페이지 테마 토큰화**: 모든 hardcoded hex 색상(`bg-[#131316]` 등) → CSS semantic token (`bg-th-*`) 교체, 라이트/다크 모드 완전 분리
+- **index.css**: `--th-sidebar` 토큰 추가, `.glass-panel` 라이트 모드 지원
+- **tailwind.config.js**: `th-sidebar` 토큰 등록
+- **Dashboard.jsx**: 실현 손익 그래프 추가 (recharts, 1주일/1달 탭, 일별 Bar + 누적 Line)
+- **Backend `db.go`**: `GetDailyPnL(days)` 함수 추가 — AGENT SELL 기준 일별 집계
+- **Backend `handlers.go`**: `GET /api/stats/daily-pnl?days=N` 핸들러 추가
+- **Backend `router.go`**: `/api/stats` 라우트 그룹 등록
+- **MSW mock**: `/api/stats/daily-pnl` 목 데이터 추가
+
+## 2026-03-19 — UI 개선: ThemeToggle 복원, 설정 섹션 재배치, 자동새로고침, 로그 레벨 정리
+
+- **App.jsx**: ThemeToggle 복원 (사이드바 하단), 모바일 햄버거 버튼 LEFT 이동
+- **Settings.jsx**: `(FID_TRGT_EXLS_CLS_CODE)` 레이블 제거, "현재 값" 이진 표시 제거, `step="60"` 추가 (time input 초 단위 숨김), 지수하락임계값 → 거래 제어 섹션, 최소거래대금 → 하드 필터 섹션, AI 설정 → 최하단 이동
+- **StockLogs.jsx**: 순위 유형 한글 표시 (volume→거래량 등), 자동 새로고침 셀렉터 추가
+- **Dashboard.jsx**: 자동 새로고침 셀렉터 추가 (10초/30초/1분/5분)
+- **ErrorLogs.jsx**: 서비스 로그 레벨 표시를 ERROR 고정 (INFO/WARN 개념 제거)
+- **trader/engine.go**: `InsertServiceLog` WARN → ERROR로 통일 (일일손실한도, 미체결타임아웃)
+- **mocks/handlers.js**: 서비스 로그 더미 데이터 모두 ERROR 레벨로 수정
+
+## 2026-03-19 — MSW Mock 데이터 환경 구성
+
+- **frontend/src/mocks/handlers.js** (신규): 전 API 엔드포인트 더미 데이터 핸들러 (서버상태, 잔고, 보유종목, 주문, 모니터, 로그, 설정)
+- **frontend/src/mocks/browser.js** (신규): MSW Service Worker 셋업
+- **frontend/src/main.jsx**: `VITE_USE_MOCK=true` 환경변수 시 MSW 자동 활성화
+- **frontend/.env.development.local** (신규): 로컬 개발 시 mock 모드 ON
+- **frontend/.eslintignore** (신규): `public/` 폴더 ESLint 제외 (mockServiceWorker.js)
+
+## 2026-03-19 — Stitch "Digital Obsidian" 디자인 시스템 적용
+
+- **App.jsx**: 상단 Navbar → 좌측 고정 사이드바(w-64, `#0E0E11`) + 모바일 드로어로 레이아웃 전환, Material Symbols Outlined 아이콘 적용
+- **Dashboard.jsx**: 자산 총액 히어로 패널(glassmorphism, `text-4xl~5xl`), 서버 상태 tonal 배경, 보유종목 테이블 `divide-white/[0.04]` + `hover:bg-white/[0.02]`
+- **Monitor.jsx / Orders.jsx / ErrorLogs.jsx**: 카드 보더 제거, `bg-[#1F1F22]` tonal 레이어링, 로그 좌측 accent `border-l-2` 적용
+- **Settings.jsx**: 인라인 `th-*` 토큰 → 다크 전용 `gray-*` / Tailwind 색상으로 교체, glass-panel 스티키 헤더
+- **index.css**: No-Line Rule 적용 (`.card` 보더 제거), `.glass-panel` 유틸 추가, Material Symbols 기본 font-variation-settings
+- **index.html**: Material Symbols Outlined Google Fonts 링크 추가
+- **StockLogs.jsx**: `th-*` 다크 클래스 교체, useMemo 의존성 경고 수정
+- **ThemeContext.jsx**: `eslint-disable react-refresh/only-export-components` 추가 (lint 경고 해소)
+
+## 2026-03-19 — 프론트엔드 전면 리뉴얼 + 하드필터 로그 연결
+
+- **frontend/tailwind.config.js, index.css**: CSS 커스텀 속성 기반 다크/라이트 테마 토큰 시스템 도입 (`th-*` 변수), Inter+Manrope 폰트
+- **frontend/src/contexts/ThemeContext.jsx** (신규): 다크모드 토글 컨텍스트, localStorage 영속화
+- **frontend/src/App.jsx**: ThemeProvider 래핑, ThemeToggle 버튼, `/stock-logs` 라우트 추가
+- **frontend/src/pages/Dashboard.jsx**: 수익률 0% 버그 수정 (`calcRate` fallback), th-* 토큰 리뉴얼
+- **frontend/src/pages/Monitor.jsx**: 자동 새로고침 주기 선택(수동/5초/10초/30초/1분), 리뉴얼
+- **frontend/src/pages/Orders.jsx**: 무한스크롤, 시장/유형/상태 필터, PENDING 주문 취소 버튼, 수동 동기화 days 선택
+- **frontend/src/pages/ErrorLogs.jsx**: 서비스로그/KIS API 탭 구조, 출처 필터, 테마 토큰 적용
+- **frontend/src/pages/Settings.jsx**: 저장 버튼 sticky 헤더로 이동 (form association), 테마 토큰 전면 교체
+- **frontend/src/pages/StockLogs.jsx** (신규): 순위조회→하드필터→LLM선정 3단계 통합 뷰, 국장/미장 필터
+- **backend/internal/models/models.go**: `TraderRankingLog.FilteredStocks`, `TraderSelectionLog.RankingLogID` 필드 추가
+- **backend/internal/database/db.go**: `filtered_stocks`/`ranking_log_id` ALTER TABLE, `InsertRankingLog` ID 반환으로 변경
+- **backend/internal/trader/engine.go**: 하드필터 제거 종목+사유 JSON 기록, selection log에 ranking_log_id 연결
+- **backend/internal/api/handlers.go**: `GetSelectionLogs`에 `ranking_log_id` 스캔 추가
+
 ## 2026-03-18 — UI B스타일 전체 적용 (Settings.jsx 포함)
 
 ### Task 4: UI 개선 — B스타일 (미니멀 클린) + 한국식 색상 통일

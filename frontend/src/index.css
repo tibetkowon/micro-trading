@@ -1,7 +1,99 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-gray-950 text-gray-100 min-h-screen;
+/* ── Light theme (default) ── */
+:root {
+  --th-bg:              #F5F4F2;
+  --th-surface:         #FFFFFF;
+  --th-surface-high:    #EBEBED;
+  --th-surface-highest: #E0E0E2;
+  --th-surface-low:     #F9F8F6;
+  --th-sidebar:         #f2f4f6;
+  --th-on-surface:      #1A1A1C;
+  --th-on-muted:        #52525B;
+  --th-on-subtle:       #A1A1AA;
+  --th-outline:         rgba(0,0,0,0.10);
+  --th-primary:         #EA6C10;
+  --th-primary-dim:     #F97316;
+  --th-growth:          #16A34A;
+  --th-growth-dim:      #22C55E;
+  --th-loss:            #DC2626;
+  --th-loss-dim:        #EF4444;
+  --th-warn:            #D97706;
 }
+
+/* ── Dark theme ── */
+.dark {
+  --th-bg:              #131316;
+  --th-surface:         #1F1F22;
+  --th-surface-high:    #2A2A2D;
+  --th-surface-highest: #353438;
+  --th-surface-low:     #1B1B1E;
+  --th-sidebar:         #0E0E11;
+  --th-on-surface:      #E4E1E6;
+  --th-on-muted:        #A09D9E;
+  --th-on-subtle:       #6B6870;
+  --th-outline:         rgba(255,255,255,0.08);
+  --th-primary:         #F97316;
+  --th-primary-dim:     #FFB690;
+  --th-growth:          #4AE176;
+  --th-growth-dim:      #6BFF8F;
+  --th-loss:            #FF6A64;
+  --th-loss-dim:        #FFB3AD;
+  --th-warn:            #FBBF24;
+}
+
+body {
+  background-color: var(--th-bg);
+  color: var(--th-on-surface);
+  min-height: 100vh;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 숫자/데이터 폰트 */
+.font-data {
+  font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* 공통 카드 — No-Line Rule: 보더 없이 배경색 레이어링으로만 구분 */
+.card {
+  background-color: var(--th-surface);
+  border-radius: 0.75rem;
+}
+
+/* 글래스 패널 */
+.glass-panel {
+  background: rgba(242, 244, 246, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 0.75rem;
+}
+.dark .glass-panel {
+  background: rgba(31, 31, 34, 0.7);
+}
+
+/* Material Symbols */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+}
+
+/* 공통 배지 베이스 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  border-width: 1px;
+}
+
+/* 스크롤바 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--th-outline); border-radius: 3px; }

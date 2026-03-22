@@ -248,6 +248,50 @@
 
 ---
 
+## settings_presets
+
+**Purpose:** 트레이딩 설정의 이름 있는 스냅샷. 공격적/방어적 등 복수의 설정 세트를 저장하고 즉시 전환.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 대리 키 |
+| `name` | TEXT | NOT NULL UNIQUE | 프리셋 이름 (예: "공격적", "방어적", "금요일") |
+| `description` | TEXT | NOT NULL, DEFAULT '' | 프리셋 설명 |
+| `settings_json` | TEXT | NOT NULL, DEFAULT '{}' | `settings` 테이블 전체 키-값의 JSON 스냅샷 |
+| `created_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 생성 시각 |
+| `updated_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 갱신 시각 |
+
+**API:**
+- `GET /api/presets` — 전체 목록
+- `POST /api/presets` — 현재 settings 스냅샷 저장 (`name`, `description` body)
+- `POST /api/presets/:id/apply` — 스냅샷 값을 현재 settings 테이블에 적용
+- `DELETE /api/presets/:id` — 삭제
+
+---
+
+### settings 테이블 신규 기본값 (2026-03-22)
+
+트레이딩 고도화 Phase 1-3 추가:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `trading_days` | `[1,2,3,4,5]` | 자동매매 허용 요일 (0=일~6=토) |
+| `hard_disparity_m5_min` | `-1.5` | 5분봉 이격도 하한 — 칼날 하락 감지 |
+| `hard_disparity_m5_max` | `3.0` | 5분봉 이격도 상한 — 과열 감지 |
+| `hard_high_price_diff_max` | `-0.5` | 고점 대비 상한 — 고점 추격 방지 |
+| `hard_high_price_diff_min` | `-5.0` | 고점 대비 하한 — 추세이탈 감지 |
+| `hard_prev_vol_ratio_max` | `1.2` | 하락 시 전봉 대비 거래량 비율 상한 |
+| `hard_strength_min` | `100.0` | 최소 체결강도 |
+| `hard_rsi_max` | `70.0` | RSI 과매수 상한 |
+| `hard_open_price_diff_max` | `15.0` | 시가 대비 상승률 상한 |
+| `vwap_diff_min` | `0.0` | VWAP 이격도 하한 |
+| `vwap_diff_max` | `1.5` | VWAP 이격도 상한 |
+| `rsi_buy_min` | `40.0` | 이상적 RSI 매수 구간 하한 |
+| `rsi_buy_max` | `60.0` | 이상적 RSI 매수 구간 상한 |
+| `bid_ask_ratio_min` | `1.2` | 최소 매수호가 우세 비율 |
+
+---
+
 ## 마이그레이션 전략
 
 - 새 테이블: `stmts` 슬라이스에 `CREATE TABLE IF NOT EXISTS` 추가

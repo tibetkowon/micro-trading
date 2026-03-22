@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import PropTypes from 'prop-types'
 import { useApi } from '../hooks/useApi'
 
 /* ── 읽기 전용 행 ── */
 function Row({ label, children }) {
   return (
-    <div className="flex justify-between items-center text-sm py-2.5 border-b border-zinc-800/60 last:border-0">
-      <span className="text-zinc-500">{label}</span>
-      <span className="text-zinc-300">{children}</span>
+    <div className="flex justify-between items-center text-sm py-2.5 border-b border-black/5 dark:border-white/5 last:border-0">
+      <span className="text-th-on-muted">{label}</span>
+      <span className="text-th-on-surface">{children}</span>
     </div>
   )
 }
@@ -15,7 +15,7 @@ Row.propTypes = { label: PropTypes.string, children: PropTypes.node }
 
 function Badge({ ok, trueLabel = '설정됨', falseLabel = '미설정' }) {
   return (
-    <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium border ${ok ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' : 'bg-zinc-700/50 text-zinc-400 border-zinc-700'}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/5 text-th-on-muted'}`}>
       {ok ? trueLabel : falseLabel}
     </span>
   )
@@ -24,7 +24,7 @@ Badge.propTypes = { ok: PropTypes.bool, trueLabel: PropTypes.string, falseLabel:
 
 function WsBadge({ connected }) {
   return (
-    <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium border ${connected ? 'bg-blue-500/15 text-blue-400 border-blue-500/20' : 'bg-zinc-700/50 text-zinc-400 border-zinc-700'}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${connected ? 'bg-blue-500/10 text-blue-400' : 'bg-white/5 text-th-on-muted'}`}>
       {connected ? '연결됨' : '미연결'}
     </span>
   )
@@ -55,6 +55,73 @@ const SELL_CONDITIONS = [
 
 export default function Settings() {
   const { data, loading, error, refetch } = useApi('/api/settings')
+
+  // ── 프리셋 ──
+  const [presets, setPresets] = useState([])
+  const [presetName, setPresetName] = useState('')
+  const [presetDesc, setPresetDesc] = useState('')
+  const [presetSaving, setPresetSaving] = useState(false)
+  const [presetApplying, setPresetApplying] = useState(false)
+  const [presetMsg, setPresetMsg] = useState(null)
+
+  const fetchPresets = useCallback(async () => {
+    try {
+      const res = await fetch('/api/presets')
+      const json = await res.json()
+      if (res.ok) setPresets(json.presets || [])
+    } catch (_) { /* ignore */ }
+  }, [])
+
+  useEffect(() => { fetchPresets() }, [fetchPresets])
+
+  async function handleSavePreset() {
+    if (!presetName.trim()) { setPresetMsg({ ok: false, text: '프리셋 이름을 입력하세요' }); return }
+    setPresetSaving(true); setPresetMsg(null)
+    try {
+      const res = await fetch('/api/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: presetName.trim(), description: presetDesc.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setPresetMsg({ ok: false, text: json.error || '저장 실패' }); return }
+      setPresetMsg({ ok: true, text: json.message })
+      setPresetName(''); setPresetDesc('')
+      fetchPresets()
+    } catch (err) {
+      setPresetMsg({ ok: false, text: err.message })
+    } finally {
+      setPresetSaving(false)
+    }
+  }
+
+  async function handleApplyPreset(id) {
+    setPresetApplying(true); setPresetMsg(null)
+    try {
+      const res = await fetch(`/api/presets/${id}/apply`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) { setPresetMsg({ ok: false, text: json.error || '적용 실패' }); return }
+      setPresetMsg({ ok: true, text: json.message })
+      refetch()
+    } catch (err) {
+      setPresetMsg({ ok: false, text: err.message })
+    } finally {
+      setPresetApplying(false)
+    }
+  }
+
+  async function handleDeletePreset(id, name) {
+    if (!window.confirm(`'${name}' 프리셋을 삭제하시겠습니까?`)) return
+    try {
+      const res = await fetch(`/api/presets/${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) { setPresetMsg({ ok: false, text: json.error || '삭제 실패' }); return }
+      setPresetMsg({ ok: true, text: json.message })
+      fetchPresets()
+    } catch (err) {
+      setPresetMsg({ ok: false, text: err.message })
+    }
+  }
 
   // ── 거래 제어 ──
   const [tradingEnabled, setTradingEnabled] = useState(true)
@@ -109,6 +176,26 @@ export default function Settings() {
   const [filterHighPriceDiffMin, setFilterHighPriceDiffMin] = useState('-5.0')
   const [filterOpenPriceDiffMax, setFilterOpenPriceDiffMax] = useState('20.0')
   const [indexDropThresholdPct, setIndexDropThresholdPct] = useState('-1.0')
+
+  // ── 요일 스케줄 ──
+  const [tradingDays, setTradingDays] = useState([1, 2, 3, 4, 5])
+
+  // ── AI 매매 기준값 — 하드 리젝션 ──
+  const [hardDisparityM5Min, setHardDisparityM5Min] = useState('-1.5')
+  const [hardDisparityM5Max, setHardDisparityM5Max] = useState('3.0')
+  const [hardHighPriceDiffMax, setHardHighPriceDiffMax] = useState('-0.5')
+  const [hardHighPriceDiffMin, setHardHighPriceDiffMin] = useState('-5.0')
+  const [hardPrevVolRatioMax, setHardPrevVolRatioMax] = useState('1.2')
+  const [hardStrengthMin, setHardStrengthMin] = useState('100.0')
+  const [hardRsiMax, setHardRsiMax] = useState('70.0')
+  const [hardOpenPriceDiffMax, setHardOpenPriceDiffMax] = useState('15.0')
+
+  // ── AI 매매 기준값 — 랭킹 기준 ──
+  const [vwapDiffMin, setVwapDiffMin] = useState('0.0')
+  const [vwapDiffMax, setVwapDiffMax] = useState('1.5')
+  const [rsiBuyMin, setRsiBuyMin] = useState('40.0')
+  const [rsiBuyMax, setRsiBuyMax] = useState('60.0')
+  const [bidAskRatioMin, setBidAskRatioMin] = useState('1.2')
 
   // ── AI 설정 ──
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
@@ -172,6 +259,22 @@ export default function Settings() {
     if (Array.isArray(data.index_codes)) setIndexCodes(data.index_codes)
 
     if (data.claude_model) setClaudeModel(data.claude_model)
+
+    if (Array.isArray(data.trading_days)) setTradingDays(data.trading_days)
+
+    if (data.hard_disparity_m5_min != null) setHardDisparityM5Min(String(data.hard_disparity_m5_min))
+    if (data.hard_disparity_m5_max != null) setHardDisparityM5Max(String(data.hard_disparity_m5_max))
+    if (data.hard_high_price_diff_max != null) setHardHighPriceDiffMax(String(data.hard_high_price_diff_max))
+    if (data.hard_high_price_diff_min != null) setHardHighPriceDiffMin(String(data.hard_high_price_diff_min))
+    if (data.hard_prev_vol_ratio_max != null) setHardPrevVolRatioMax(String(data.hard_prev_vol_ratio_max))
+    if (data.hard_strength_min != null) setHardStrengthMin(String(data.hard_strength_min))
+    if (data.hard_rsi_max != null) setHardRsiMax(String(data.hard_rsi_max))
+    if (data.hard_open_price_diff_max != null) setHardOpenPriceDiffMax(String(data.hard_open_price_diff_max))
+    if (data.vwap_diff_min != null) setVwapDiffMin(String(data.vwap_diff_min))
+    if (data.vwap_diff_max != null) setVwapDiffMax(String(data.vwap_diff_max))
+    if (data.rsi_buy_min != null) setRsiBuyMin(String(data.rsi_buy_min))
+    if (data.rsi_buy_max != null) setRsiBuyMax(String(data.rsi_buy_max))
+    if (data.bid_ask_ratio_min != null) setBidAskRatioMin(String(data.bid_ask_ratio_min))
 
     if (data.filter_rsi_max != null) setFilterRsiMax(String(data.filter_rsi_max))
     if (data.filter_disparity_m5_max != null) setFilterDisparityM5Max(String(data.filter_disparity_m5_max))
@@ -277,6 +380,20 @@ export default function Settings() {
       filter_high_price_diff_min: parseFloat(filterHighPriceDiffMin) || -5.0,
       filter_open_price_diff_max: parseFloat(filterOpenPriceDiffMax) || 20.0,
       index_drop_threshold_pct: parseFloat(indexDropThresholdPct) || -1.0,
+      trading_days: tradingDays,
+      hard_disparity_m5_min: parseFloat(hardDisparityM5Min),
+      hard_disparity_m5_max: parseFloat(hardDisparityM5Max),
+      hard_high_price_diff_max: parseFloat(hardHighPriceDiffMax),
+      hard_high_price_diff_min: parseFloat(hardHighPriceDiffMin),
+      hard_prev_vol_ratio_max: parseFloat(hardPrevVolRatioMax),
+      hard_strength_min: parseFloat(hardStrengthMin),
+      hard_rsi_max: parseFloat(hardRsiMax),
+      hard_open_price_diff_max: parseFloat(hardOpenPriceDiffMax),
+      vwap_diff_min: parseFloat(vwapDiffMin),
+      vwap_diff_max: parseFloat(vwapDiffMax),
+      rsi_buy_min: parseFloat(rsiBuyMin),
+      rsi_buy_max: parseFloat(rsiBuyMax),
+      bid_ask_ratio_min: parseFloat(bidAskRatioMin),
     }
 
     try {
@@ -301,29 +418,111 @@ export default function Settings() {
 
   const stagnationActive = sellConditions.includes('stagnation')
 
-  const inputCls = 'w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600'
-  const sectionCls = 'bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4'
-  const sectionTitle = 'text-sm font-medium text-white'
-  const labelText = 'text-xs text-zinc-400'
-  const hintText = 'text-xs text-zinc-600'
-  const divider = 'pt-3 border-t border-zinc-800'
+  const inputCls = 'w-full px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50'
+  const sectionCls = 'bg-th-surface rounded-xl p-5 space-y-4'
+  const sectionTitle = 'text-sm font-semibold text-th-on-surface'
+  const labelText = 'text-xs text-th-on-muted'
+  const hintText = 'text-xs text-th-on-subtle'
+  const divider = 'pt-3 border-t border-black/5 dark:border-white/5'
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-white">설정</h1>
-        <p className="text-sm text-zinc-500 mt-0.5">트레이딩 파라미터 및 서버 구성</p>
+    <div className="space-y-6 pb-20">
+      {/* 스티키 헤더 (저장 버튼 고정) */}
+      <div className="sticky top-0 z-30 glass-panel -mx-4 md:-mx-8 px-4 md:px-8 py-3 flex items-center justify-between mb-2">
+        <div>
+          <h1 className="text-2xl font-bold text-th-on-surface tracking-tight">설정</h1>
+          <p className="text-xs text-th-on-muted mt-0.5 uppercase tracking-widest">트레이딩 파라미터 및 서버 구성</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {saveResult && (
+            <span className={`text-xs ${saveResult.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+              {saveResult.text}
+            </span>
+          )}
+          <button
+            type="submit"
+            form="settings-form"
+            disabled={saving}
+            className="px-5 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 rounded-lg text-sm font-semibold transition-colors text-white"
+          >
+            {saving ? '저장 중...' : '설정 저장'}
+          </button>
+        </div>
       </div>
 
-      {/* 저장 결과 배너 */}
-      {saveResult && (
-        <div className={`rounded-xl p-3 text-sm border ${saveResult.ok ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
-          {saveResult.text}
+      {/* ── 프리셋 패널 ── */}
+      <div className={`${sectionCls} !space-y-3`}>
+        <p className={sectionTitle}>매매 프리셋</p>
+        <p className={hintText}>현재 설정을 저장하거나 기존 프리셋을 불러와 즉시 적용합니다.</p>
+
+        {/* 저장된 프리셋 목록 */}
+        {presets.length > 0 && (
+          <div className="space-y-2">
+            {presets.map((p) => (
+              <div key={p.id} className="flex items-center gap-2 bg-th-surface-high rounded-lg px-3 py-2">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-th-on-surface">{p.name}</span>
+                  {p.description && (
+                    <span className="text-xs text-th-on-muted ml-2">{p.description}</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset(p.id)}
+                  disabled={presetApplying}
+                  className="shrink-0 px-3 py-1 text-xs rounded-md bg-orange-500/15 text-orange-400 hover:bg-orange-500/25 disabled:opacity-50 transition-colors"
+                >
+                  적용
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeletePreset(p.id, p.name)}
+                  className="shrink-0 p-1 text-th-on-subtle hover:text-red-400 transition-colors rounded"
+                  title="삭제"
+                >
+                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {presets.length === 0 && (
+          <p className="text-xs text-th-on-subtle">저장된 프리셋이 없습니다.</p>
+        )}
+
+        {/* 현재 설정을 프리셋으로 저장 */}
+        <div className={`flex flex-col sm:flex-row gap-2 ${divider}`}>
+          <input
+            type="text"
+            placeholder="프리셋 이름 (예: 공격적)"
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            className={`flex-1 ${inputCls}`}
+          />
+          <input
+            type="text"
+            placeholder="설명 (선택)"
+            value={presetDesc}
+            onChange={(e) => setPresetDesc(e.target.value)}
+            className={`flex-1 ${inputCls}`}
+          />
+          <button
+            type="button"
+            onClick={handleSavePreset}
+            disabled={presetSaving}
+            className="shrink-0 px-4 py-1.5 bg-th-surface-high hover:bg-th-surface-highest text-th-on-surface text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors"
+          >
+            {presetSaving ? '저장 중...' : '현재 설정 저장'}
+          </button>
         </div>
-      )}
+
+        {presetMsg && (
+          <p className={`text-xs ${presetMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{presetMsg.text}</p>
+        )}
+      </div>
 
       {/* ── 편집 폼 ── */}
-      <form onSubmit={handleSave} className="space-y-5">
+      <form id="settings-form" onSubmit={handleSave} className="space-y-5">
 
         {/* ── 섹션 1: 거래 제어 ── */}
         <div className={sectionCls}>
@@ -332,13 +531,13 @@ export default function Settings() {
           {/* ON/OFF 토글 */}
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-zinc-200">Trading</p>
-              <p className="text-xs text-zinc-500 mt-0.5">OFF 시 주문 API가 차단됩니다</p>
+              <p className="text-sm text-th-on-surface">Trading</p>
+              <p className="text-xs text-th-on-muted mt-0.5">OFF 시 주문 API가 차단됩니다</p>
             </div>
             <button
               type="button"
               onClick={() => setTradingEnabled((v) => !v)}
-              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${tradingEnabled ? 'bg-emerald-600' : 'bg-zinc-700'}`}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${tradingEnabled ? 'bg-emerald-500' : 'bg-th-surface-high'}`}
             >
               <span
                 className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${tradingEnabled ? 'translate-x-6' : 'translate-x-1'}`}
@@ -348,7 +547,7 @@ export default function Settings() {
           <p className="text-xs text-center font-semibold">
             {tradingEnabled
               ? <span className="text-emerald-400">거래 활성화 (ON)</span>
-              : <span className="text-zinc-500">거래 비활성화 (OFF)</span>
+              : <span className="text-th-on-muted">거래 비활성화 (OFF)</span>
             }
           </p>
 
@@ -357,7 +556,7 @@ export default function Settings() {
             <label className="space-y-1">
               <span className={labelText}>거래 시작 시간</span>
               <input
-                type="time"
+                type="time" step="60"
                 value={tradingStartTime}
                 onChange={(e) => setTradingStartTime(e.target.value)}
                 className={inputCls}
@@ -366,7 +565,7 @@ export default function Settings() {
             <label className="space-y-1">
               <span className={labelText}>거래 종료 시간</span>
               <input
-                type="time"
+                type="time" step="60"
                 value={tradingEndTime}
                 onChange={(e) => setTradingEndTime(e.target.value)}
                 className={inputCls}
@@ -380,7 +579,7 @@ export default function Settings() {
             <label className="space-y-1">
               <span className={labelText}>매수 중단 시작</span>
               <input
-                type="time"
+                type="time" step="60"
                 value={buyPauseStart}
                 onChange={(e) => setBuyPauseStart(e.target.value)}
                 className={inputCls}
@@ -389,7 +588,7 @@ export default function Settings() {
             <label className="space-y-1">
               <span className={labelText}>매수 중단 종료</span>
               <input
-                type="time"
+                type="time" step="60"
                 value={buyPauseEnd}
                 onChange={(e) => setBuyPauseEnd(e.target.value)}
                 className={inputCls}
@@ -399,8 +598,9 @@ export default function Settings() {
           <p className={hintText}>기본값: 11:00 ~ 14:00 매수 중단 (점심시간 유동성 저하 방지)</p>
 
           {/* 지수 필터 */}
-          <div className={`space-y-1 ${divider}`}>
-            <span className={`${labelText} block`}>지수 필터 (체크된 지수가 시가 대비 -1% 이상 하락 시 매수 중단)</span>
+          <div className={`space-y-2 ${divider}`}>
+            <span className={`${labelText} block`}>지수 필터</span>
+            <p className={hintText}>체크된 지수가 시가 대비 하락 임계값 이하로 하락 시 매수를 중단합니다.</p>
             <div className="flex gap-4">
               {[{ code: '0001', label: '코스피' }, { code: '1001', label: '코스닥' }].map(({ code, label }) => (
                 <label key={code} className="flex items-center gap-1.5 cursor-pointer">
@@ -410,9 +610,50 @@ export default function Settings() {
                     onChange={(e) => setIndexCodes(prev =>
                       e.target.checked ? [...prev, code] : prev.filter(c => c !== code)
                     )}
-                    className="accent-zinc-400"
+                    className="accent-orange-500"
                   />
-                  <span className="text-sm text-zinc-300">{label} ({code})</span>
+                  <span className="text-sm text-th-on-surface">{label} ({code})</span>
+                </label>
+              ))}
+            </div>
+            <label className="space-y-1 block">
+              <span className={labelText}>하락 임계값 (%, 이하 시 매수 중단)</span>
+              <input
+                type="number" step="0.1"
+                value={indexDropThresholdPct}
+                onChange={(e) => setIndexDropThresholdPct(e.target.value)}
+                className="w-full md:w-48 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+              />
+              <p className={hintText}>기본 -1.0 — 지수가 시가 대비 이 값 이하로 하락 시 매수 중단</p>
+            </label>
+          </div>
+
+          {/* 거래 요일 */}
+          <div className={`space-y-2 ${divider}`}>
+            <span className={`${labelText} block`}>거래 요일</span>
+            <p className={hintText}>체크된 요일에만 자동매매가 실행됩니다.</p>
+            <div className="flex flex-wrap gap-3">
+              {[
+                { day: 1, label: '월' },
+                { day: 2, label: '화' },
+                { day: 3, label: '수' },
+                { day: 4, label: '목' },
+                { day: 5, label: '금' },
+                { day: 6, label: '토' },
+                { day: 0, label: '일' },
+              ].map(({ day, label }) => (
+                <label key={day} className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={tradingDays.includes(day)}
+                    onChange={(e) =>
+                      setTradingDays((prev) =>
+                        e.target.checked ? [...prev, day] : prev.filter((d) => d !== day)
+                      )
+                    }
+                    className="accent-orange-500"
+                  />
+                  <span className="text-sm text-th-on-surface">{label}</span>
                 </label>
               ))}
             </div>
@@ -425,7 +666,7 @@ export default function Settings() {
 
           {/* 제외 종목 필터 */}
           <div className="space-y-2">
-            <p className={labelText}>순위조회 제외 종목 <span className="text-zinc-600">(FID_TRGT_EXLS_CLS_CODE)</span></p>
+            <p className={labelText}>순위조회 제외 종목</p>
             <p className={hintText}>체크된 항목은 순위조회 결과에서 제외됩니다</p>
             <div className="grid grid-cols-2 gap-2">
               {EXCL_LABELS.map((label, i) => (
@@ -434,13 +675,12 @@ export default function Settings() {
                     type="checkbox"
                     checked={exclBits[i]}
                     onChange={() => toggleBit(i)}
-                    className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 accent-zinc-400"
+                    className="w-4 h-4 rounded bg-th-surface-high accent-orange-500"
                   />
-                  <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">{label}</span>
+                  <span className="text-sm text-th-on-surface transition-colors">{label}</span>
                 </label>
               ))}
             </div>
-            <p className="text-xs text-zinc-600 font-mono">현재 값: {exclBits.map((b) => (b ? '1' : '0')).join('')}</p>
           </div>
 
           {/* 가격 범위 */}
@@ -473,7 +713,7 @@ export default function Settings() {
                 type="number" step="1" min="1" max="30"
                 value={rankingTopN}
                 onChange={(e) => setRankingTopN(e.target.value)}
-                className="w-28 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50"
               />
             </label>
           </div>
@@ -485,8 +725,8 @@ export default function Settings() {
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={rankingTypes.includes('volume')}
                   onChange={() => toggleRankingType('volume')}
-                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 accent-zinc-400" />
-                <span className="text-sm text-zinc-300 font-medium">거래량 순위</span>
+                  className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
+                <span className="text-sm text-th-on-surface font-medium">거래량 순위</span>
               </div>
               {rankingTypes.includes('volume') && (
                 <div className="ml-6">
@@ -495,7 +735,7 @@ export default function Settings() {
                     <input type="number" step="10" min="0"
                       value={volumeMinIncrRate}
                       onChange={(e) => setVolumeMinIncrRate(e.target.value)}
-                      className="w-40 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                      className="w-40 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50"
                     />
                   </label>
                 </div>
@@ -507,8 +747,8 @@ export default function Settings() {
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={rankingTypes.includes('strength')}
                   onChange={() => toggleRankingType('strength')}
-                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 accent-zinc-400" />
-                <span className="text-sm text-zinc-300 font-medium">체결강도 순위</span>
+                  className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
+                <span className="text-sm text-th-on-surface font-medium">체결강도 순위</span>
               </div>
               {rankingTypes.includes('strength') && (
                 <div className="ml-6">
@@ -517,7 +757,7 @@ export default function Settings() {
                     <input type="number" step="5" min="0"
                       value={strengthMin}
                       onChange={(e) => setStrengthMin(e.target.value)}
-                      className="w-40 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                      className="w-40 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50"
                     />
                   </label>
                 </div>
@@ -529,16 +769,16 @@ export default function Settings() {
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={rankingTypes.includes('exec_count')}
                   onChange={() => toggleRankingType('exec_count')}
-                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 accent-zinc-400" />
-                <span className="text-sm text-zinc-300 font-medium">대량체결 순위</span>
+                  className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
+                <span className="text-sm text-th-on-surface font-medium">대량체결 순위</span>
               </div>
               {rankingTypes.includes('exec_count') && (
                 <div className="ml-6">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={execCountNetBuyOnly}
                       onChange={(e) => setExecCountNetBuyOnly(e.target.checked)}
-                      className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 accent-zinc-400" />
-                    <span className="text-sm text-zinc-300">순매수 우세 종목만 (순매수체결량 &gt; 0)</span>
+                      className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
+                    <span className="text-sm text-th-on-surface">순매수 우세 종목만 (순매수체결량 &gt; 0)</span>
                   </label>
                 </div>
               )}
@@ -549,8 +789,8 @@ export default function Settings() {
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={rankingTypes.includes('disparity')}
                   onChange={() => toggleRankingType('disparity')}
-                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 accent-zinc-400" />
-                <span className="text-sm text-zinc-300 font-medium">이격도 순위</span>
+                  className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
+                <span className="text-sm text-th-on-surface font-medium">이격도 순위</span>
               </div>
               {rankingTypes.includes('disparity') && (
                 <div className="ml-6 flex items-center gap-3">
@@ -559,16 +799,16 @@ export default function Settings() {
                     <input type="number" step="1" min="0"
                       value={disparityD20Min}
                       onChange={(e) => setDisparityD20Min(e.target.value)}
-                      className="w-28 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                      className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50"
                     />
                   </label>
-                  <span className="text-zinc-500 mt-4">~</span>
+                  <span className="text-th-on-muted mt-4">~</span>
                   <label className="space-y-1">
                     <span className={labelText}>최댓값 (0=필터없음)</span>
                     <input type="number" step="1" min="0"
                       value={disparityD20Max}
                       onChange={(e) => setDisparityD20Max(e.target.value)}
-                      className="w-28 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                      className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50"
                     />
                   </label>
                 </div>
@@ -588,8 +828,8 @@ export default function Settings() {
                   onClick={() => setRankingCondition(cond)}
                   className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
                     rankingCondition === cond
-                      ? 'bg-zinc-800 text-white border-zinc-700 ring-1 ring-zinc-600'
-                      : 'bg-transparent text-zinc-500 border-zinc-800 hover:text-white hover:border-zinc-700'
+                      ? 'bg-th-surface-high text-th-on-surface border-black/10 dark:border-white/10 ring-1 ring-zinc-600'
+                      : 'bg-transparent text-th-on-muted border-black/10 dark:border-white/10 hover:text-th-on-surface'
                   }`}
                 >
                   {cond}
@@ -624,21 +864,6 @@ export default function Settings() {
             </label>
           </div>
 
-          {/* 최소 거래대금 */}
-          <div className={divider}>
-            <label className="space-y-1 block">
-              <span className={labelText}>최소 거래대금 (원, 0=필터없음)</span>
-              <input
-                type="number" step="any" min="0"
-                value={minTradingValue}
-                onChange={(e) => setMinTradingValue(e.target.value)}
-                className={inputCls}
-              />
-            </label>
-            <p className={`${hintText} mt-1`}>
-              예: 5000000000 = 50억원. 거래대금 미달 종목은 LLM 후보에서 제외됩니다.
-            </p>
-          </div>
         </div>
 
         {/* ── 섹션 4: 매도 설정 ── */}
@@ -648,7 +873,7 @@ export default function Settings() {
           {/* 익절/손절 기준 */}
           <div className="grid grid-cols-2 gap-4">
             <label className="space-y-1">
-              <span className="text-xs text-red-400/80">익절 기준 (%)</span>
+              <span className="text-xs text-red-400">익절 기준 (%)</span>
               <input
                 type="number" step="0.1" min="0.1"
                 value={takeProfitPct}
@@ -657,7 +882,7 @@ export default function Settings() {
               />
             </label>
             <label className="space-y-1">
-              <span className="text-xs text-blue-400/80">손절 기준 (%)</span>
+              <span className="text-xs text-[#3B82F6]">손절 기준 (%)</span>
               <input
                 type="number" step="0.1" min="0.1"
                 value={stopLossPct}
@@ -676,24 +901,24 @@ export default function Settings() {
                 const item = SELL_CONDITIONS.find(c => c.value === val)
                 if (!item) return null
                 return (
-                  <div key={val} className="flex items-center gap-2 bg-zinc-800/60 rounded-lg px-3 py-2">
-                    <span className="text-xs text-zinc-500 w-4">{idx + 1}</span>
-                    <span className="flex-1 text-sm text-zinc-200">{item.label}</span>
+                  <div key={val} className="flex items-center gap-2 bg-th-surface-high/60 rounded-lg px-3 py-2">
+                    <span className="text-xs text-th-on-muted w-4">{idx + 1}</span>
+                    <span className="flex-1 text-sm text-th-on-surface">{item.label}</span>
                     <button type="button" onClick={() => moveSellCondition(val, -1)} disabled={idx === 0}
-                      className="text-zinc-500 hover:text-zinc-200 disabled:opacity-20 px-1">▲</button>
+                      className="text-th-on-muted hover:text-th-on-surface disabled:opacity-20 px-1">▲</button>
                     <button type="button" onClick={() => moveSellCondition(val, 1)} disabled={idx === sellConditions.length - 1}
-                      className="text-zinc-500 hover:text-zinc-200 disabled:opacity-20 px-1">▼</button>
+                      className="text-th-on-muted hover:text-th-on-surface disabled:opacity-20 px-1">▼</button>
                     <button type="button" onClick={() => toggleSellCondition(val)}
-                      className="text-zinc-600 hover:text-red-400 px-1 text-xs">✕</button>
+                      className="text-th-on-subtle hover:text-red-400 px-1 text-xs">✕</button>
                   </div>
                 )
               })}
               {SELL_CONDITIONS.filter(c => !sellConditions.includes(c.value)).map(({ value, label }) => (
                 <div key={value} className="flex items-center gap-2 rounded-lg px-3 py-2 opacity-40">
-                  <span className="text-xs text-zinc-500 w-4">-</span>
-                  <span className="flex-1 text-sm text-zinc-500">{label}</span>
+                  <span className="text-xs text-th-on-muted w-4">-</span>
+                  <span className="flex-1 text-sm text-th-on-muted">{label}</span>
                   <button type="button" onClick={() => toggleSellCondition(value)}
-                    className="text-zinc-600 hover:text-emerald-400 px-1 text-xs">＋</button>
+                    className="text-th-on-subtle hover:text-emerald-400 px-1 text-xs">＋</button>
                 </div>
               ))}
             </div>
@@ -724,8 +949,8 @@ export default function Settings() {
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={macdBearish} onChange={(e) => setMacdBearish(e.target.checked)}
-                className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 accent-zinc-400" />
-              <span className="text-sm text-zinc-300">MACD 데드크로스 시 매도</span>
+                className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
+              <span className="text-sm text-th-on-surface">MACD 데드크로스 시 매도</span>
             </label>
           </div>
 
@@ -764,7 +989,7 @@ export default function Settings() {
                 type="number" step="0.1" min="0"
                 value={dailyMaxLossPct}
                 onChange={(e) => setDailyMaxLossPct(e.target.value)}
-                className="w-40 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                className="w-40 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50"
               />
             </label>
             <p className={hintText}>당일 실현 손실이 한도 초과 시 매수를 중단합니다.</p>
@@ -799,25 +1024,25 @@ export default function Settings() {
           )}
         </div>
 
-        {/* ── 섹션 5: AI 설정 ── */}
-        <div className={`${sectionCls} !space-y-3`}>
-          <p className={sectionTitle}>AI 설정</p>
-          <label className="space-y-1 block">
-            <span className={labelText}>Claude 모델명</span>
-            <input
-              type="text"
-              value={claudeModel}
-              onChange={(e) => setClaudeModel(e.target.value)}
-              className={`${inputCls} font-mono`}
-              placeholder="claude-sonnet-4-6"
-            />
-          </label>
-        </div>
-
         {/* ── 섹션 5b: 하드 필터 (매수 품질) ── */}
         <div className={sectionCls}>
           <p className={sectionTitle}>하드 필터 (매수 품질)</p>
           <p className={hintText}>LLM 호출 전 자동으로 제거되는 조건입니다. KR·US 공통 적용됩니다.</p>
+
+          <div className={`space-y-1 ${divider}`}>
+            <label className="space-y-1 block">
+              <span className={labelText}>최소 거래대금 (원, 0=필터없음)</span>
+              <input
+                type="number" step="any" min="0"
+                value={minTradingValue}
+                onChange={(e) => setMinTradingValue(e.target.value)}
+                className={inputCls}
+              />
+            </label>
+            <p className={hintText}>
+              예: 5000000000 = 50억원. 거래대금 미달 종목은 LLM 후보에서 제외됩니다.
+            </p>
+          </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             <label className="space-y-1">
@@ -865,16 +1090,154 @@ export default function Settings() {
             </label>
           </div>
 
-          <div className={divider}>
-            <label className="space-y-1 block">
-              <span className={labelText}>지수 하락 매수 중단 임계값 (%, 이하 시 중단)</span>
+        </div>
+
+        {/* ── 섹션 5c: AI 매매 기준값 ── */}
+        <div className={sectionCls}>
+          <p className={sectionTitle}>AI 매매 기준값</p>
+          <p className={hintText}>Claude에게 전달되는 하드 리젝션 룰과 랭킹 기준 수치입니다. 변경 시 즉시 다음 종목 선정에 반영됩니다.</p>
+
+          {/* 하드 리젝션 룰 */}
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-th-on-muted uppercase tracking-widest">하드 리젝션 룰 (ANY 해당 시 제외)</p>
+          </div>
+          <div className={`grid md:grid-cols-2 gap-4 ${divider}`}>
+            <label className="space-y-1">
+              <span className={labelText}>5분봉 이격도 하한 (%)</span>
               <input
                 type="number" step="0.1"
-                value={indexDropThresholdPct}
-                onChange={(e) => setIndexDropThresholdPct(e.target.value)}
-                className="w-full md:w-48 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                value={hardDisparityM5Min}
+                onChange={(e) => setHardDisparityM5Min(e.target.value)}
+                className={inputCls}
               />
-              <p className={hintText}>기본 -1.0 — 지수가 시가 대비 이 값 이하로 하락 시 매수 중단</p>
+              <p className={hintText}>이 값 이하 → 칼날 하락 구간 (기본 -1.5)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>5분봉 이격도 상한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={hardDisparityM5Max}
+                onChange={(e) => setHardDisparityM5Max(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이상 → 과열 구간 (기본 3.0)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>고점 대비 상한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={hardHighPriceDiffMax}
+                onChange={(e) => setHardHighPriceDiffMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이상 → 고점 추격 위험 (기본 -0.5)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>고점 대비 하한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={hardHighPriceDiffMin}
+                onChange={(e) => setHardHighPriceDiffMin(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이하 + 거래량 급증 → 추세이탈 (기본 -5.0)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>하락 시 거래량 비율 상한</span>
+              <input
+                type="number" step="0.1" min="0"
+                value={hardPrevVolRatioMax}
+                onChange={(e) => setHardPrevVolRatioMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>하락 중 전 캔들 대비 거래량 비율 (기본 1.2)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>최소 체결강도</span>
+              <input
+                type="number" step="1" min="0"
+                value={hardStrengthMin}
+                onChange={(e) => setHardStrengthMin(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이하 → 매수세 소멸 (기본 100)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>RSI 과매수 상한</span>
+              <input
+                type="number" step="1" min="50" max="100"
+                value={hardRsiMax}
+                onChange={(e) => setHardRsiMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이상 → 과매수에서 꺾임 (기본 70)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>시가 대비 상승률 상한 (%)</span>
+              <input
+                type="number" step="0.5" min="0"
+                value={hardOpenPriceDiffMax}
+                onChange={(e) => setHardOpenPriceDiffMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이상 → 상한가 영역 (기본 15)</p>
+            </label>
+          </div>
+
+          {/* 랭킹 기준 */}
+          <div className={`space-y-1 ${divider}`}>
+            <p className="text-xs font-semibold text-th-on-muted uppercase tracking-widest">랭킹 우선 기준 (선호 구간)</p>
+          </div>
+          <div className={`grid md:grid-cols-2 gap-4`}>
+            <label className="space-y-1">
+              <span className={labelText}>VWAP 이격도 하한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={vwapDiffMin}
+                onChange={(e) => setVwapDiffMin(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>VWAP 지지선 위에서 매수 (기본 0.0)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>VWAP 이격도 상한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={vwapDiffMax}
+                onChange={(e) => setVwapDiffMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>VWAP 과리 제외 (기본 1.5)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>RSI 매수 구간 하한</span>
+              <input
+                type="number" step="1" min="0" max="100"
+                value={rsiBuyMin}
+                onChange={(e) => setRsiBuyMin(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이상적 RSI 매수 구간 (기본 40)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>RSI 매수 구간 상한</span>
+              <input
+                type="number" step="1" min="0" max="100"
+                value={rsiBuyMax}
+                onChange={(e) => setRsiBuyMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이상적 RSI 매수 구간 (기본 60)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>최소 매수호가 우세 비율</span>
+              <input
+                type="number" step="0.1" min="0"
+                value={bidAskRatioMin}
+                onChange={(e) => setBidAskRatioMin(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>매수잔량 / 매도잔량 최소 비율 (기본 1.2)</p>
             </label>
           </div>
         </div>
@@ -886,11 +1249,11 @@ export default function Settings() {
           {/* ON/OFF 토글 */}
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-zinc-200">미장 자동매매</p>
-              <p className="text-xs text-zinc-500 mt-0.5">미국 주식 시장 자동 거래 활성화</p>
+              <p className="text-sm text-th-on-surface">미장 자동매매</p>
+              <p className="text-xs text-th-on-muted mt-0.5">미국 주식 시장 자동 거래 활성화</p>
             </div>
             <button type="button" onClick={() => setUsTradingEnabled(v => !v)}
-              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${usTradingEnabled ? 'bg-emerald-600' : 'bg-zinc-700'}`}>
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${usTradingEnabled ? 'bg-emerald-500' : 'bg-th-surface-high'}`}>
               <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${usTradingEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
             </button>
           </div>
@@ -898,41 +1261,41 @@ export default function Settings() {
           {usTradingEnabled && (
             <div className="space-y-4">
               {/* 서머타임 토글 */}
-              <div className={`flex items-center justify-between pt-2 border-t border-zinc-800`}>
+              <div className={`flex items-center justify-between pt-2 border-t border-black/10 dark:border-white/10`}>
                 <div>
-                  <p className="text-sm text-zinc-200">서머타임 (DST)</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">ON: 22:30~05:00 / OFF: 23:30~06:00</p>
+                  <p className="text-sm text-th-on-surface">서머타임 (DST)</p>
+                  <p className="text-xs text-th-on-muted mt-0.5">ON: 22:30~05:00 / OFF: 23:30~06:00</p>
                 </div>
                 <button type="button" onClick={() => setUsDstEnabled(v => !v)}
-                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${usDstEnabled ? 'bg-zinc-600' : 'bg-zinc-700'}`}>
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${usDstEnabled ? 'bg-zinc-600' : 'bg-th-surface-high'}`}>
                   <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${usDstEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
 
               {/* 거래 시간 */}
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-800">
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-black/10 dark:border-white/10">
                 <label className="space-y-1">
                   <span className={labelText}>미장 시작 시간 (KST)</span>
-                  <input type="time" value={usTradingStartTime} onChange={e => setUsTradingStartTime(e.target.value)}
+                  <input type="time" step="60" value={usTradingStartTime} onChange={e => setUsTradingStartTime(e.target.value)}
                     className={inputCls} />
                 </label>
                 <label className="space-y-1">
                   <span className={labelText}>미장 종료 시간 (KST)</span>
-                  <input type="time" value={usTradingEndTime} onChange={e => setUsTradingEndTime(e.target.value)}
+                  <input type="time" step="60" value={usTradingEndTime} onChange={e => setUsTradingEndTime(e.target.value)}
                     className={inputCls} />
                 </label>
               </div>
 
               {/* 거래소 선택 */}
-              <div className="pt-2 border-t border-zinc-800">
+              <div className="pt-2 border-t border-black/10 dark:border-white/10">
                 <p className={`${labelText} mb-2`}>거래소</p>
                 <div className="flex gap-2">
                   {['NAS', 'NYS', 'AMS'].map(exch => (
                     <button key={exch} type="button" onClick={() => setUsRankingExchange(exch)}
                       className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
                         usRankingExchange === exch
-                          ? 'bg-zinc-800 text-white border-zinc-700 ring-1 ring-zinc-600'
-                          : 'bg-transparent text-zinc-500 border-zinc-800 hover:text-white hover:border-zinc-700'
+                          ? 'bg-th-surface-high text-th-on-surface border-black/10 dark:border-white/10 ring-1 ring-zinc-600'
+                          : 'bg-transparent text-th-on-muted border-black/10 dark:border-white/10 hover:text-th-on-surface'
                       }`}>
                       {exch === 'NAS' ? 'NASDAQ' : exch === 'NYS' ? 'NYSE' : 'AMEX'}
                     </button>
@@ -941,7 +1304,7 @@ export default function Settings() {
               </div>
 
               {/* 가격 범위 (USD) */}
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-800">
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-black/10 dark:border-white/10">
                 <label className="space-y-1">
                   <span className={labelText}>최소 주가 (USD)</span>
                   <input type="number" step="1" min="0" value={usRankingPriceMin}
@@ -957,7 +1320,7 @@ export default function Settings() {
               </div>
 
               {/* 순위 유형 */}
-              <div className="space-y-2 pt-2 border-t border-zinc-800">
+              <div className="space-y-2 pt-2 border-t border-black/10 dark:border-white/10">
                 <p className={labelText}>순위 조회 유형</p>
                 {[
                   { value: 'volume', label: '거래량 순위' },
@@ -968,14 +1331,14 @@ export default function Settings() {
                       onChange={() => setUsRankingTypes(prev =>
                         prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
                       )}
-                      className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 accent-zinc-400" />
-                    <span className="text-sm text-zinc-300">{label}</span>
+                      className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
+                    <span className="text-sm text-th-on-surface">{label}</span>
                   </label>
                 ))}
               </div>
 
               {/* 거래량 필터 */}
-              <div className="pt-2 border-t border-zinc-800">
+              <div className="pt-2 border-t border-black/10 dark:border-white/10">
                 <p className={`${labelText} mb-2`}>거래량 필터</p>
                 <div className="flex gap-2 flex-wrap">
                   {[
@@ -987,8 +1350,8 @@ export default function Settings() {
                     <button key={value} type="button" onClick={() => setUsRankingVolRang(value)}
                       className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors border ${
                         usRankingVolRang === value
-                          ? 'bg-zinc-800 text-white border-zinc-700 ring-1 ring-zinc-600'
-                          : 'bg-transparent text-zinc-500 border-zinc-800 hover:text-white hover:border-zinc-700'
+                          ? 'bg-th-surface-high text-th-on-surface border-black/10 dark:border-white/10 ring-1 ring-zinc-600'
+                          : 'bg-transparent text-th-on-muted border-black/10 dark:border-white/10 hover:text-th-on-surface'
                       }`}>
                       {label}
                     </button>
@@ -997,22 +1360,22 @@ export default function Settings() {
               </div>
 
               {/* 상위 N개 */}
-              <label className="space-y-1 pt-2 border-t border-zinc-800 block">
+              <label className="space-y-1 pt-2 border-t border-black/10 dark:border-white/10 block">
                 <span className={labelText}>상위 종목 수</span>
                 <input type="number" step="1" min="1" max="50"
                   value={usRankingTopN}
                   onChange={e => setUsRankingTopN(e.target.value)}
-                  className="w-28 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600" />
+                  className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
               </label>
 
               {/* 미장 일일 최대 손실 한도 */}
-              <div className="space-y-3 pt-2 border-t border-zinc-800">
+              <div className="space-y-3 pt-2 border-t border-black/10 dark:border-white/10">
                 <label className="space-y-1 block">
                   <span className={labelText}>미장 일일 최대 손실 한도 (%)</span>
                   <input type="number" step="0.1" min="0"
                     value={usDailyMaxLossPct}
                     onChange={e => setUsDailyMaxLossPct(e.target.value)}
-                    className="w-28 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600" />
+                    className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
                   <p className={hintText}>가용 USD 대비 최대 손실 기준. 0 = 국장 손실 한도 공유.</p>
                 </label>
                 <label className="space-y-1 block">
@@ -1020,7 +1383,7 @@ export default function Settings() {
                   <input type="number" step="1" min="0"
                     value={usMinTradingValue}
                     onChange={e => setUsMinTradingValue(e.target.value)}
-                    className="w-28 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600" />
+                    className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
                   <p className={hintText}>0 = 국장 최소 거래대금(원) 설정 공유.</p>
                 </label>
               </div>
@@ -1028,26 +1391,35 @@ export default function Settings() {
           )}
         </div>
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl text-sm font-semibold transition-colors"
-        >
-          {saving ? '저장 중...' : '설정 저장'}
-        </button>
       </form>
+
+      {/* ── AI 설정 (폼 밖, 최하단) ── */}
+      <div className={`${sectionCls} !space-y-3`}>
+        <p className={sectionTitle}>AI 설정</p>
+        <p className={hintText}>트레이딩 종목 선정에 사용할 Claude 모델을 지정합니다. ANTHROPIC_API_KEY 환경변수가 필요합니다.</p>
+        <label className="space-y-1 block">
+          <span className={labelText}>Claude 모델명</span>
+          <input
+            type="text"
+            value={claudeModel}
+            onChange={(e) => setClaudeModel(e.target.value)}
+            className={`${inputCls} font-mono`}
+            placeholder="claude-sonnet-4-6"
+          />
+        </label>
+      </div>
 
       {/* ── 서버 정보 (읽기 전용) ── */}
       {error && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl p-4 text-sm">{error}</div>
+        <div className="bg-red-500/10 text-red-400 rounded-xl p-4 text-sm">{error}</div>
       )}
       {!loading && data && (
         <div className="space-y-3">
-          <p className="text-sm font-medium text-zinc-400">서버 정보 (읽기 전용)</p>
+          <p className="text-xs font-semibold text-th-on-subtle uppercase tracking-widest">서버 정보 (읽기 전용)</p>
 
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-            <p className="text-xs text-zinc-500 font-medium mb-3">계좌 정보</p>
-            <Row label="계좌번호"><span className="font-mono">{data.account_no || '-'}</span></Row>
+          <div className="bg-th-surface rounded-xl p-5">
+            <p className="text-xs text-th-on-muted font-medium mb-3">계좌 정보</p>
+            <Row label="계좌번호"><span className="font-data">{data.account_no || '-'}</span></Row>
             <Row label="계좌 유형">
               {data.account_type === '01' ? '종합계좌 (01)' : data.account_type === '22' ? '선물옵션 (22)' : data.account_type || '-'}
             </Row>
@@ -1055,8 +1427,8 @@ export default function Settings() {
             <Row label="Anthropic API 키"><Badge ok={data.anthropic_configured} /></Row>
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-            <p className="text-xs text-zinc-500 font-medium mb-3">실시간 연동</p>
+          <div className="bg-th-surface rounded-xl p-5">
+            <p className="text-xs text-th-on-muted font-medium mb-3">실시간 연동</p>
             <Row label="KIS HTS ID">
               <Badge ok={data.hts_id_configured} falseLabel="미설정 (체결통보 비활성)" />
             </Row>
@@ -1065,7 +1437,7 @@ export default function Settings() {
         </div>
       )}
 
-      <p className="text-xs text-zinc-600">
+      <p className="text-xs text-th-on-subtle">
         KIS API 키, 계좌 정보 등 민감 정보는 서버의 .env 파일에서 관리합니다.
       </p>
     </div>
