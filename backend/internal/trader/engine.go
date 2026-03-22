@@ -207,6 +207,23 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	if e.market == "US" {
 		return e.selectAndBuyUS(ctx, settings)
 	}
+
+	// 요일 체크
+	if len(settings.TradingDays) > 0 {
+		kst, _ := time.LoadLocation("Asia/Seoul")
+		today := int(time.Now().In(kst).Weekday())
+		allowed := false
+		for _, d := range settings.TradingDays {
+			if d == today {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return fmt.Errorf("오늘은 거래 제외 요일 (weekday=%d)", today)
+		}
+	}
+
 	e.setState(StateSelecting)
 
 	// 매수 중단 시간대 체크
@@ -223,13 +240,20 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	if indexDropThreshold == 0 {
 		indexDropThreshold = -1.0
 	}
+	var marketIndexDrop float64
 	for _, code := range settings.IndexCodes {
 		if idx, idxErr := e.kisClient.GetIndexPrice(ctx, code); idxErr == nil {
 			open, _ := strconv.ParseFloat(idx.DayOpen, 64)
 			cur, _ := strconv.ParseFloat(idx.CurrentPrice, 64)
-			if open > 0 && cur > 0 && (cur-open)/open*100 <= indexDropThreshold {
-				e.setState(StateMonitoring)
-				return fmt.Errorf("지수 %.1f%% 이상 하락 (지수:%s %.2f%%↓), 매수 일시 중단", indexDropThreshold, code, (cur-open)/open*100)
+			if open > 0 && cur > 0 {
+				drop := (cur - open) / open * 100
+				if drop < marketIndexDrop {
+					marketIndexDrop = drop // 가장 많이 하락한 지수 기준
+				}
+				if drop <= indexDropThreshold {
+					e.setState(StateMonitoring)
+					return fmt.Errorf("지수 %.1f%% 이상 하락 (지수:%s %.2f%%↓), 매수 일시 중단", indexDropThreshold, code, drop)
+				}
 			}
 		}
 	}
@@ -275,7 +299,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no ranking results after excluding already-traded stocks")
 	}
 
-	// Enrich each candidate with technical indicators (MA5/MA20/RSI/MACD).
+	// Enrich each candidate with technical indicators (MA5/MA20/RSI/MACD/VWAP/M5MA10/PrevVolumeRatio).
 	for i, r := range rankings {
 		info, err := agent.GetStockInfo(ctx, e.kisClient, r.StockCode)
 		if err != nil {
@@ -294,6 +318,11 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		rankings[i].HighPriceDiff = info.HighPriceDiff
 		rankings[i].OpenPriceDiff = info.OpenPriceDiff
 		rankings[i].DisparityM5 = info.DisparityM5
+		rankings[i].VWAP = info.VWAP
+		rankings[i].VWAPDiff = info.VWAPDiff
+		rankings[i].M5MA10 = info.M5MA10
+		rankings[i].PrevVolumeRatio = info.PrevVolumeRatio
+		rankings[i].BidAskRatio = info.BidAskRatio
 	}
 	// 거래대금 하한선 필터
 	if settings.MinTradingValue > 0 {
@@ -423,9 +452,63 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		}
 	}
 
+	// Build TradingRules from settings and pass to Claude prompt.
+	rules := DefaultTradingRules()
+	rules.IndexDropThreshold = settings.IndexDropThresholdPct
+	if rules.IndexDropThreshold == 0 {
+		rules.IndexDropThreshold = -1.0
+	}
+	rules.HardDisparityM5Min = settings.HardDisparityM5Min
+	if rules.HardDisparityM5Min == 0 {
+		rules.HardDisparityM5Min = -1.5
+	}
+	rules.HardDisparityM5Max = settings.HardDisparityM5Max
+	if rules.HardDisparityM5Max == 0 {
+		rules.HardDisparityM5Max = 3.0
+	}
+	rules.HardHighPriceDiffMax = settings.HardHighPriceDiffMax
+	if rules.HardHighPriceDiffMax == 0 {
+		rules.HardHighPriceDiffMax = -0.5
+	}
+	rules.HardHighPriceDiffMin = settings.HardHighPriceDiffMin
+	if rules.HardHighPriceDiffMin == 0 {
+		rules.HardHighPriceDiffMin = -5.0
+	}
+	rules.HardPrevVolRatioMax = settings.HardPrevVolRatioMax
+	if rules.HardPrevVolRatioMax == 0 {
+		rules.HardPrevVolRatioMax = 1.2
+	}
+	rules.HardStrengthMin = settings.HardStrengthMin
+	if rules.HardStrengthMin == 0 {
+		rules.HardStrengthMin = 100.0
+	}
+	rules.HardRSIMax = settings.HardRSIMax
+	if rules.HardRSIMax == 0 {
+		rules.HardRSIMax = 70.0
+	}
+	rules.HardOpenPriceDiffMax = settings.HardOpenPriceDiffMax
+	if rules.HardOpenPriceDiffMax == 0 {
+		rules.HardOpenPriceDiffMax = 15.0
+	}
+	rules.VWAPDiffMin = settings.VWAPDiffMin
+	rules.VWAPDiffMax = settings.VWAPDiffMax
+	if rules.VWAPDiffMax == 0 {
+		rules.VWAPDiffMax = 1.5
+	}
+	rules.RSIBuyMin = settings.RSIBuyMin
+	if rules.RSIBuyMin == 0 {
+		rules.RSIBuyMin = 40.0
+	}
+	rules.RSIBuyMax = settings.RSIBuyMax
+	if rules.RSIBuyMax == 0 {
+		rules.RSIBuyMax = 60.0
+	}
+	rules.BidAskRatioMin = settings.BidAskRatioMin
+	rules.MarketIndexDrop = marketIndexDrop
+
 	// Ask Claude to rank all viable candidates (single API call).
 	// excludedCodes are already filtered server-side above; pass nil here.
-	candidates, err := e.claude.SelectStocks(ctx, rankings, availableCash, nil, "KR")
+	candidates, err := e.claude.SelectStocks(ctx, rankings, availableCash, nil, "KR", rules)
 	if err != nil {
 		if selectionLogID > 0 {
 			e.db.ExecContext(ctx, //nolint:errcheck
@@ -1077,6 +1160,22 @@ func excdToExchCode(excd string) string {
 // selectAndBuyUS is the US market version of selectAndBuy.
 // Uses overseas KIS APIs for ranking, price, and order placement.
 func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSettings) error {
+	// 요일 체크
+	if len(settings.TradingDays) > 0 {
+		kst, _ := time.LoadLocation("Asia/Seoul")
+		today := int(time.Now().In(kst).Weekday())
+		allowed := false
+		for _, d := range settings.TradingDays {
+			if d == today {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return fmt.Errorf("오늘은 거래 제외 요일 (weekday=%d)", today)
+		}
+	}
+
 	e.setState(StateSelecting)
 
 	// 매수 중단 시간대 체크
@@ -1177,6 +1276,11 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		rankings[i].HighPriceDiff = info.HighPriceDiff
 		rankings[i].OpenPriceDiff = info.OpenPriceDiff
 		rankings[i].DisparityM5 = info.DisparityM5
+		rankings[i].VWAP = info.VWAP
+		rankings[i].VWAPDiff = info.VWAPDiff
+		rankings[i].M5MA10 = info.M5MA10
+		rankings[i].PrevVolumeRatio = info.PrevVolumeRatio
+		rankings[i].BidAskRatio = info.BidAskRatio
 	}
 
 	// 최소 거래대금 필터 (USD) — us_min_trading_value 우선, 0이면 min_trading_value fallback
@@ -1276,7 +1380,29 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		}
 	}
 
-	candidates, err := e.claude.SelectStocks(ctx, rankings, availableUSD, nil, "US")
+	usRules := DefaultTradingRules()
+	usRules.HardDisparityM5Max = settings.HardDisparityM5Max
+	if usRules.HardDisparityM5Max == 0 {
+		usRules.HardDisparityM5Max = 3.0
+	}
+	usRules.HardRSIMax = settings.HardRSIMax
+	if usRules.HardRSIMax == 0 {
+		usRules.HardRSIMax = 70.0
+	}
+	usRules.HardOpenPriceDiffMax = settings.HardOpenPriceDiffMax
+	if usRules.HardOpenPriceDiffMax == 0 {
+		usRules.HardOpenPriceDiffMax = 15.0
+	}
+	usRules.RSIBuyMin = settings.RSIBuyMin
+	if usRules.RSIBuyMin == 0 {
+		usRules.RSIBuyMin = 40.0
+	}
+	usRules.RSIBuyMax = settings.RSIBuyMax
+	if usRules.RSIBuyMax == 0 {
+		usRules.RSIBuyMax = 60.0
+	}
+
+	candidates, err := e.claude.SelectStocks(ctx, rankings, availableUSD, nil, "US", usRules)
 	if err != nil {
 		if selectionLogID > 0 {
 			e.db.ExecContext(ctx, //nolint:errcheck

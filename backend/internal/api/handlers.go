@@ -641,6 +641,23 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		FilterOpenPriceDiffMax *float64 `json:"filter_open_price_diff_max"`
 		// 지수 하락 임계값
 		IndexDropThresholdPct *float64 `json:"index_drop_threshold_pct"`
+		// 요일 스케줄
+		TradingDays []int `json:"trading_days"`
+		// AI 매매 기준값 — 하드 리젝션 룰
+		HardDisparityM5Min    *float64 `json:"hard_disparity_m5_min"`
+		HardDisparityM5Max    *float64 `json:"hard_disparity_m5_max"`
+		HardHighPriceDiffMax  *float64 `json:"hard_high_price_diff_max"`
+		HardHighPriceDiffMin  *float64 `json:"hard_high_price_diff_min"`
+		HardPrevVolRatioMax   *float64 `json:"hard_prev_vol_ratio_max"`
+		HardStrengthMin       *float64 `json:"hard_strength_min"`
+		HardRSIMax            *float64 `json:"hard_rsi_max"`
+		HardOpenPriceDiffMax  *float64 `json:"hard_open_price_diff_max"`
+		// AI 매매 기준값 — 랭킹 기준
+		VWAPDiffMin      *float64 `json:"vwap_diff_min"`
+		VWAPDiffMax      *float64 `json:"vwap_diff_max"`
+		RSIBuyMin        *float64 `json:"rsi_buy_min"`
+		RSIBuyMax        *float64 `json:"rsi_buy_max"`
+		BidAskRatioMin   *float64 `json:"bid_ask_ratio_min"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1010,6 +1027,82 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.IndexDropThresholdPct != nil {
 		if !save("index_drop_threshold_pct", strconv.FormatFloat(*req.IndexDropThresholdPct, 'f', -1, 64)) {
+			return
+		}
+	}
+
+	// 요일 스케줄 (trading_days)
+	if req.TradingDays != nil {
+		b, _ := json.Marshal(req.TradingDays)
+		if !save("trading_days", string(b)) {
+			return
+		}
+	}
+
+	// AI 매매 기준값 — 하드 리젝션 룰
+	if req.HardDisparityM5Min != nil {
+		if !save("hard_disparity_m5_min", strconv.FormatFloat(*req.HardDisparityM5Min, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardDisparityM5Max != nil {
+		if !save("hard_disparity_m5_max", strconv.FormatFloat(*req.HardDisparityM5Max, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardHighPriceDiffMax != nil {
+		if !save("hard_high_price_diff_max", strconv.FormatFloat(*req.HardHighPriceDiffMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardHighPriceDiffMin != nil {
+		if !save("hard_high_price_diff_min", strconv.FormatFloat(*req.HardHighPriceDiffMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardPrevVolRatioMax != nil {
+		if !save("hard_prev_vol_ratio_max", strconv.FormatFloat(*req.HardPrevVolRatioMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardStrengthMin != nil {
+		if !save("hard_strength_min", strconv.FormatFloat(*req.HardStrengthMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardRSIMax != nil {
+		if !save("hard_rsi_max", strconv.FormatFloat(*req.HardRSIMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardOpenPriceDiffMax != nil {
+		if !save("hard_open_price_diff_max", strconv.FormatFloat(*req.HardOpenPriceDiffMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	// AI 매매 기준값 — 랭킹 기준
+	if req.VWAPDiffMin != nil {
+		if !save("vwap_diff_min", strconv.FormatFloat(*req.VWAPDiffMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.VWAPDiffMax != nil {
+		if !save("vwap_diff_max", strconv.FormatFloat(*req.VWAPDiffMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RSIBuyMin != nil {
+		if !save("rsi_buy_min", strconv.FormatFloat(*req.RSIBuyMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RSIBuyMax != nil {
+		if !save("rsi_buy_max", strconv.FormatFloat(*req.RSIBuyMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.BidAskRatioMin != nil {
+		if !save("bid_ask_ratio_min", strconv.FormatFloat(*req.BidAskRatioMin, 'f', -1, 64)) {
 			return
 		}
 	}

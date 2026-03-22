@@ -77,6 +77,23 @@ type TradingSettings struct {
 	FilterOpenPriceDiffMax float64 // 시가 대비 최대값% (0=필터없음). 기본 20.0
 	// 지수 하락 임계값
 	IndexDropThresholdPct float64 // 지수 하락 시 매수 중단 기준 % (기본 -1.0)
+	// 요일별 트레이딩 스케줄 (0=일 1=월 2=화 3=수 4=목 5=금 6=토). 빈 배열=매일
+	TradingDays []int
+	// AI 하드 거부 기준값
+	HardDisparityM5Min    float64 // 5분봉 이격도 하한 (이하 → 칼날 하락 스킵). 기본 -1.5
+	HardDisparityM5Max    float64 // 5분봉 이격도 상한 (이상 → 과열 스킵). 기본 3.0
+	HardHighPriceDiffMax  float64 // 고점 대비 최대% (이상 → 고점권 스킵). 기본 -0.5
+	HardHighPriceDiffMin  float64 // 고점 대비 최소% (이하 + 거래량급증 → 추세이탈 스킵). 기본 -5.0
+	HardPrevVolRatioMax   float64 // 전봉 대비 거래량 비율 상한. 기본 1.2
+	HardStrengthMin       float64 // 체결강도 하한 (이하 → 매수세 소멸 스킵). 기본 100.0
+	HardRSIMax            float64 // RSI 상한 (이상 → 과매수 스킵). 기본 70.0
+	HardOpenPriceDiffMax  float64 // 시가 대비 상승률 상한 (이상 → 상한가권 스킵). 기본 15.0
+	// AI 매수 구간 기준값
+	VWAPDiffMin     float64 // VWAP 대비 이격도 하한 (%). 기본 0.0
+	VWAPDiffMax     float64 // VWAP 대비 이격도 상한 (%). 기본 1.5
+	RSIBuyMin       float64 // 이상적 매수 RSI 하한. 기본 40.0
+	RSIBuyMax       float64 // 이상적 매수 RSI 상한. 기본 60.0
+	BidAskRatioMin  float64 // 매수호가 우세 최솟값. 기본 1.2 (0=미사용)
 }
 
 // DB wraps the sql.DB connection.
@@ -285,6 +302,20 @@ func (db *DB) migrate() error {
 		{"filter_high_price_diff_min", "-5.0"},
 		{"filter_open_price_diff_max", "20.0"},
 		{"index_drop_threshold_pct", "-1.0"},
+		{"trading_days", "[1,2,3,4,5]"},
+		{"hard_disparity_m5_min", "-1.5"},
+		{"hard_disparity_m5_max", "3.0"},
+		{"hard_high_price_diff_max", "-0.5"},
+		{"hard_high_price_diff_min", "-5.0"},
+		{"hard_prev_vol_ratio_max", "1.2"},
+		{"hard_strength_min", "100.0"},
+		{"hard_rsi_max", "70.0"},
+		{"hard_open_price_diff_max", "15.0"},
+		{"vwap_diff_min", "0.0"},
+		{"vwap_diff_max", "1.5"},
+		{"rsi_buy_min", "40.0"},
+		{"rsi_buy_max", "60.0"},
+		{"bid_ask_ratio_min", "1.2"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -325,7 +356,12 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'daily_max_loss_pct','us_daily_max_loss_pct','us_min_trading_value','index_codes',`+
 			`'filter_rsi_max','filter_disparity_m5_max',`+
 			`'filter_high_price_diff_min','filter_open_price_diff_max',`+
-			`'index_drop_threshold_pct'`+
+			`'index_drop_threshold_pct',`+
+			`'trading_days',`+
+			`'hard_disparity_m5_min','hard_disparity_m5_max',`+
+			`'hard_high_price_diff_max','hard_high_price_diff_min',`+
+			`'hard_prev_vol_ratio_max','hard_strength_min','hard_rsi_max','hard_open_price_diff_max',`+
+			`'vwap_diff_min','vwap_diff_max','rsi_buy_min','rsi_buy_max','bid_ask_ratio_min'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -457,6 +493,62 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		indexDropThresholdPct = -1.0
 	}
 
+	var tradingDays []int
+	if v, ok := vals["trading_days"]; ok && v != "" {
+		if err := json.Unmarshal([]byte(v), &tradingDays); err != nil {
+			tradingDays = nil
+		}
+	}
+
+	hardDisparityM5Min := f64("hard_disparity_m5_min")
+	if hardDisparityM5Min == 0 {
+		hardDisparityM5Min = -1.5
+	}
+	hardDisparityM5Max := f64("hard_disparity_m5_max")
+	if hardDisparityM5Max == 0 {
+		hardDisparityM5Max = 3.0
+	}
+	hardHighPriceDiffMax := f64("hard_high_price_diff_max")
+	if hardHighPriceDiffMax == 0 {
+		hardHighPriceDiffMax = -0.5
+	}
+	hardHighPriceDiffMin := f64("hard_high_price_diff_min")
+	if hardHighPriceDiffMin == 0 {
+		hardHighPriceDiffMin = -5.0
+	}
+	hardPrevVolRatioMax := f64("hard_prev_vol_ratio_max")
+	if hardPrevVolRatioMax == 0 {
+		hardPrevVolRatioMax = 1.2
+	}
+	hardStrengthMin := f64("hard_strength_min")
+	if hardStrengthMin == 0 {
+		hardStrengthMin = 100.0
+	}
+	hardRSIMax := f64("hard_rsi_max")
+	if hardRSIMax == 0 {
+		hardRSIMax = 70.0
+	}
+	hardOpenPriceDiffMax := f64("hard_open_price_diff_max")
+	if hardOpenPriceDiffMax == 0 {
+		hardOpenPriceDiffMax = 15.0
+	}
+	vwapDiffMax := f64("vwap_diff_max")
+	if vwapDiffMax == 0 {
+		vwapDiffMax = 1.5
+	}
+	rsiBuyMin := f64("rsi_buy_min")
+	if rsiBuyMin == 0 {
+		rsiBuyMin = 40.0
+	}
+	rsiBuyMax := f64("rsi_buy_max")
+	if rsiBuyMax == 0 {
+		rsiBuyMax = 60.0
+	}
+	bidAskRatioMin := f64("bid_ask_ratio_min")
+	if bidAskRatioMin == 0 {
+		bidAskRatioMin = 1.2
+	}
+
 	return TradingSettings{
 		TakeProfitPct:              takeProfitPct,
 		StopLossPct:                stopLossPct,
@@ -505,6 +597,20 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		FilterHighPriceDiffMin:     filterHighPriceDiffMin,
 		FilterOpenPriceDiffMax:     filterOpenPriceDiffMax,
 		IndexDropThresholdPct:      indexDropThresholdPct,
+		TradingDays:                tradingDays,
+		HardDisparityM5Min:         hardDisparityM5Min,
+		HardDisparityM5Max:         hardDisparityM5Max,
+		HardHighPriceDiffMax:       hardHighPriceDiffMax,
+		HardHighPriceDiffMin:       hardHighPriceDiffMin,
+		HardPrevVolRatioMax:        hardPrevVolRatioMax,
+		HardStrengthMin:            hardStrengthMin,
+		HardRSIMax:                 hardRSIMax,
+		HardOpenPriceDiffMax:       hardOpenPriceDiffMax,
+		VWAPDiffMin:                f64("vwap_diff_min"),
+		VWAPDiffMax:                vwapDiffMax,
+		RSIBuyMin:                  rsiBuyMin,
+		RSIBuyMax:                  rsiBuyMax,
+		BidAskRatioMin:             bidAskRatioMin,
 	}, nil
 }
 

@@ -29,6 +29,11 @@ type StockInfo struct {
 	MACDLine      float64 `json:"macd_line"`      // MACD line (EMA12 − EMA26) from 5m candles
 	MACDSignal    float64 `json:"macd_signal"`    // Signal line (EMA9 of MACD line) from 5m candles
 	MACDHisto     float64 `json:"macd_histogram"` // Histogram (MACD line − Signal line)
+	VWAP            float64 `json:"vwap"`              // 당일 VWAP (거래량가중평균가); 0=데이터부족
+	VWAPDiff        float64 `json:"vwap_diff"`         // (현재가-VWAP)/VWAP×100 (%)
+	M5MA10          float64 `json:"m5_ma10"`           // 5분봉 MA10; 0=데이터부족
+	PrevVolumeRatio float64 `json:"prev_volume_ratio"` // 직전봉 대비 현재봉 거래량 비율; 0=데이터부족
+	BidAskRatio     float64 `json:"bid_ask_ratio"`     // 총 매수잔량 / 총 매도잔량; 0=API 실패 또는 데이터 없음
 }
 
 // GetStockInfo fetches the latest price and computes all technical indicators:
@@ -78,6 +83,23 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 	// MA5/MA20 are also computed from these 5m closes for intraday consistency.
 	bars, chartErr := fetchMinuteBars(ctx, client, stockCode, 200)
 	if chartErr == nil && len(bars) > 0 {
+		// VWAP from 1-min bars (oldest-first after fetchMinuteBars reversal)
+		var sumPV, sumVol float64
+		for _, b := range bars {
+			p, _ := strconv.ParseFloat(b.Close, 64)
+			v, _ := strconv.ParseFloat(b.Volume, 64)
+			if p > 0 && v > 0 {
+				sumPV += p * v
+				sumVol += v
+			}
+		}
+		if sumVol > 0 && len(bars) >= 5 { // 5분 이상 데이터여야 신뢰성 있음
+			info.VWAP = math.Round(sumPV/sumVol*100) / 100
+			if info.VWAP > 0 && price > 0 {
+				info.VWAPDiff = math.Round((price-info.VWAP)/info.VWAP*10000) / 100
+			}
+		}
+
 		candles5m := aggregateMinuteBars(bars, 5)
 		if len(candles5m) >= 2 {
 			closes5m := make([]float64, len(candles5m))
@@ -92,7 +114,23 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 			if ma5m := calcMA(closes5m, 5); ma5m > 0 && price > 0 {
 				info.DisparityM5 = math.Round((price-ma5m)/ma5m*10000) / 100
 			}
+			info.M5MA10 = calcMA(closes5m, 10)
+
+			// PrevVolumeRatio: 직전 5분봉 대비 최근 5분봉 거래량 비율
+			if len(candles5m) >= 2 {
+				curVol := float64(candles5m[len(candles5m)-1].Volume)
+				prevVol := float64(candles5m[len(candles5m)-2].Volume)
+				if prevVol > 0 {
+					info.PrevVolumeRatio = math.Round(curVol/prevVol*100) / 100
+				}
+			}
 		}
+	}
+
+	// BidAskRatio: 호가 잔량 비율 (매수잔량/매도잔량) — 별도 KIS API 호출
+	// 실패해도 info.BidAskRatio=0으로 처리하고 에러는 무시 (non-critical)
+	if ratio, err := client.GetBidAskRatio(ctx, stockCode); err == nil {
+		info.BidAskRatio = math.Round(ratio*100) / 100
 	}
 
 	return info, nil

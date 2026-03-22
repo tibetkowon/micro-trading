@@ -37,6 +37,55 @@ type RankItem struct {
 	RSI14      float64 `json:"rsi14,omitempty"`
 	MACDLine   float64 `json:"macd_line,omitempty"`
 	MACDSignal float64 `json:"macd_signal,omitempty"`
+	// 신규 기술 지표 (Phase 2)
+	VWAP            float64 `json:"vwap,omitempty"`              // 당일 VWAP
+	VWAPDiff        float64 `json:"vwap_diff,omitempty"`         // (현재가-VWAP)/VWAP×100
+	M5MA10          float64 `json:"m5_ma10,omitempty"`           // 5분봉 MA10
+	PrevVolumeRatio float64 `json:"prev_volume_ratio,omitempty"` // 직전봉 대비 거래량 비율
+	BidAskRatio     float64 `json:"bid_ask_ratio,omitempty"`     // 총 매수잔량/총 매도잔량 (0=데이터 없음)
+}
+
+// TradingRules holds parameterized hard rejection and ranking criteria for Claude prompts.
+type TradingRules struct {
+	// 런타임 시장 상태
+	MarketIndexDrop float64 // 현재 지수 등락률 (%) — 음수=하락
+	// 하드 거부 기준값
+	HardDisparityM5Min   float64
+	HardDisparityM5Max   float64
+	HardHighPriceDiffMax float64
+	HardHighPriceDiffMin float64
+	HardPrevVolRatioMax  float64
+	HardStrengthMin      float64
+	HardRSIMax           float64
+	HardOpenPriceDiffMax float64
+	// 매수 구간 기준값
+	VWAPDiffMin    float64
+	VWAPDiffMax    float64
+	RSIBuyMin      float64
+	RSIBuyMax      float64
+	BidAskRatioMin float64
+	// 지수 하락 임계값
+	IndexDropThreshold float64 // 기본 -1.0
+}
+
+// DefaultTradingRules returns safe default values (matches the hard-coded prompt values).
+func DefaultTradingRules() TradingRules {
+	return TradingRules{
+		HardDisparityM5Min:   -1.5,
+		HardDisparityM5Max:   3.0,
+		HardHighPriceDiffMax: -0.5,
+		HardHighPriceDiffMin: -5.0,
+		HardPrevVolRatioMax:  1.2,
+		HardStrengthMin:      100.0,
+		HardRSIMax:           70.0,
+		HardOpenPriceDiffMax: 15.0,
+		VWAPDiffMin:          0.0,
+		VWAPDiffMax:          1.5,
+		RSIBuyMin:            40.0,
+		RSIBuyMax:            60.0,
+		BidAskRatioMin:       1.2,
+		IndexDropThreshold:   -1.0,
+	}
 }
 
 // ClaudeClient wraps the Anthropic API for trading decisions.
@@ -72,6 +121,7 @@ func (c *ClaudeClient) SelectStocks(
 	availableCash float64,
 	_ []string, // excludedCodes: filtered server-side, kept for API compatibility
 	market string,
+	rules TradingRules,
 ) ([]StockCandidate, error) {
 	if len(rankings) == 0 {
 		return nil, fmt.Errorf("ranking list is empty")
@@ -86,15 +136,15 @@ func (c *ClaudeClient) SelectStocks(
 ## Hard Rejection Rules — skip if ANY apply:
 1. high_price_diff < -5%%  → dropped more than 5%% from today's high, avoid (selling pressure)
 2. ma5 < ma20  → downtrend, skip
-3. disparity_m5 > 3%%  → over-extended from 5-min MA, skip
-4. rsi14 >= 80  → overbought, skip
-5. open_price_diff > 20%%  → already at extreme daily high, skip
+3. disparity_m5 > %.1f%%  → over-extended from 5-min MA, skip
+4. rsi14 >= %.0f  → overbought, skip
+5. open_price_diff > %.0f%%  → already at extreme daily high, skip
 
 ## Ranking Criteria (for survivors):
 - Best entry: high_price_diff between -0.5%% and -3%% (slight pullback from high, ready to bounce)
 - MA trend: ma5 > ma20 confirms uptrend — prefer larger gap
 - MACD: macd_line > macd_signal preferred (upward momentum)
-- RSI: 40–65 is the ideal buy zone (not overbought, has momentum)
+- RSI: %.0f–%.0f is the ideal buy zone (not overbought, has momentum)
 - Disparity: disparity_m5 between 0%% and 2%% (near 5-min MA support, not overextended)
 - Volume confirmation: higher volume relative to average indicates institutional interest
 - Prioritize consolidation/pullback: open_price_diff between 2%% and 10%% (healthy gap-up, consolidating)
@@ -109,31 +159,54 @@ Respond with ONLY a valid JSON array — no explanation, no markdown, no extra t
 If no stock passes, respond with exactly: []
 Best entry first:
 [{"stock_code":"TICKER","reason":"Pulled back -Y%% from high, MA5 > MA20, RSI=X (buy zone), MACD bullish, consolidating near 5min MA"},...]`,
+			rules.HardDisparityM5Max,
+			rules.HardRSIMax,
+			rules.HardOpenPriceDiffMax,
+			rules.RSIBuyMin, rules.RSIBuyMax,
 			string(rankJSON), availableCash)
 	} else {
-		prompt = fmt.Sprintf(`You are an elite Korean day-trader known for avoiding Bull Traps and finding pullback(눌림목) entries.
+		marketIndexNote := ""
+		if rules.MarketIndexDrop != 0 {
+			marketIndexNote = fmt.Sprintf("Current market index: %.2f%% (시가 대비 등락률)\n", rules.MarketIndexDrop)
+		}
+		prompt = fmt.Sprintf(`You are an elite Korean day-trader known for strict risk management, avoiding Bull Traps, and finding high-probability pullback(눌림목) entries.
 
-## Hard Rejection Rules — skip if ANY apply:
-1. disparity_m5 > 3%%  → over-extended from 5-min MA, skip
-2. high_price_diff > -0.5%%  → basically at today's peak, skip
-3. ma5 < ma20  → downtrend, skip
-4. open_price_diff > 20%%  → 당일 상한가 영역, 설거지 위험, skip
+%s## Hard Rejection Rules — skip if ANY apply (Kill-switch & Defense):
+1. market_index_drop < %.1f%%  → 전체 시장 급락 중(투매 장세), skip all
+2. disparity_m5 > %.1f%% OR disparity_m5 < %.1f%%  → 5분봉 MA에서 너무 멀거나 지지선 하향 돌파(칼날 하락), skip
+3. high_price_diff > %.1f%%  → 당일 고점 부근(추격 매수 위험), skip
+4. high_price_diff < %.1f%% AND prev_volume_ratio > %.1f  → 대량 거래량 동반 하락(추세 이탈), skip
+5. ma5 < ma20  → 5분봉 단기 역배열(하락 추세), skip
+6. strength < %.0f  → 매수 체결 우위 아님(매수세 소멸), skip
+7. rsi14 > %.0f  → 단기 과매수 상태에서 꺾이는 중, skip
+8. open_price_diff > %.0f%%  → 이미 너무 많이 오른 종목(설거지 위험), skip
 
 ## Ranking Criteria (for survivors):
-- 눌림목 우선: high_price_diff between -1%% and -3%% (고점 대비 눌림, 반등 준비)
-- 최적 매수 구간: 5분봉 MA 지지선 근처, 당일 고가 아님
-- Volume quality: net_buy_qty > 0 + strength increasing = accumulation signal
-- MACD: macd_line > macd_signal preferred (upward momentum)
-- Avoid: open_price_diff > 10%% (이미 너무 많이 오른 종목, 뒤늦은 진입)
+- 진정한 눌림목(True Pullback): vwap_diff between %.1f%% ~ %.1f%% (VWAP 지지선 부근 반등 대기); if vwap_diff is 0, use high_price_diff -1%% ~ -3%%
+- 건전한 거래량: 하락 시 prev_volume_ratio < 0.8 (거래량 감소) 및 net_buy_qty > 0 (순매수 우세)
+- 수급/모멘텀: bid_ask_ratio > %.1f (매수 호가 우세), macd_line > macd_signal
+- 최적 매수 구간: rsi14 between %.0f ~ %.0f (반등 구간, 과매수 아님)
+- MA 배열: ma5 > ma20 > m5_ma10 순서면 강세 배열 가산점
 
-Ranking data (JSON):
+Ranking data (JSON format; vwap_diff=0 means VWAP unavailable):
 %s
 Available cash: %.0f KRW
 
 Respond with ONLY a valid JSON array — no explanation, no markdown, no extra text.
 If no stock passes, respond with exactly: []
 Best entry first:
-[{"stock_code":"6-digit","reason":"고점(X원) 대비 -Y%% 눌림, 5분봉 MA 지지, 순매수 우세로 반등 기대"},...]`,
+[{"stock_code":"6-digit","reason":"고점(X원) 대비 -Y%% 눌림, VWAP 지지선 근처, 거래량 감소 눌림목, 체결강도 Z%% 매수우세로 반등 기대"}]`,
+			marketIndexNote,
+			rules.IndexDropThreshold,
+			rules.HardDisparityM5Max, rules.HardDisparityM5Min,
+			rules.HardHighPriceDiffMax,
+			rules.HardHighPriceDiffMin, rules.HardPrevVolRatioMax,
+			rules.HardStrengthMin,
+			rules.HardRSIMax,
+			rules.HardOpenPriceDiffMax,
+			rules.VWAPDiffMin, rules.VWAPDiffMax,
+			rules.BidAskRatioMin,
+			rules.RSIBuyMin, rules.RSIBuyMax,
 			string(rankJSON), availableCash)
 	}
 

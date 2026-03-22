@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-22 — 트레이딩 고도화 Phase 1-3 + Phase 2d (BidAskRatio) 완료
+
+### Phase 2d — BidAskRatio KIS API 통합
+- **`kis/client.go`**: `GetBidAskRatio(ctx, stockCode)` 신규 함수 추가 (`inquire-asking-price-exp-ccn`, TR_ID `FHKST01010200`)
+- **`agent/stock_info.go`**: `BidAskRatio float64` 필드 추가, `GetStockInfo`에서 호출 (실패 시 0으로 무시)
+- **`trader/claude.go`**: `RankItem.BidAskRatio` 필드 추가
+- **`trader/engine.go`**: KR/US 양쪽 getRankings에서 `rankings[i].BidAskRatio = info.BidAskRatio` 반영
+
+### Phase 3 + Phase 1 — 프론트엔드 완성 (Settings.jsx)
+- **요일 스케줄 체크박스**: 거래 제어 섹션에 월~일 체크박스 추가, `trading_days` 배열로 저장
+- **AI 매매 기준값 섹션 신설**: 하드 리젝션 룰 8개 + 랭킹 기준 5개 수치 입력 UI
+  - 하드 룰: `hard_disparity_m5_min/max`, `hard_high_price_diff_max/min`, `hard_prev_vol_ratio_max`, `hard_strength_min`, `hard_rsi_max`, `hard_open_price_diff_max`
+  - 랭킹 기준: `vwap_diff_min/max`, `rsi_buy_min/max`, `bid_ask_ratio_min`
+- **`handlers.go` UpdateSettings**: `trading_days` JSON 배열 파싱 + 13개 신규 AI 기준값 필드 저장 처리
+- **`mocks/handlers.js`**: 신규 설정 필드 기본값 추가
+
+### Phase 2a-2c — 신규 기술 지표 (이전 커밋)
+- VWAP, VWAPDiff, M5MA10, PrevVolumeRatio 계산 및 Claude 프롬프트 전달
+
 ## 2026-03-20 — 라이트/다크 테마 완전 동작 + 실현 손익 그래프 추가
 
 - **전 페이지 테마 토큰화**: 모든 hardcoded hex 색상(`bg-[#131316]` 등) → CSS semantic token (`bg-th-*`) 교체, 라이트/다크 모드 완전 분리

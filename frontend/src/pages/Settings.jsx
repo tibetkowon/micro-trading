@@ -110,6 +110,26 @@ export default function Settings() {
   const [filterOpenPriceDiffMax, setFilterOpenPriceDiffMax] = useState('20.0')
   const [indexDropThresholdPct, setIndexDropThresholdPct] = useState('-1.0')
 
+  // ── 요일 스케줄 ──
+  const [tradingDays, setTradingDays] = useState([1, 2, 3, 4, 5])
+
+  // ── AI 매매 기준값 — 하드 리젝션 ──
+  const [hardDisparityM5Min, setHardDisparityM5Min] = useState('-1.5')
+  const [hardDisparityM5Max, setHardDisparityM5Max] = useState('3.0')
+  const [hardHighPriceDiffMax, setHardHighPriceDiffMax] = useState('-0.5')
+  const [hardHighPriceDiffMin, setHardHighPriceDiffMin] = useState('-5.0')
+  const [hardPrevVolRatioMax, setHardPrevVolRatioMax] = useState('1.2')
+  const [hardStrengthMin, setHardStrengthMin] = useState('100.0')
+  const [hardRsiMax, setHardRsiMax] = useState('70.0')
+  const [hardOpenPriceDiffMax, setHardOpenPriceDiffMax] = useState('15.0')
+
+  // ── AI 매매 기준값 — 랭킹 기준 ──
+  const [vwapDiffMin, setVwapDiffMin] = useState('0.0')
+  const [vwapDiffMax, setVwapDiffMax] = useState('1.5')
+  const [rsiBuyMin, setRsiBuyMin] = useState('40.0')
+  const [rsiBuyMax, setRsiBuyMax] = useState('60.0')
+  const [bidAskRatioMin, setBidAskRatioMin] = useState('1.2')
+
   // ── AI 설정 ──
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
 
@@ -172,6 +192,22 @@ export default function Settings() {
     if (Array.isArray(data.index_codes)) setIndexCodes(data.index_codes)
 
     if (data.claude_model) setClaudeModel(data.claude_model)
+
+    if (Array.isArray(data.trading_days)) setTradingDays(data.trading_days)
+
+    if (data.hard_disparity_m5_min != null) setHardDisparityM5Min(String(data.hard_disparity_m5_min))
+    if (data.hard_disparity_m5_max != null) setHardDisparityM5Max(String(data.hard_disparity_m5_max))
+    if (data.hard_high_price_diff_max != null) setHardHighPriceDiffMax(String(data.hard_high_price_diff_max))
+    if (data.hard_high_price_diff_min != null) setHardHighPriceDiffMin(String(data.hard_high_price_diff_min))
+    if (data.hard_prev_vol_ratio_max != null) setHardPrevVolRatioMax(String(data.hard_prev_vol_ratio_max))
+    if (data.hard_strength_min != null) setHardStrengthMin(String(data.hard_strength_min))
+    if (data.hard_rsi_max != null) setHardRsiMax(String(data.hard_rsi_max))
+    if (data.hard_open_price_diff_max != null) setHardOpenPriceDiffMax(String(data.hard_open_price_diff_max))
+    if (data.vwap_diff_min != null) setVwapDiffMin(String(data.vwap_diff_min))
+    if (data.vwap_diff_max != null) setVwapDiffMax(String(data.vwap_diff_max))
+    if (data.rsi_buy_min != null) setRsiBuyMin(String(data.rsi_buy_min))
+    if (data.rsi_buy_max != null) setRsiBuyMax(String(data.rsi_buy_max))
+    if (data.bid_ask_ratio_min != null) setBidAskRatioMin(String(data.bid_ask_ratio_min))
 
     if (data.filter_rsi_max != null) setFilterRsiMax(String(data.filter_rsi_max))
     if (data.filter_disparity_m5_max != null) setFilterDisparityM5Max(String(data.filter_disparity_m5_max))
@@ -277,6 +313,20 @@ export default function Settings() {
       filter_high_price_diff_min: parseFloat(filterHighPriceDiffMin) || -5.0,
       filter_open_price_diff_max: parseFloat(filterOpenPriceDiffMax) || 20.0,
       index_drop_threshold_pct: parseFloat(indexDropThresholdPct) || -1.0,
+      trading_days: tradingDays,
+      hard_disparity_m5_min: parseFloat(hardDisparityM5Min),
+      hard_disparity_m5_max: parseFloat(hardDisparityM5Max),
+      hard_high_price_diff_max: parseFloat(hardHighPriceDiffMax),
+      hard_high_price_diff_min: parseFloat(hardHighPriceDiffMin),
+      hard_prev_vol_ratio_max: parseFloat(hardPrevVolRatioMax),
+      hard_strength_min: parseFloat(hardStrengthMin),
+      hard_rsi_max: parseFloat(hardRsiMax),
+      hard_open_price_diff_max: parseFloat(hardOpenPriceDiffMax),
+      vwap_diff_min: parseFloat(vwapDiffMin),
+      vwap_diff_max: parseFloat(vwapDiffMax),
+      rsi_buy_min: parseFloat(rsiBuyMin),
+      rsi_buy_max: parseFloat(rsiBuyMax),
+      bid_ask_ratio_min: parseFloat(bidAskRatioMin),
     }
 
     try {
@@ -438,6 +488,37 @@ export default function Settings() {
               />
               <p className={hintText}>기본 -1.0 — 지수가 시가 대비 이 값 이하로 하락 시 매수 중단</p>
             </label>
+          </div>
+
+          {/* 거래 요일 */}
+          <div className={`space-y-2 ${divider}`}>
+            <span className={`${labelText} block`}>거래 요일</span>
+            <p className={hintText}>체크된 요일에만 자동매매가 실행됩니다.</p>
+            <div className="flex flex-wrap gap-3">
+              {[
+                { day: 1, label: '월' },
+                { day: 2, label: '화' },
+                { day: 3, label: '수' },
+                { day: 4, label: '목' },
+                { day: 5, label: '금' },
+                { day: 6, label: '토' },
+                { day: 0, label: '일' },
+              ].map(({ day, label }) => (
+                <label key={day} className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={tradingDays.includes(day)}
+                    onChange={(e) =>
+                      setTradingDays((prev) =>
+                        e.target.checked ? [...prev, day] : prev.filter((d) => d !== day)
+                      )
+                    }
+                    className="accent-orange-500"
+                  />
+                  <span className="text-sm text-th-on-surface">{label}</span>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -871,6 +952,156 @@ export default function Settings() {
             </label>
           </div>
 
+        </div>
+
+        {/* ── 섹션 5c: AI 매매 기준값 ── */}
+        <div className={sectionCls}>
+          <p className={sectionTitle}>AI 매매 기준값</p>
+          <p className={hintText}>Claude에게 전달되는 하드 리젝션 룰과 랭킹 기준 수치입니다. 변경 시 즉시 다음 종목 선정에 반영됩니다.</p>
+
+          {/* 하드 리젝션 룰 */}
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-th-on-muted uppercase tracking-widest">하드 리젝션 룰 (ANY 해당 시 제외)</p>
+          </div>
+          <div className={`grid md:grid-cols-2 gap-4 ${divider}`}>
+            <label className="space-y-1">
+              <span className={labelText}>5분봉 이격도 하한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={hardDisparityM5Min}
+                onChange={(e) => setHardDisparityM5Min(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이하 → 칼날 하락 구간 (기본 -1.5)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>5분봉 이격도 상한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={hardDisparityM5Max}
+                onChange={(e) => setHardDisparityM5Max(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이상 → 과열 구간 (기본 3.0)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>고점 대비 상한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={hardHighPriceDiffMax}
+                onChange={(e) => setHardHighPriceDiffMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이상 → 고점 추격 위험 (기본 -0.5)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>고점 대비 하한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={hardHighPriceDiffMin}
+                onChange={(e) => setHardHighPriceDiffMin(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이하 + 거래량 급증 → 추세이탈 (기본 -5.0)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>하락 시 거래량 비율 상한</span>
+              <input
+                type="number" step="0.1" min="0"
+                value={hardPrevVolRatioMax}
+                onChange={(e) => setHardPrevVolRatioMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>하락 중 전 캔들 대비 거래량 비율 (기본 1.2)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>최소 체결강도</span>
+              <input
+                type="number" step="1" min="0"
+                value={hardStrengthMin}
+                onChange={(e) => setHardStrengthMin(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이하 → 매수세 소멸 (기본 100)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>RSI 과매수 상한</span>
+              <input
+                type="number" step="1" min="50" max="100"
+                value={hardRsiMax}
+                onChange={(e) => setHardRsiMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이상 → 과매수에서 꺾임 (기본 70)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>시가 대비 상승률 상한 (%)</span>
+              <input
+                type="number" step="0.5" min="0"
+                value={hardOpenPriceDiffMax}
+                onChange={(e) => setHardOpenPriceDiffMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이 값 이상 → 상한가 영역 (기본 15)</p>
+            </label>
+          </div>
+
+          {/* 랭킹 기준 */}
+          <div className={`space-y-1 ${divider}`}>
+            <p className="text-xs font-semibold text-th-on-muted uppercase tracking-widest">랭킹 우선 기준 (선호 구간)</p>
+          </div>
+          <div className={`grid md:grid-cols-2 gap-4`}>
+            <label className="space-y-1">
+              <span className={labelText}>VWAP 이격도 하한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={vwapDiffMin}
+                onChange={(e) => setVwapDiffMin(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>VWAP 지지선 위에서 매수 (기본 0.0)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>VWAP 이격도 상한 (%)</span>
+              <input
+                type="number" step="0.1"
+                value={vwapDiffMax}
+                onChange={(e) => setVwapDiffMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>VWAP 과리 제외 (기본 1.5)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>RSI 매수 구간 하한</span>
+              <input
+                type="number" step="1" min="0" max="100"
+                value={rsiBuyMin}
+                onChange={(e) => setRsiBuyMin(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이상적 RSI 매수 구간 (기본 40)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>RSI 매수 구간 상한</span>
+              <input
+                type="number" step="1" min="0" max="100"
+                value={rsiBuyMax}
+                onChange={(e) => setRsiBuyMax(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>이상적 RSI 매수 구간 (기본 60)</p>
+            </label>
+            <label className="space-y-1">
+              <span className={labelText}>최소 매수호가 우세 비율</span>
+              <input
+                type="number" step="0.1" min="0"
+                value={bidAskRatioMin}
+                onChange={(e) => setBidAskRatioMin(e.target.value)}
+                className={inputCls}
+              />
+              <p className={hintText}>매수잔량 / 매도잔량 최소 비율 (기본 1.2)</p>
+            </label>
+          </div>
         </div>
 
         {/* ── 섹션 6: 미장 (미국주식) 설정 ── */}
