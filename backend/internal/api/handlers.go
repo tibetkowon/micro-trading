@@ -580,8 +580,8 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		// 요일 스케줄
 		"trading_days": ts.TradingDays,
 		// AI 매매 기준값 — 하드 리젝션
-		"hard_disparity_m5_min":   ts.HardDisparityM5Min,
-		"hard_disparity_m5_max":   ts.HardDisparityM5Max,
+		"hard_disparity_m5_min":    ts.HardDisparityM5Min,
+		"hard_disparity_m5_max":    ts.HardDisparityM5Max,
 		"hard_high_price_diff_max": ts.HardHighPriceDiffMax,
 		"hard_high_price_diff_min": ts.HardHighPriceDiffMin,
 		"hard_prev_vol_ratio_max":  ts.HardPrevVolRatioMax,
@@ -589,10 +589,10 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"hard_rsi_max":             ts.HardRSIMax,
 		"hard_open_price_diff_max": ts.HardOpenPriceDiffMax,
 		// AI 매매 기준값 — 랭킹 기준
-		"vwap_diff_min":    ts.VWAPDiffMin,
-		"vwap_diff_max":    ts.VWAPDiffMax,
-		"rsi_buy_min":      ts.RSIBuyMin,
-		"rsi_buy_max":      ts.RSIBuyMax,
+		"vwap_diff_min":     ts.VWAPDiffMin,
+		"vwap_diff_max":     ts.VWAPDiffMax,
+		"rsi_buy_min":       ts.RSIBuyMin,
+		"rsi_buy_max":       ts.RSIBuyMax,
 		"bid_ask_ratio_min": ts.BidAskRatioMin,
 	})
 }
@@ -661,20 +661,20 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		// 요일 스케줄
 		TradingDays []int `json:"trading_days"`
 		// AI 매매 기준값 — 하드 리젝션 룰
-		HardDisparityM5Min    *float64 `json:"hard_disparity_m5_min"`
-		HardDisparityM5Max    *float64 `json:"hard_disparity_m5_max"`
-		HardHighPriceDiffMax  *float64 `json:"hard_high_price_diff_max"`
-		HardHighPriceDiffMin  *float64 `json:"hard_high_price_diff_min"`
-		HardPrevVolRatioMax   *float64 `json:"hard_prev_vol_ratio_max"`
-		HardStrengthMin       *float64 `json:"hard_strength_min"`
-		HardRSIMax            *float64 `json:"hard_rsi_max"`
-		HardOpenPriceDiffMax  *float64 `json:"hard_open_price_diff_max"`
+		HardDisparityM5Min   *float64 `json:"hard_disparity_m5_min"`
+		HardDisparityM5Max   *float64 `json:"hard_disparity_m5_max"`
+		HardHighPriceDiffMax *float64 `json:"hard_high_price_diff_max"`
+		HardHighPriceDiffMin *float64 `json:"hard_high_price_diff_min"`
+		HardPrevVolRatioMax  *float64 `json:"hard_prev_vol_ratio_max"`
+		HardStrengthMin      *float64 `json:"hard_strength_min"`
+		HardRSIMax           *float64 `json:"hard_rsi_max"`
+		HardOpenPriceDiffMax *float64 `json:"hard_open_price_diff_max"`
 		// AI 매매 기준값 — 랭킹 기준
-		VWAPDiffMin      *float64 `json:"vwap_diff_min"`
-		VWAPDiffMax      *float64 `json:"vwap_diff_max"`
-		RSIBuyMin        *float64 `json:"rsi_buy_min"`
-		RSIBuyMax        *float64 `json:"rsi_buy_max"`
-		BidAskRatioMin   *float64 `json:"bid_ask_ratio_min"`
+		VWAPDiffMin    *float64 `json:"vwap_diff_min"`
+		VWAPDiffMax    *float64 `json:"vwap_diff_max"`
+		RSIBuyMin      *float64 `json:"rsi_buy_min"`
+		RSIBuyMax      *float64 `json:"rsi_buy_max"`
+		BidAskRatioMin *float64 `json:"bid_ask_ratio_min"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
