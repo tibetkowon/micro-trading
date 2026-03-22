@@ -65,6 +65,14 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		{
 			stats.GET("/daily-pnl", h.GetDailyPnL)
 		}
+
+		presets := api.Group("/presets")
+		{
+			presets.GET("", h.ListPresets)
+			presets.POST("", h.CreatePreset)
+			presets.POST("/:id/apply", h.ApplyPreset)
+			presets.DELETE("/:id", h.DeletePreset)
+		}
 	}
 
 	// Health check

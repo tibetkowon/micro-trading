@@ -437,4 +437,41 @@ export const handlers = [
     }
     return HttpResponse.json({ days, data })
   }),
+
+  // ── Settings Presets ──────────────────────────────────────
+  http.get('/api/presets', () => {
+    return HttpResponse.json({
+      presets: [
+        {
+          id: 1,
+          name: '공격적',
+          description: '단기 고수익 추구 — RSI/강도 기준 완화',
+          settings_json: '{}',
+          created_at: '2026-03-20T09:00:00',
+          updated_at: '2026-03-20T09:00:00',
+        },
+        {
+          id: 2,
+          name: '방어적',
+          description: '안전 우선 — 필터 강화, 요일 제한',
+          settings_json: '{}',
+          created_at: '2026-03-20T09:00:00',
+          updated_at: '2026-03-20T09:00:00',
+        },
+      ],
+    })
+  }),
+
+  http.post('/api/presets', async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ id: Date.now(), message: `'${body.name}' 프리셋이 저장되었습니다.` }, { status: 201 })
+  }),
+
+  http.post('/api/presets/:id/apply', ({ params }) => {
+    return HttpResponse.json({ message: `프리셋 #${params.id}이 적용되었습니다.` })
+  }),
+
+  http.delete('/api/presets/:id', ({ params }) => {
+    return HttpResponse.json({ message: `프리셋 #${params.id}이 삭제되었습니다.` })
+  }),
 ]

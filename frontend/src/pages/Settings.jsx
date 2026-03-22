@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import PropTypes from 'prop-types'
 import { useApi } from '../hooks/useApi'
 
@@ -55,6 +55,73 @@ const SELL_CONDITIONS = [
 
 export default function Settings() {
   const { data, loading, error, refetch } = useApi('/api/settings')
+
+  // ── 프리셋 ──
+  const [presets, setPresets] = useState([])
+  const [presetName, setPresetName] = useState('')
+  const [presetDesc, setPresetDesc] = useState('')
+  const [presetSaving, setPresetSaving] = useState(false)
+  const [presetApplying, setPresetApplying] = useState(false)
+  const [presetMsg, setPresetMsg] = useState(null)
+
+  const fetchPresets = useCallback(async () => {
+    try {
+      const res = await fetch('/api/presets')
+      const json = await res.json()
+      if (res.ok) setPresets(json.presets || [])
+    } catch (_) { /* ignore */ }
+  }, [])
+
+  useEffect(() => { fetchPresets() }, [fetchPresets])
+
+  async function handleSavePreset() {
+    if (!presetName.trim()) { setPresetMsg({ ok: false, text: '프리셋 이름을 입력하세요' }); return }
+    setPresetSaving(true); setPresetMsg(null)
+    try {
+      const res = await fetch('/api/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: presetName.trim(), description: presetDesc.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setPresetMsg({ ok: false, text: json.error || '저장 실패' }); return }
+      setPresetMsg({ ok: true, text: json.message })
+      setPresetName(''); setPresetDesc('')
+      fetchPresets()
+    } catch (err) {
+      setPresetMsg({ ok: false, text: err.message })
+    } finally {
+      setPresetSaving(false)
+    }
+  }
+
+  async function handleApplyPreset(id) {
+    setPresetApplying(true); setPresetMsg(null)
+    try {
+      const res = await fetch(`/api/presets/${id}/apply`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) { setPresetMsg({ ok: false, text: json.error || '적용 실패' }); return }
+      setPresetMsg({ ok: true, text: json.message })
+      refetch()
+    } catch (err) {
+      setPresetMsg({ ok: false, text: err.message })
+    } finally {
+      setPresetApplying(false)
+    }
+  }
+
+  async function handleDeletePreset(id, name) {
+    if (!window.confirm(`'${name}' 프리셋을 삭제하시겠습니까?`)) return
+    try {
+      const res = await fetch(`/api/presets/${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) { setPresetMsg({ ok: false, text: json.error || '삭제 실패' }); return }
+      setPresetMsg({ ok: true, text: json.message })
+      fetchPresets()
+    } catch (err) {
+      setPresetMsg({ ok: false, text: err.message })
+    }
+  }
 
   // ── 거래 제어 ──
   const [tradingEnabled, setTradingEnabled] = useState(true)
@@ -381,6 +448,77 @@ export default function Settings() {
             {saving ? '저장 중...' : '설정 저장'}
           </button>
         </div>
+      </div>
+
+      {/* ── 프리셋 패널 ── */}
+      <div className={`${sectionCls} !space-y-3`}>
+        <p className={sectionTitle}>매매 프리셋</p>
+        <p className={hintText}>현재 설정을 저장하거나 기존 프리셋을 불러와 즉시 적용합니다.</p>
+
+        {/* 저장된 프리셋 목록 */}
+        {presets.length > 0 && (
+          <div className="space-y-2">
+            {presets.map((p) => (
+              <div key={p.id} className="flex items-center gap-2 bg-th-surface-high rounded-lg px-3 py-2">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-th-on-surface">{p.name}</span>
+                  {p.description && (
+                    <span className="text-xs text-th-on-muted ml-2">{p.description}</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset(p.id)}
+                  disabled={presetApplying}
+                  className="shrink-0 px-3 py-1 text-xs rounded-md bg-orange-500/15 text-orange-400 hover:bg-orange-500/25 disabled:opacity-50 transition-colors"
+                >
+                  적용
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeletePreset(p.id, p.name)}
+                  className="shrink-0 p-1 text-th-on-subtle hover:text-red-400 transition-colors rounded"
+                  title="삭제"
+                >
+                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {presets.length === 0 && (
+          <p className="text-xs text-th-on-subtle">저장된 프리셋이 없습니다.</p>
+        )}
+
+        {/* 현재 설정을 프리셋으로 저장 */}
+        <div className={`flex flex-col sm:flex-row gap-2 ${divider}`}>
+          <input
+            type="text"
+            placeholder="프리셋 이름 (예: 공격적)"
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            className={`flex-1 ${inputCls}`}
+          />
+          <input
+            type="text"
+            placeholder="설명 (선택)"
+            value={presetDesc}
+            onChange={(e) => setPresetDesc(e.target.value)}
+            className={`flex-1 ${inputCls}`}
+          />
+          <button
+            type="button"
+            onClick={handleSavePreset}
+            disabled={presetSaving}
+            className="shrink-0 px-4 py-1.5 bg-th-surface-high hover:bg-th-surface-highest text-th-on-surface text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors"
+          >
+            {presetSaving ? '저장 중...' : '현재 설정 저장'}
+          </button>
+        </div>
+
+        {presetMsg && (
+          <p className={`text-xs ${presetMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{presetMsg.text}</p>
+        )}
       </div>
 
       {/* ── 편집 폼 ── */}

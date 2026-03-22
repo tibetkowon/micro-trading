@@ -577,6 +577,23 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"filter_open_price_diff_max": ts.FilterOpenPriceDiffMax,
 		// 지수 하락 임계값
 		"index_drop_threshold_pct": ts.IndexDropThresholdPct,
+		// 요일 스케줄
+		"trading_days": ts.TradingDays,
+		// AI 매매 기준값 — 하드 리젝션
+		"hard_disparity_m5_min":   ts.HardDisparityM5Min,
+		"hard_disparity_m5_max":   ts.HardDisparityM5Max,
+		"hard_high_price_diff_max": ts.HardHighPriceDiffMax,
+		"hard_high_price_diff_min": ts.HardHighPriceDiffMin,
+		"hard_prev_vol_ratio_max":  ts.HardPrevVolRatioMax,
+		"hard_strength_min":        ts.HardStrengthMin,
+		"hard_rsi_max":             ts.HardRSIMax,
+		"hard_open_price_diff_max": ts.HardOpenPriceDiffMax,
+		// AI 매매 기준값 — 랭킹 기준
+		"vwap_diff_min":    ts.VWAPDiffMin,
+		"vwap_diff_max":    ts.VWAPDiffMax,
+		"rsi_buy_min":      ts.RSIBuyMin,
+		"rsi_buy_max":      ts.RSIBuyMax,
+		"bid_ask_ratio_min": ts.BidAskRatioMin,
 	})
 }
 
@@ -1326,4 +1343,94 @@ func (h *Handler) GetDailyPnL(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"days": days, "data": data})
+}
+
+// ─── Settings Presets ─────────────────────────────────────────────────────────
+
+// GET /api/presets — 프리셋 목록 반환
+func (h *Handler) ListPresets(c *gin.Context) {
+	presets, err := h.db.ListSettingsPresets(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"presets": presets})
+}
+
+// POST /api/presets — 현재 설정 스냅샷을 새 프리셋으로 저장
+func (h *Handler) CreatePreset(c *gin.Context) {
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name은 필수입니다"})
+		return
+	}
+
+	// 현재 settings 테이블의 모든 키-값 스냅샷
+	rows, err := h.db.QueryContext(c.Request.Context(), `SELECT key, value FROM settings`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+	snapshot := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err == nil {
+			snapshot[k] = v
+		}
+	}
+	b, _ := json.Marshal(snapshot)
+
+	id, err := h.db.CreateSettingsPreset(c.Request.Context(), req.Name, req.Description, string(b))
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "이미 동일한 이름의 프리셋이 있습니다: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "프리셋이 저장되었습니다."})
+}
+
+// POST /api/presets/:id/apply — 프리셋 값을 현재 settings에 적용
+func (h *Handler) ApplyPreset(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "잘못된 프리셋 ID"})
+		return
+	}
+	preset, err := h.db.GetSettingsPreset(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "프리셋을 찾을 수 없습니다"})
+		return
+	}
+	var snapshot map[string]string
+	if err := json.Unmarshal([]byte(preset.SettingsJSON), &snapshot); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "프리셋 파싱 실패"})
+		return
+	}
+	ctx := c.Request.Context()
+	for k, v := range snapshot {
+		if err := h.db.SetSetting(ctx, k, v); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "설정 적용 실패: " + err.Error()})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"message": preset.Name + " 프리셋이 적용되었습니다."})
+}
+
+// DELETE /api/presets/:id — 프리셋 삭제
+func (h *Handler) DeletePreset(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "잘못된 프리셋 ID"})
+		return
+	}
+	if err := h.db.DeleteSettingsPreset(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "프리셋이 삭제되었습니다."})
 }

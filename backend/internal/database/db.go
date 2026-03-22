@@ -222,6 +222,15 @@ func (db *DB) migrate() error {
 			intersection_count INTEGER  NOT NULL DEFAULT 0,
 			error_message      TEXT     NOT NULL DEFAULT ''
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS settings_presets (
+			id            INTEGER  PRIMARY KEY AUTOINCREMENT,
+			name          TEXT     NOT NULL UNIQUE,
+			description   TEXT     NOT NULL DEFAULT '',
+			settings_json TEXT     NOT NULL DEFAULT '{}',
+			created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
 	}
 
 	for _, s := range stmts {
@@ -811,4 +820,72 @@ func (db *DB) GetRankingLogs(ctx context.Context, limit int) ([]models.TraderRan
 		logs = []models.TraderRankingLog{}
 	}
 	return logs, nil
+}
+
+// ────────────────────────────────────────────────────────
+// Settings Presets
+// ────────────────────────────────────────────────────────
+
+// SettingsPreset represents a named snapshot of trading settings.
+type SettingsPreset struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	SettingsJSON string `json:"settings_json"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+// ListSettingsPresets returns all presets ordered by id.
+func (db *DB) ListSettingsPresets(ctx context.Context) ([]SettingsPreset, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, name, description, settings_json, created_at, updated_at
+		 FROM settings_presets ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var presets []SettingsPreset
+	for rows.Next() {
+		var p SettingsPreset
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.SettingsJSON, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, err
+		}
+		presets = append(presets, p)
+	}
+	if presets == nil {
+		presets = []SettingsPreset{}
+	}
+	return presets, nil
+}
+
+// CreateSettingsPreset inserts a new preset. Returns the new preset ID.
+func (db *DB) CreateSettingsPreset(ctx context.Context, name, description, settingsJSON string) (int64, error) {
+	res, err := db.ExecContext(ctx,
+		`INSERT INTO settings_presets (name, description, settings_json, updated_at)
+		 VALUES (?, ?, ?, datetime('now'))`,
+		name, description, settingsJSON)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// GetSettingsPreset returns a single preset by id.
+func (db *DB) GetSettingsPreset(ctx context.Context, id int64) (*SettingsPreset, error) {
+	var p SettingsPreset
+	err := db.QueryRowContext(ctx,
+		`SELECT id, name, description, settings_json, created_at, updated_at
+		 FROM settings_presets WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Description, &p.SettingsJSON, &p.CreatedAt, &p.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// DeleteSettingsPreset removes a preset by id.
+func (db *DB) DeleteSettingsPreset(ctx context.Context, id int64) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM settings_presets WHERE id = ?`, id)
+	return err
 }

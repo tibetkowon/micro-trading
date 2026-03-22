@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-22 — 트레이딩 고도화 Phase 4 (프리셋 시스템) 완료
+
+### Phase 4 — 매매 프리셋 시스템
+- **`db.go`**: `settings_presets` 테이블 신규 생성 (id, name, description, settings_json, created_at, updated_at)
+- **`db.go`**: `ListSettingsPresets`, `CreateSettingsPreset`, `GetSettingsPreset`, `DeleteSettingsPreset` CRUD 함수 추가
+- **`handlers.go`**: `ListPresets`, `CreatePreset` (현재 설정 전체 스냅샷), `ApplyPreset`, `DeletePreset` 핸들러 추가
+- **`handlers.go`**: `GetSettings`에 누락된 `trading_days` + AI 매매 기준값 13개 필드 추가
+- **`router.go`**: `/api/presets` 라우트 그룹 추가 (GET/POST + /:id/apply POST + /:id DELETE)
+- **`Settings.jsx`**: 설정 페이지 상단에 프리셋 패널 추가 (목록 조회/적용/삭제 + 현재 설정 저장)
+- **`mocks/handlers.js`**: `/api/presets` CRUD mock 추가
+
 ## 2026-03-22 — 트레이딩 고도화 Phase 1-3 + Phase 2d (BidAskRatio) 완료
 
 ### Phase 2d — BidAskRatio KIS API 통합
