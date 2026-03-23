@@ -1189,7 +1189,7 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 
 	excludedCodes := e.getTodayTradedCodes(ctx)
 
-	rankings, rankingLogID, err := e.getRankings(ctx, settings)
+	rankings, rankingLogID, err := e.getRankingsUS(ctx, settings)
 	if err != nil {
 		e.setState(StateMonitoring)
 		return fmt.Errorf("getRankings US: %w", err)
