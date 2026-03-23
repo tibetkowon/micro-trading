@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-23 — 미장 순위 버그 수정 + 하드필터 UI 노출
+
+### 버그 수정
+- **`engine.go`**: `selectAndBuyUS()`에서 `getRankings()` (국장용 KIS API 호출)를 잘못 호출하던 버그 수정 → `getRankingsUS()`로 변경. 미장 활성화 후 순위 조회 이후 로직이 중단되던 근본 원인.
+
+### UI 개선
+- **`RankingLogs.jsx`**: 순위 조회 로그에 하드필터 제거 종목 목록 노출 추가
+  - 헤더에 `하드필터 -N` 배지 표시 (제거 종목이 있을 때)
+  - `filtered_stocks` JSON을 파싱해 종목코드·종목명·제거사유 목록을 collapsible 섹션으로 표시
+
 ## 2026-03-22 — 트레이딩 고도화 Phase 4 (프리셋 시스템) 완료
 
 ### Phase 4 — 매매 프리셋 시스템

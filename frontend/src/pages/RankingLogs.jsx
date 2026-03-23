@@ -73,6 +73,8 @@ export default function RankingLogs() {
 
             const resultStocks = parseJSON(log.result_stocks) || []
 
+            const filteredStocks = parseJSON(log.filtered_stocks) || []
+
             return (
               <div
                 key={log.id}
@@ -97,6 +99,11 @@ export default function RankingLogs() {
                     ) : (
                       <span className="text-xs bg-green-900/60 text-green-300 px-2 py-0.5 rounded font-mono">
                         {resultLabel} {log.intersection_count}종목
+                      </span>
+                    )}
+                    {filteredStocks.length > 0 && (
+                      <span className="text-xs bg-orange-900/50 text-orange-300 px-2 py-0.5 rounded font-mono">
+                        하드필터 -{filteredStocks.length}
                       </span>
                     )}
                     {types.length > 0 && (
@@ -137,6 +144,24 @@ export default function RankingLogs() {
                           {log.intersection_count}개
                         </span>
                       </div>
+                    </div>
+                  </details>
+                )}
+
+                {/* 하드필터 제거 종목 */}
+                {filteredStocks.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-orange-400/80 cursor-pointer hover:text-orange-300">
+                      하드필터 제거 종목 ({filteredStocks.length}개)
+                    </summary>
+                    <div className="mt-2 space-y-1">
+                      {filteredStocks.map((s) => (
+                        <div key={s.stock_code} className="flex items-center gap-2 text-xs pl-1">
+                          <span className="font-mono text-gray-400 shrink-0">{s.stock_code}</span>
+                          <span className="text-gray-500 shrink-0">{s.stock_name}</span>
+                          <span className="text-orange-400/70">{s.filter_reason}</span>
+                        </div>
+                      ))}
                     </div>
                   </details>
                 )}
