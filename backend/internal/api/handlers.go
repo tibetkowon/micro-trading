@@ -299,13 +299,17 @@ func (h *Handler) GetServerStatus(c *gin.Context) {
 	tradingEnabled := h.db.GetSetting(c.Request.Context(), "trading_enabled") != "false"
 
 	traderState := string(trader.StateIdle)
+	haltReason := ""
 	if h.engine != nil {
 		traderState = string(h.engine.GetState())
+		haltReason = h.engine.GetHaltReason()
 	}
 
 	traderStateUS := string(trader.StateIdle)
+	haltReasonUS := ""
 	if h.usEngine != nil {
 		traderStateUS = string(h.usEngine.GetState())
+		haltReasonUS = h.usEngine.GetHaltReason()
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -317,6 +321,8 @@ func (h *Handler) GetServerStatus(c *gin.Context) {
 		"monitored_count": monitoredCount,
 		"trader_state":    traderState,
 		"trader_state_us": traderStateUS,
+		"halt_reason":     haltReason,
+		"halt_reason_us":  haltReasonUS,
 	})
 }
 
@@ -466,6 +472,25 @@ func (h *Handler) GetRankingLogs(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
+}
+
+// POST /api/trader/force-run?market=KR|US — 강제 실행 (즉시 매수 사이클 트리거)
+func (h *Handler) ForceRunTrader(c *gin.Context) {
+	market := c.DefaultQuery("market", "KR")
+	if market == "US" {
+		if h.usEngine == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "US 엔진이 설정되지 않았습니다"})
+			return
+		}
+		h.usEngine.ForceRun(c.Request.Context())
+	} else {
+		if h.engine == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "KR 엔진이 설정되지 않았습니다"})
+			return
+		}
+		h.engine.ForceRun(c.Request.Context())
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "market": market})
 }
 
 // GET /api/stock/:code — 현재가 + MA5 + MA20
