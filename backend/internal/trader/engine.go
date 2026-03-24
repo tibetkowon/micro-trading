@@ -101,7 +101,8 @@ func (e *Engine) GetHaltReason() string {
 }
 
 // ForceRun triggers a single selectAndBuy cycle in a background goroutine,
-// bypassing the normal cycle wait. Useful for manual intervention when trading is paused.
+// bypassing the normal cycle wait and skipping schedule/market-condition checks
+// (trading days, buy pause period, index drop filter). Useful for manual intervention.
 func (e *Engine) ForceRun(ctx context.Context) {
 	go func() {
 		settings, err := e.db.GetTradingSettings(ctx)
@@ -109,7 +110,7 @@ func (e *Engine) ForceRun(ctx context.Context) {
 			logger.Error("engine: ForceRun GetTradingSettings failed", map[string]any{"error": err.Error()})
 			return
 		}
-		if err := e.selectAndBuy(ctx, settings); err != nil {
+		if err := e.selectAndBuy(ctx, settings, true); err != nil {
 			logger.Error("engine: ForceRun selectAndBuy failed", map[string]any{"error": err.Error()})
 			e.mu.Lock()
 			e.haltReason = err.Error()
@@ -217,7 +218,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 			continue
 		}
 
-		if err := e.selectAndBuy(ctx, settings); err != nil {
+		if err := e.selectAndBuy(ctx, settings, false); err != nil {
 			consecutiveFailures++
 			wait := retryBackoff(consecutiveFailures)
 			logger.Error("engine: selectAndBuy failed",
@@ -240,13 +241,16 @@ func (e *Engine) runCycle(ctx context.Context) {
 	}
 }
 
-func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSettings) error {
+// selectAndBuy runs one stock-selection and buy cycle.
+// force=true skips schedule/market-condition gates (trading days, buy pause, index drop)
+// so the user can manually trigger a cycle regardless of current restrictions.
+func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSettings, force bool) error {
 	if e.market == "US" {
-		return e.selectAndBuyUS(ctx, settings)
+		return e.selectAndBuyUS(ctx, settings, force)
 	}
 
-	// 요일 체크
-	if len(settings.TradingDays) > 0 {
+	// 요일 체크 (강제 실행 시 건너뜀)
+	if !force && len(settings.TradingDays) > 0 {
 		kst, _ := time.LoadLocation("Asia/Seoul")
 		today := int(time.Now().In(kst).Weekday())
 		allowed := false
@@ -263,8 +267,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 
 	e.setState(StateSelecting)
 
-	// 매수 중단 시간대 체크
-	if settings.BuyPauseStart != "" && settings.BuyPauseEnd != "" {
+	// 매수 중단 시간대 체크 (강제 실행 시 건너뜀)
+	if !force && settings.BuyPauseStart != "" && settings.BuyPauseEnd != "" {
 		now := time.Now().Format("15:04")
 		if now >= settings.BuyPauseStart && now < settings.BuyPauseEnd {
 			e.setState(StateMonitoring)
@@ -272,7 +276,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		}
 	}
 
-	// 지수 필터: 지수가 시가 대비 설정값 이상 하락 시 매수 중단
+	// 지수 필터: 지수가 시가 대비 설정값 이상 하락 시 매수 중단 (강제 실행 시 건너뜀)
 	indexDropThreshold := settings.IndexDropThresholdPct
 	if indexDropThreshold == 0 {
 		indexDropThreshold = -1.0
@@ -287,7 +291,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 				if drop < marketIndexDrop {
 					marketIndexDrop = drop // 가장 많이 하락한 지수 기준
 				}
-				if drop <= indexDropThreshold {
+				if !force && drop <= indexDropThreshold {
 					e.setState(StateMonitoring)
 					return fmt.Errorf("지수 %.1f%% 이상 하락 (지수:%s %.2f%%↓), 매수 일시 중단", indexDropThreshold, code, drop)
 				}
@@ -1216,9 +1220,11 @@ func excdToExchCode(excd string) string {
 
 // selectAndBuyUS is the US market version of selectAndBuy.
 // Uses overseas KIS APIs for ranking, price, and order placement.
-func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSettings) error {
-	// 요일 체크
-	if len(settings.TradingDays) > 0 {
+// selectAndBuyUS runs one US stock-selection and buy cycle.
+// force=true skips schedule/market-condition gates (trading days, buy pause).
+func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSettings, force bool) error {
+	// 요일 체크 (강제 실행 시 건너뜀)
+	if !force && len(settings.TradingDays) > 0 {
 		kst, _ := time.LoadLocation("Asia/Seoul")
 		today := int(time.Now().In(kst).Weekday())
 		allowed := false
@@ -1235,8 +1241,8 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 
 	e.setState(StateSelecting)
 
-	// 매수 중단 시간대 체크
-	if settings.BuyPauseStart != "" && settings.BuyPauseEnd != "" {
+	// 매수 중단 시간대 체크 (강제 실행 시 건너뜀)
+	if !force && settings.BuyPauseStart != "" && settings.BuyPauseEnd != "" {
 		now := time.Now().UTC().Format("15:04") // US market hours in UTC
 		if now >= settings.BuyPauseStart && now < settings.BuyPauseEnd {
 			e.setState(StateMonitoring)

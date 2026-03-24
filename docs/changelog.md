@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-03-24 — 강제 실행 시 스케줄/시장 조건 체크 우회
+
+- **`engine.go`** (`selectAndBuy`, `selectAndBuyUS`): `force bool` 파라미터 추가. `force=true`일 때 요일 체크, 매수 중단 시간대, 지수 하락 필터를 건너뜀
+- **`engine.go`** (`ForceRun`): `selectAndBuy` 호출 시 `force=true` 전달하도록 수정 — 강제 실행 버튼이 스케줄 조건에 막히지 않음
+- **`engine.go`** (`runCycle`): 일반 사이클은 `force=false` 전달 (기존 동작 유지)
+
 ## 2026-03-24 — 트레이딩 중지 사유 표시 / 강제 실행 버튼 / 종목 수 불일치 수정
 
 ### 버그 수정
