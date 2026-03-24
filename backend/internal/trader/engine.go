@@ -51,10 +51,11 @@ type Engine struct {
 	mon       *monitor.Monitor
 	claude    *ClaudeClient
 
-	mu     sync.RWMutex
-	state  EngineState
-	soldCh chan string // receives stock_code when monitor executes a sell
-	stopCh chan struct{}
+	mu         sync.RWMutex
+	state      EngineState
+	haltReason string     // 마지막 사이클 중지 사유 (성공 시 초기화)
+	soldCh     chan string // receives stock_code when monitor executes a sell
+	stopCh     chan struct{}
 }
 
 // NewEngine creates a new Engine with all required dependencies.
@@ -89,6 +90,36 @@ func (e *Engine) GetState() EngineState {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.state
+}
+
+// GetHaltReason returns the reason the last cycle was halted (thread-safe).
+// Returns empty string if the last cycle succeeded or if no cycle has run yet.
+func (e *Engine) GetHaltReason() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.haltReason
+}
+
+// ForceRun triggers a single selectAndBuy cycle in a background goroutine,
+// bypassing the normal cycle wait. Useful for manual intervention when trading is paused.
+func (e *Engine) ForceRun(ctx context.Context) {
+	go func() {
+		settings, err := e.db.GetTradingSettings(ctx)
+		if err != nil {
+			logger.Error("engine: ForceRun GetTradingSettings failed", map[string]any{"error": err.Error()})
+			return
+		}
+		if err := e.selectAndBuy(ctx, settings); err != nil {
+			logger.Error("engine: ForceRun selectAndBuy failed", map[string]any{"error": err.Error()})
+			e.mu.Lock()
+			e.haltReason = err.Error()
+			e.mu.Unlock()
+		} else {
+			e.mu.Lock()
+			e.haltReason = ""
+			e.mu.Unlock()
+		}
+	}()
 }
 
 func (e *Engine) setState(s EngineState) {
@@ -191,6 +222,9 @@ func (e *Engine) runCycle(ctx context.Context) {
 			wait := retryBackoff(consecutiveFailures)
 			logger.Error("engine: selectAndBuy failed",
 				map[string]any{"error": err.Error(), "failures": consecutiveFailures, "retry_in": wait.String()})
+			e.mu.Lock()
+			e.haltReason = err.Error()
+			e.mu.Unlock()
 			e.setState(StateSearching)
 			select {
 			case <-ctx.Done():
@@ -198,6 +232,9 @@ func (e *Engine) runCycle(ctx context.Context) {
 			case <-time.After(wait):
 			}
 		} else {
+			e.mu.Lock()
+			e.haltReason = ""
+			e.mu.Unlock()
 			consecutiveFailures = 0
 		}
 	}
@@ -272,6 +309,9 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no ranking results after intersection filter")
 	}
 
+	// allFilteredOut 누적: 모든 필터 단계에서 제거된 종목을 기록 (ranked_stocks → filtered_stocks DB 기록용)
+	var allFilteredOut []filteredStockEntry
+
 	// Filter out already-traded stocks server-side before indicator fetch and Claude call.
 	if len(excludedCodes) > 0 {
 		excludeSet := make(map[string]bool, len(excludedCodes))
@@ -280,7 +320,12 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		}
 		filtered := make([]RankItem, 0, len(rankings))
 		for _, r := range rankings {
-			if !excludeSet[r.StockCode] {
+			if excludeSet[r.StockCode] {
+				allFilteredOut = append(allFilteredOut, filteredStockEntry{
+					StockCode: r.StockCode, StockName: r.StockName,
+					FilterReason: "오늘 이미 거래된 종목",
+				})
+			} else {
 				filtered = append(filtered, r)
 			}
 		}
@@ -326,14 +371,20 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	}
 	// 거래대금 하한선 필터
 	if settings.MinTradingValue > 0 {
-		filtered := rankings[:0]
+		var passed []RankItem
 		for _, item := range rankings {
 			info, err := agent.GetStockInfo(ctx, e.kisClient, item.StockCode)
 			if err != nil || info.TradingValue >= settings.MinTradingValue {
-				filtered = append(filtered, item)
+				passed = append(passed, item)
+			} else {
+				allFilteredOut = append(allFilteredOut, filteredStockEntry{
+					StockCode:    item.StockCode,
+					StockName:    item.StockName,
+					FilterReason: fmt.Sprintf("거래대금 미달 (%.0f억 < %.0f억)", info.TradingValue/1e8, settings.MinTradingValue/1e8),
+				})
 			}
 		}
-		rankings = filtered
+		rankings = passed
 	}
 
 	// Get available cash.
@@ -368,14 +419,20 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 
 	// Filter out stocks whose current price exceeds available cash (can't buy even 1 share).
 	{
-		filtered := rankings[:0]
+		var passed []RankItem
 		for _, item := range rankings {
 			price, _ := strconv.ParseFloat(item.CurrentPrice, 64)
 			if price > 0 && price <= availableCash {
-				filtered = append(filtered, item)
+				passed = append(passed, item)
+			} else if price > availableCash {
+				allFilteredOut = append(allFilteredOut, filteredStockEntry{
+					StockCode:    item.StockCode,
+					StockName:    item.StockName,
+					FilterReason: fmt.Sprintf("현금 부족 (주가 %.0f원 > 가용 %.0f원)", price, availableCash),
+				})
 			}
 		}
-		rankings = filtered
+		rankings = passed
 	}
 	if len(rankings) == 0 {
 		e.setState(StateMonitoring)
@@ -400,34 +457,34 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		if filterOpenPriceDiffMax == 0 {
 			filterOpenPriceDiffMax = 20.0
 		}
-		var filteredOut []filteredStockEntry
 		var passed []RankItem
 		for _, item := range rankings {
 			if item.RSI14 > 0 && item.RSI14 >= filterRsiMax {
 				logger.Info("engine: hard filter RSI", map[string]any{"stock_code": item.StockCode, "rsi": item.RSI14, "threshold": filterRsiMax})
-				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("RSI 과열 (%.1f >= %.1f)", item.RSI14, filterRsiMax), RSI14: item.RSI14})
+				allFilteredOut = append(allFilteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("RSI 과열 (%.1f >= %.1f)", item.RSI14, filterRsiMax), RSI14: item.RSI14})
 				continue
 			}
 			if item.DisparityM5 > filterDisparityM5Max {
 				logger.Info("engine: hard filter disparity_m5", map[string]any{"stock_code": item.StockCode, "disparity_m5": item.DisparityM5, "threshold": filterDisparityM5Max})
-				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("5분봉 이격도 초과 (%.1f > %.1f)", item.DisparityM5, filterDisparityM5Max), DisparityM5: item.DisparityM5})
+				allFilteredOut = append(allFilteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("5분봉 이격도 초과 (%.1f > %.1f)", item.DisparityM5, filterDisparityM5Max), DisparityM5: item.DisparityM5})
 				continue
 			}
 			if item.HighPriceDiff != 0 && item.HighPriceDiff < filterHighPriceDiffMin {
 				logger.Info("engine: hard filter high_price_diff", map[string]any{"stock_code": item.StockCode, "high_price_diff": item.HighPriceDiff, "threshold": filterHighPriceDiffMin})
-				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("고가 대비 과다 하락 (%.1f%% < %.1f%%)", item.HighPriceDiff, filterHighPriceDiffMin), HighPriceDiff: item.HighPriceDiff})
+				allFilteredOut = append(allFilteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("고가 대비 과다 하락 (%.1f%% < %.1f%%)", item.HighPriceDiff, filterHighPriceDiffMin), HighPriceDiff: item.HighPriceDiff})
 				continue
 			}
 			if item.OpenPriceDiff > filterOpenPriceDiffMax {
 				logger.Info("engine: hard filter open_price_diff", map[string]any{"stock_code": item.StockCode, "open_price_diff": item.OpenPriceDiff, "threshold": filterOpenPriceDiffMax})
-				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("시가 대비 과다 상승 (%.1f%% > %.1f%%)", item.OpenPriceDiff, filterOpenPriceDiffMax), OpenPriceDiff: item.OpenPriceDiff})
+				allFilteredOut = append(allFilteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("시가 대비 과다 상승 (%.1f%% > %.1f%%)", item.OpenPriceDiff, filterOpenPriceDiffMax), OpenPriceDiff: item.OpenPriceDiff})
 				continue
 			}
 			passed = append(passed, item)
 		}
 		rankings = passed
-		if rankingLogID > 0 && len(filteredOut) > 0 {
-			filteredJSON, _ := json.Marshal(filteredOut)
+		// 모든 필터 단계 제거 종목을 DB에 기록 (하드필터 + 이전 단계 누적)
+		if rankingLogID > 0 && len(allFilteredOut) > 0 {
+			filteredJSON, _ := json.Marshal(allFilteredOut)
 			e.db.ExecContext(ctx, `UPDATE trader_ranking_logs SET filtered_stocks=? WHERE id=?`, string(filteredJSON), rankingLogID) //nolint:errcheck
 		}
 	}
@@ -1199,6 +1256,9 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		return fmt.Errorf("no US ranking results")
 	}
 
+	// allFilteredOut 누적: 모든 필터 단계에서 제거된 종목을 기록 (US 엔진)
+	var allFilteredOutUS []filteredStockEntry
+
 	if len(excludedCodes) > 0 {
 		excludeSet := make(map[string]bool, len(excludedCodes))
 		for _, code := range excludedCodes {
@@ -1206,7 +1266,12 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		}
 		filtered := make([]RankItem, 0, len(rankings))
 		for _, r := range rankings {
-			if !excludeSet[r.StockCode] {
+			if excludeSet[r.StockCode] {
+				allFilteredOutUS = append(allFilteredOutUS, filteredStockEntry{
+					StockCode: r.StockCode, StockName: r.StockName,
+					FilterReason: "오늘 이미 거래된 종목",
+				})
+			} else {
 				filtered = append(filtered, r)
 			}
 		}
@@ -1289,16 +1354,22 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		usMinTV = settings.MinTradingValue
 	}
 	if usMinTV > 0 {
-		filtered := rankings[:0]
+		var passed []RankItem
 		for _, item := range rankings {
 			price, _ := strconv.ParseFloat(item.CurrentPrice, 64)
 			tvol, _ := strconv.ParseFloat(item.Volume, 64)
 			tradingValueUSD := price * tvol
 			if price <= 0 || tradingValueUSD >= usMinTV {
-				filtered = append(filtered, item)
+				passed = append(passed, item)
+			} else {
+				allFilteredOutUS = append(allFilteredOutUS, filteredStockEntry{
+					StockCode:    item.StockCode,
+					StockName:    item.StockName,
+					FilterReason: fmt.Sprintf("거래대금 미달 ($%.0f < $%.0f)", tradingValueUSD, usMinTV),
+				})
 			}
 		}
-		rankings = filtered
+		rankings = passed
 	}
 	if len(rankings) == 0 {
 		e.setState(StateMonitoring)
@@ -1323,39 +1394,39 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		if filterOpenPriceDiffMax == 0 {
 			filterOpenPriceDiffMax = 20.0
 		}
-		var filteredOut []filteredStockEntry
 		var passed []RankItem
 		for _, item := range rankings {
 			if item.HighPriceDiff != 0 && item.HighPriceDiff < filterHighPriceDiffMin {
 				logger.Info("engine US: hard filter high_price_diff", map[string]any{"stock_code": item.StockCode, "high_price_diff": item.HighPriceDiff, "threshold": filterHighPriceDiffMin})
-				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("고가 대비 과다 하락 (%.1f%% < %.1f%%)", item.HighPriceDiff, filterHighPriceDiffMin), HighPriceDiff: item.HighPriceDiff})
+				allFilteredOutUS = append(allFilteredOutUS, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("고가 대비 과다 하락 (%.1f%% < %.1f%%)", item.HighPriceDiff, filterHighPriceDiffMin), HighPriceDiff: item.HighPriceDiff})
 				continue
 			}
 			if item.MA5 > 0 && item.MA20 > 0 && item.MA5 < item.MA20 {
 				logger.Info("engine US: hard filter MA trend", map[string]any{"stock_code": item.StockCode, "ma5": item.MA5, "ma20": item.MA20})
-				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("MA 하락추세 (MA5=%.2f < MA20=%.2f)", item.MA5, item.MA20), MA5: item.MA5, MA20: item.MA20})
+				allFilteredOutUS = append(allFilteredOutUS, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("MA 하락추세 (MA5=%.2f < MA20=%.2f)", item.MA5, item.MA20), MA5: item.MA5, MA20: item.MA20})
 				continue
 			}
 			if item.RSI14 > 0 && item.RSI14 >= filterRsiMax {
 				logger.Info("engine US: hard filter RSI", map[string]any{"stock_code": item.StockCode, "rsi": item.RSI14, "threshold": filterRsiMax})
-				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("RSI 과열 (%.1f >= %.1f)", item.RSI14, filterRsiMax), RSI14: item.RSI14})
+				allFilteredOutUS = append(allFilteredOutUS, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("RSI 과열 (%.1f >= %.1f)", item.RSI14, filterRsiMax), RSI14: item.RSI14})
 				continue
 			}
 			if item.DisparityM5 > filterDisparityM5Max {
 				logger.Info("engine US: hard filter disparity_m5", map[string]any{"stock_code": item.StockCode, "disparity_m5": item.DisparityM5, "threshold": filterDisparityM5Max})
-				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("5분봉 이격도 초과 (%.1f > %.1f)", item.DisparityM5, filterDisparityM5Max), DisparityM5: item.DisparityM5})
+				allFilteredOutUS = append(allFilteredOutUS, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("5분봉 이격도 초과 (%.1f > %.1f)", item.DisparityM5, filterDisparityM5Max), DisparityM5: item.DisparityM5})
 				continue
 			}
 			if item.OpenPriceDiff > filterOpenPriceDiffMax {
 				logger.Info("engine US: hard filter open_price_diff", map[string]any{"stock_code": item.StockCode, "open_price_diff": item.OpenPriceDiff, "threshold": filterOpenPriceDiffMax})
-				filteredOut = append(filteredOut, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("시가 대비 과다 상승 (%.1f%% > %.1f%%)", item.OpenPriceDiff, filterOpenPriceDiffMax), OpenPriceDiff: item.OpenPriceDiff})
+				allFilteredOutUS = append(allFilteredOutUS, filteredStockEntry{StockCode: item.StockCode, StockName: item.StockName, FilterReason: fmt.Sprintf("시가 대비 과다 상승 (%.1f%% > %.1f%%)", item.OpenPriceDiff, filterOpenPriceDiffMax), OpenPriceDiff: item.OpenPriceDiff})
 				continue
 			}
 			passed = append(passed, item)
 		}
 		rankings = passed
-		if rankingLogID > 0 && len(filteredOut) > 0 {
-			filteredJSON, _ := json.Marshal(filteredOut)
+		// 모든 필터 단계 제거 종목을 DB에 기록 (하드필터 + 이전 단계 누적)
+		if rankingLogID > 0 && len(allFilteredOutUS) > 0 {
+			filteredJSON, _ := json.Marshal(allFilteredOutUS)
 			e.db.ExecContext(ctx, `UPDATE trader_ranking_logs SET filtered_stocks=? WHERE id=?`, string(filteredJSON), rankingLogID) //nolint:errcheck
 		}
 	}

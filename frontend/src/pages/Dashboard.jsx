@@ -207,6 +207,7 @@ export default function Dashboard() {
   const { data: posData, loading: posLoading, refetch: refetchPos } = useApi('/api/positions')
   const [wsLoading, setWsLoading] = useState(false)
   const [wsMsg, setWsMsg] = useState(null)
+  const [forceRunLoading, setForceRunLoading] = useState(false)
   const [refreshInterval, setRefreshInterval] = useState(0)
   const intervalRef = useRef(null)
 
@@ -224,6 +225,16 @@ export default function Dashboard() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshInterval])
+
+  async function handleForceRun(market) {
+    setForceRunLoading(true)
+    try {
+      await fetch(`/api/trader/force-run?market=${market}`, { method: 'POST' })
+      setTimeout(refetchStatus, 2000)
+    } finally {
+      setForceRunLoading(false)
+    }
+  }
 
   async function handleWs(action) {
     setWsLoading(true)
@@ -371,8 +382,8 @@ export default function Dashboard() {
             </StatusRow>
 
             <StatusRow label="국장 트레이더">
-              <div className="flex items-center gap-2">
-                <div className={`w-1 h-4 rounded-full ${
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className={`w-1 h-4 rounded-full shrink-0 ${
                   !status.trader_state || status.trader_state === 'IDLE' ? 'bg-gray-700' :
                   status.trader_state === 'MONITORING' ? 'bg-red-400' :
                   'bg-emerald-400'
@@ -380,12 +391,22 @@ export default function Dashboard() {
                 <span className={`text-sm font-medium ${traderColor(status.trader_state)}`}>
                   {traderLabel(status.trader_state)}
                 </span>
+                <button
+                  onClick={() => handleForceRun('KR')}
+                  disabled={forceRunLoading}
+                  className="text-xs px-2 py-0.5 rounded-full bg-th-surface-high hover:text-emerald-400 disabled:opacity-40 transition-colors text-th-on-muted"
+                >
+                  강제 실행
+                </button>
               </div>
+              {status.halt_reason && (
+                <p className="text-xs text-amber-400 mt-1 leading-snug">{status.halt_reason}</p>
+              )}
             </StatusRow>
 
             <StatusRow label="미장 트레이더">
-              <div className="flex items-center gap-2">
-                <div className={`w-1 h-4 rounded-full ${
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className={`w-1 h-4 rounded-full shrink-0 ${
                   !status.trader_state_us || status.trader_state_us === 'IDLE' ? 'bg-gray-700' :
                   status.trader_state_us === 'MONITORING' ? 'bg-red-400' :
                   'bg-emerald-400'
@@ -393,7 +414,17 @@ export default function Dashboard() {
                 <span className={`text-sm font-medium ${traderColor(status.trader_state_us)}`}>
                   {traderLabel(status.trader_state_us)}
                 </span>
+                <button
+                  onClick={() => handleForceRun('US')}
+                  disabled={forceRunLoading}
+                  className="text-xs px-2 py-0.5 rounded-full bg-th-surface-high hover:text-emerald-400 disabled:opacity-40 transition-colors text-th-on-muted"
+                >
+                  강제 실행
+                </button>
               </div>
+              {status.halt_reason_us && (
+                <p className="text-xs text-amber-400 mt-1 leading-snug">{status.halt_reason_us}</p>
+              )}
             </StatusRow>
 
             <StatusRow label="주문가능금액">

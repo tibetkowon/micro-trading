@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-03-24 — 트레이딩 중지 사유 표시 / 강제 실행 버튼 / 종목 수 불일치 수정
+
+### 버그 수정
+- **`engine.go`** (`selectAndBuy`, `selectAndBuyUS`): 가격 필터(현금 부족), 거래대금 필터, 이미 거래된 종목 제외 등 중간 필터 단계에서 제거된 종목이 `filtered_stocks`에 기록되지 않던 문제 수정.
+  - 이제 모든 필터 단계 제거 종목이 `filtered_stocks` JSON에 누적 기록되어 "합집합 9종목 - 필터 8종목 = LLM 전달 1종목" 등 수치가 일치하도록 개선.
+  - 각 제거 사유: `오늘 이미 거래된 종목`, `거래대금 미달 (N억 < M억)`, `현금 부족 (주가 N원 > 가용 M원)`, 기존 하드필터 사유 그대로 유지.
+
+### 신규 기능
+- **`engine.go`**: `haltReason` 필드 추가. 사이클 실패 시 마지막 에러 메시지 저장, 성공 시 초기화.
+  - `GetHaltReason() string` 메서드 추가 (thread-safe).
+  - `ForceRun(ctx)` 메서드 추가: goroutine으로 즉시 매수 사이클 트리거 (강제 실행용).
+- **`handlers.go`**: `GET /api/server/status` 응답에 `halt_reason`, `halt_reason_us` 필드 추가.
+- **`handlers.go`**: `POST /api/trader/force-run?market=KR|US` 엔드포인트 추가.
+- **`router.go`**: `/api/trader/force-run` 라우트 등록.
+- **`Dashboard.jsx`**: 국장/미장 트레이더 상태 행에 다음 UI 추가:
+  - 중지 사유 텍스트 (amber 색상, halt_reason이 있을 때만 표시).
+  - "강제 실행" 버튼 (항상 표시, 클릭 시 POST /api/trader/force-run 호출).
+
+---
+
 ## 2026-03-23 — 미장 순위 버그 수정 + 하드필터 UI 노출
 
 ### 버그 수정

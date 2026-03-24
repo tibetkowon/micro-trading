@@ -61,6 +61,11 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 			ws.POST("/disconnect", h.DisconnectWebSocket)
 		}
 
+		traderGroup := api.Group("/trader")
+		{
+			traderGroup.POST("/force-run", h.ForceRunTrader)
+		}
+
 		stats := api.Group("/stats")
 		{
 			stats.GET("/daily-pnl", h.GetDailyPnL)
