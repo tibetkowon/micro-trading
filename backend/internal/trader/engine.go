@@ -53,7 +53,7 @@ type Engine struct {
 
 	mu         sync.RWMutex
 	state      EngineState
-	haltReason string     // 마지막 사이클 중지 사유 (성공 시 초기화)
+	haltReason string      // 마지막 사이클 중지 사유 (성공 시 초기화)
 	soldCh     chan string // receives stock_code when monitor executes a sell
 	stopCh     chan struct{}
 }
