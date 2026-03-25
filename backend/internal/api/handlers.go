@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -337,6 +338,25 @@ func (h *Handler) GetMonitorPositions(c *gin.Context) {
 		positions = []models.MonitoredPosition{}
 	}
 	c.JSON(http.StatusOK, gin.H{"positions": positions})
+}
+
+// POST /api/monitor/positions/:code/sell — 강제 시장가 매도 + 모니터링 해제
+func (h *Handler) ForceSellMonitorPosition(c *gin.Context) {
+	code := c.Param("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "stock code required"})
+		return
+	}
+	if h.monitor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "모니터링 서비스가 비활성화되어 있습니다"})
+		return
+	}
+	qty, err := h.monitor.ForceSell(c.Request.Context(), code)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"sold": code, "qty": qty})
 }
 
 // DELETE /api/monitor/positions/:code — 모니터링 포지션 제거
@@ -1383,14 +1403,19 @@ func (h *Handler) ListPresets(c *gin.Context) {
 }
 
 // POST /api/presets — 현재 설정 스냅샷을 새 프리셋으로 저장
+// market: "KR" (국장, us_ 제외) | "US" (미장, us_ 만 포함). 기본값 "KR"
 func (h *Handler) CreatePreset(c *gin.Context) {
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
+		Market      string `json:"market"` // "KR" or "US"
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name은 필수입니다"})
 		return
+	}
+	if req.Market != "KR" && req.Market != "US" {
+		req.Market = "KR"
 	}
 
 	// 현재 settings 테이블의 모든 키-값 스냅샷
@@ -1400,16 +1425,27 @@ func (h *Handler) CreatePreset(c *gin.Context) {
 		return
 	}
 	defer rows.Close()
-	snapshot := map[string]string{}
+	allSettings := map[string]string{}
 	for rows.Next() {
 		var k, v string
 		if err := rows.Scan(&k, &v); err == nil {
+			allSettings[k] = v
+		}
+	}
+
+	// market 타입에 따라 관련 키만 필터링
+	snapshot := map[string]string{}
+	for k, v := range allSettings {
+		isUS := strings.HasPrefix(k, "us_")
+		if req.Market == "US" && isUS {
+			snapshot[k] = v
+		} else if req.Market == "KR" && !isUS {
 			snapshot[k] = v
 		}
 	}
 	b, _ := json.Marshal(snapshot)
 
-	id, err := h.db.CreateSettingsPreset(c.Request.Context(), req.Name, req.Description, string(b))
+	id, err := h.db.CreateSettingsPreset(c.Request.Context(), req.Name, req.Description, req.Market, string(b))
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "이미 동일한 이름의 프리셋이 있습니다: " + err.Error()})
 		return

@@ -256,6 +256,7 @@ func (db *DB) migrate() error {
 		`ALTER TABLE trader_ranking_logs ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
 		`ALTER TABLE trader_ranking_logs ADD COLUMN filtered_stocks TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE trader_selection_logs ADD COLUMN ranking_log_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE settings_presets ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
 	}
 	for _, s := range alterStmts {
 		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시
@@ -831,6 +832,7 @@ type SettingsPreset struct {
 	ID           int64  `json:"id"`
 	Name         string `json:"name"`
 	Description  string `json:"description"`
+	Market       string `json:"market"`       // "KR" or "US"
 	SettingsJSON string `json:"settings_json"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
@@ -839,7 +841,7 @@ type SettingsPreset struct {
 // ListSettingsPresets returns all presets ordered by id.
 func (db *DB) ListSettingsPresets(ctx context.Context) ([]SettingsPreset, error) {
 	rows, err := db.QueryContext(ctx,
-		`SELECT id, name, description, settings_json, created_at, updated_at
+		`SELECT id, name, description, market, settings_json, created_at, updated_at
 		 FROM settings_presets ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -848,7 +850,7 @@ func (db *DB) ListSettingsPresets(ctx context.Context) ([]SettingsPreset, error)
 	var presets []SettingsPreset
 	for rows.Next() {
 		var p SettingsPreset
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.SettingsJSON, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Market, &p.SettingsJSON, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		presets = append(presets, p)
@@ -860,11 +862,11 @@ func (db *DB) ListSettingsPresets(ctx context.Context) ([]SettingsPreset, error)
 }
 
 // CreateSettingsPreset inserts a new preset. Returns the new preset ID.
-func (db *DB) CreateSettingsPreset(ctx context.Context, name, description, settingsJSON string) (int64, error) {
+func (db *DB) CreateSettingsPreset(ctx context.Context, name, description, market, settingsJSON string) (int64, error) {
 	res, err := db.ExecContext(ctx,
-		`INSERT INTO settings_presets (name, description, settings_json, updated_at)
-		 VALUES (?, ?, ?, datetime('now'))`,
-		name, description, settingsJSON)
+		`INSERT INTO settings_presets (name, description, market, settings_json, updated_at)
+		 VALUES (?, ?, ?, ?, datetime('now'))`,
+		name, description, market, settingsJSON)
 	if err != nil {
 		return 0, err
 	}
@@ -875,9 +877,9 @@ func (db *DB) CreateSettingsPreset(ctx context.Context, name, description, setti
 func (db *DB) GetSettingsPreset(ctx context.Context, id int64) (*SettingsPreset, error) {
 	var p SettingsPreset
 	err := db.QueryRowContext(ctx,
-		`SELECT id, name, description, settings_json, created_at, updated_at
+		`SELECT id, name, description, market, settings_json, created_at, updated_at
 		 FROM settings_presets WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Description, &p.SettingsJSON, &p.CreatedAt, &p.UpdatedAt)
+		Scan(&p.ID, &p.Name, &p.Description, &p.Market, &p.SettingsJSON, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}

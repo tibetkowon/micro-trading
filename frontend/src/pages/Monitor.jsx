@@ -31,6 +31,7 @@ SectionLabel.propTypes = { children: PropTypes.node }
 export default function Monitor() {
   const { data, loading, error, refetch } = useApi('/api/monitor/positions')
   const [removingCodes, setRemovingCodes] = useState(new Set())
+  const [sellingCodes, setSellingCodes] = useState(new Set())
   const [intervalSec, setIntervalSec] = useState(0)
   const timerRef = useRef(null)
 
@@ -56,6 +57,27 @@ export default function Monitor() {
       refetch()
     } finally {
       setRemovingCodes((prev) => {
+        const next = new Set(prev)
+        next.delete(code)
+        return next
+      })
+    }
+  }
+
+  async function handleForceSell(code, name) {
+    if (!confirm(`[강제매도] ${name || code}\n\n현재 보유 수량 전량을 시장가로 즉시 매도하고 모니터링에서 해제합니다.\n계속하시겠습니까?`)) return
+    setSellingCodes((prev) => new Set(prev).add(code))
+    try {
+      const res = await fetch(`/api/monitor/positions/${code}/sell`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) {
+        alert(`강제매도 실패: ${json.error || '알 수 없는 오류'}`)
+      }
+      refetch()
+    } catch (err) {
+      alert(`강제매도 오류: ${err.message}`)
+    } finally {
+      setSellingCodes((prev) => {
         const next = new Set(prev)
         next.delete(code)
         return next
@@ -168,13 +190,22 @@ export default function Monitor() {
                       </td>
                       <td className="px-5 py-4 text-th-on-subtle text-xs">{fmtDate(p.created_at)}</td>
                       <td className="px-5 py-4">
-                        <button
-                          onClick={() => handleRemove(p.stock_code)}
-                          disabled={isRemoving}
-                          className="text-xs px-3 py-1 text-th-on-muted hover:text-red-400 hover:bg-red-500/10 rounded-full disabled:opacity-40 transition-colors"
-                        >
-                          {isRemoving ? '...' : '해제'}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleForceSell(p.stock_code, p.stock_name)}
+                            disabled={sellingCodes.has(p.stock_code) || isRemoving}
+                            className="text-xs px-3 py-1 text-red-400 hover:text-white hover:bg-red-500 border border-red-500/30 rounded-full disabled:opacity-40 transition-colors"
+                          >
+                            {sellingCodes.has(p.stock_code) ? '...' : '강제매도'}
+                          </button>
+                          <button
+                            onClick={() => handleRemove(p.stock_code)}
+                            disabled={isRemoving || sellingCodes.has(p.stock_code)}
+                            className="text-xs px-3 py-1 text-th-on-muted hover:text-th-on-surface hover:bg-th-surface-high rounded-full disabled:opacity-40 transition-colors"
+                          >
+                            {isRemoving ? '...' : '해제'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -187,6 +218,7 @@ export default function Monitor() {
           <div className="sm:hidden space-y-3">
             {positions.map((p) => {
               const isRemoving = removingCodes.has(p.stock_code)
+              const isSelling = sellingCodes.has(p.stock_code)
               return (
                 <div key={p.stock_code} className="bg-th-surface rounded-xl p-4">
                   <div className="flex items-start justify-between mb-3">
@@ -196,13 +228,22 @@ export default function Monitor() {
                         <span className="ml-2 text-xs text-th-on-subtle font-data">{p.stock_code}</span>
                       )}
                     </div>
-                    <button
-                      onClick={() => handleRemove(p.stock_code)}
-                      disabled={isRemoving}
-                      className="text-xs px-2.5 py-1 text-th-on-muted hover:text-red-400 hover:bg-red-500/10 rounded-full disabled:opacity-40 transition-colors"
-                    >
-                      {isRemoving ? '...' : '해제'}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleForceSell(p.stock_code, p.stock_name)}
+                        disabled={isSelling || isRemoving}
+                        className="text-xs px-2.5 py-1 text-red-400 hover:text-white hover:bg-red-500 border border-red-500/30 rounded-full disabled:opacity-40 transition-colors"
+                      >
+                        {isSelling ? '...' : '강제매도'}
+                      </button>
+                      <button
+                        onClick={() => handleRemove(p.stock_code)}
+                        disabled={isRemoving || isSelling}
+                        className="text-xs px-2.5 py-1 text-th-on-muted hover:text-th-on-surface hover:bg-th-surface-high rounded-full disabled:opacity-40 transition-colors"
+                      >
+                        {isRemoving ? '...' : '해제'}
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-3 gap-3 text-xs">
                     <div>

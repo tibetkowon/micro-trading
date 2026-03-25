@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-03-25 — 설정 페이지 탭 분할 (국장 / 미장 / AI·서버)
+
+- **`Settings.jsx`**: 단일 스크롤 페이지를 **국장 / 미장 / AI·서버** 3개 탭으로 분할. `hidden` CSS 클래스로 비활성 탭 숨김(unmount 없음) — 단일 `<form>` 내에서 모든 설정값 유지. 국장·미장 탭 각각에 해당 시장 프리셋 패널 배치. AI·서버 탭은 별도 저장 버튼 사용
+
+## 2026-03-25 — 강제매도 버튼 / 국장·미장 프리셋 분리
+
+### 강제매도 버튼 (모니터링 페이지)
+- **`monitor.go`** (`ForceSell`): 특정 종목에 시장가 매도 주문 후 모니터링 해제하는 공개 메서드 추가
+- **`handlers.go`** (`ForceSellMonitorPosition`): `POST /api/monitor/positions/:code/sell` 핸들러 추가
+- **`router.go`**: `POST /api/monitor/positions/:code/sell` 라우트 등록
+- **`Monitor.jsx`**: 모니터링 테이블/카드에 **강제매도** 버튼 추가 — 클릭 시 확인 후 시장가 전량 매도, 기존 "해제" 버튼은 모니터링 해제만(매도 없음) 유지
+
+### 국장·미장 프리셋 완전 분리 (설정 페이지)
+- **`db.go`**: `settings_presets` 테이블에 `market TEXT NOT NULL DEFAULT 'KR'` 컬럼 추가 (ALTER TABLE 마이그레이션). `SettingsPreset` 구조체에 `Market` 필드 추가. `CreateSettingsPreset` 시그니처에 `market` 파라미터 추가
+- **`handlers.go`** (`CreatePreset`): `market` 파라미터(`"KR"` | `"US"`) 수신. KR 저장 시 `us_` 접두사 키 제외, US 저장 시 `us_` 접두사 키만 포함하여 스냅샷 필터링
+- **`Settings.jsx`**: 프리셋 패널을 **국장 프리셋** / **미장 프리셋** 두 섹션으로 완전 분리. 각 섹션에 전용 이름·설명 입력란 및 저장 버튼 배치. 국장 프리셋 적용 시 미장 설정 불변, 미장 프리셋 적용 시 국장 설정 불변
+
+### 기타
+- `frontend/package.json`: `msw` 패키지 devDependency 추가 (기존 빌드 오류 수정)
+
 ## 2026-03-24 — 강제 실행 시 스케줄/시장 조건 체크 우회
 
 - **`engine.go`** (`selectAndBuy`, `selectAndBuyUS`): `force bool` 파라미터 추가. `force=true`일 때 요일 체크, 매수 중단 시간대, 지수 하락 필터를 건너뜀

@@ -362,6 +362,24 @@ func (m *Monitor) executeOverseasSell(stockCode string, pos *MonitoredEntry, rea
 	return qty
 }
 
+// ForceSell places a market sell order for a specific monitored position and removes it from monitoring.
+// Called by the user via the manual "강제매도" button. Returns the sold qty, or error on failure.
+func (m *Monitor) ForceSell(ctx context.Context, stockCode string) (int, error) {
+	m.mu.RLock()
+	pos, ok := m.positions[stockCode]
+	m.mu.RUnlock()
+	if !ok {
+		return 0, fmt.Errorf("모니터링 중인 포지션을 찾을 수 없습니다: %s", stockCode)
+	}
+
+	qty := m.executeSell(stockCode, pos, "강제매도")
+	m.Remove(ctx, stockCode)
+	if qty <= 0 {
+		return 0, fmt.Errorf("매도 주문 실패 (보유수량 없음 또는 API 오류)")
+	}
+	return qty, nil
+}
+
 // LiquidateAll places market sell orders for all monitored positions (장마감).
 // market: optional filter — "KR" or "US". Empty means all positions.
 func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {

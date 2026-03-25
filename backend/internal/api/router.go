@@ -40,6 +40,7 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		{
 			monitorGroup.GET("/positions", h.GetMonitorPositions)
 			monitorGroup.DELETE("/positions/:code", h.RemoveMonitorPosition)
+			monitorGroup.POST("/positions/:code/sell", h.ForceSellMonitorPosition)
 		}
 
 		market := api.Group("/market")
