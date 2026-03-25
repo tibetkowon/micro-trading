@@ -832,7 +832,7 @@ type SettingsPreset struct {
 	ID           int64  `json:"id"`
 	Name         string `json:"name"`
 	Description  string `json:"description"`
-	Market       string `json:"market"`       // "KR" or "US"
+	Market       string `json:"market"` // "KR" or "US"
 	SettingsJSON string `json:"settings_json"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
