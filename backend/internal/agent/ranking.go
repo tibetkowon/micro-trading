@@ -7,17 +7,19 @@ import (
 )
 
 // GetVolumeRank returns the volume ranking (거래량 순위).
-// market: "J"=KRX(default). sort: "0"=평균거래량, "1"=거래량증가율, "2"=거래회전율, "3"=거래대금순.
+// market: "J"=KRX(default).
+// inputIscd: "0000"=전체(default), "0001"=KOSPI, "1001"=KOSDAQ, "2001"=KOSPI200.
+// sort (FID_BLNG_CLS_CODE): "0"=평균거래량, "1"=거래량증가율, "2"=거래회전율, "3"=거래대금순, "4"=평균거래대금.
 // priceMin/priceMax: 가격 범위 (빈값="" 이면 전체).
 // excludeCls: fid_trgt_exls_cls_code 10자리 문자열 (빈값이면 "1111111111" 사용).
-func GetVolumeRank(ctx context.Context, client *kis.Client, market, sort, priceMin, priceMax, excludeCls string) ([]kis.VolumeRankItem, error) {
+func GetVolumeRank(ctx context.Context, client *kis.Client, market, inputIscd, sort, priceMin, priceMax, excludeCls string) ([]kis.VolumeRankItem, error) {
 	if market == "" {
 		market = "J"
 	}
 	if sort == "" {
 		sort = "0"
 	}
-	return client.GetVolumeRank(ctx, market, sort, priceMin, priceMax, excludeCls)
+	return client.GetVolumeRank(ctx, market, inputIscd, sort, priceMin, priceMax, excludeCls)
 }
 
 // GetStrengthRank returns the execution strength ranking (체결강도 상위).

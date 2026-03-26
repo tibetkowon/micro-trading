@@ -30,12 +30,14 @@ type TradingSettings struct {
 	IndicatorMACDBearishSell  bool     // MACD 데드크로스 매도 여부
 	ClaudeModel               string   // 사용할 Claude 모델
 	// 순위별 필터
-	RankingVolumeMinIncrRate   float64 // 거래량 증가율 최솟값 (0=필터없음)
-	RankingStrengthMin         float64 // 체결강도 최솟값 (0=필터없음)
-	RankingExecCountNetBuyOnly bool    // 대량체결: 순매수 우세 종목만
-	RankingDisparityD20Min     float64 // 20일 이격도 최솟값 (0=필터없음)
-	RankingDisparityD20Max     float64 // 20일 이격도 최댓값 (0=필터없음)
-	RankingTopN                int     // 각 순위별 상위 N개만 교집합 대상 (0=전체)
+	RankingVolumeMinIncrRate   float64  // 거래량 증가율 최솟값 (0=필터없음)
+	RankingStrengthMin         float64  // 체결강도 최솟값 (0=필터없음)
+	RankingExecCountNetBuyOnly bool     // 대량체결: 순매수 우세 종목만
+	RankingDisparityD20Min     float64  // 20일 이격도 최솟값 (0=필터없음)
+	RankingDisparityD20Max     float64  // 20일 이격도 최댓값 (0=필터없음)
+	RankingTopN                int      // 각 순위별 상위 N개만 교집합 대상 (0=전체)
+	RankingExchanges           []string // 국장 순위 조회 거래소 코드 (0001=KOSPI, 1001=KOSDAQ, 2001=KOSPI200)
+	RankingVolumeBlngClsCodes  []string // 거래량순위 FID_BLNG_CLS_CODE 목록 (0=평균거래량, 1=거래량증가율, 2=거래회전율, 3=거래대금순, 4=평균거래대금)
 	// 거래 시간
 	TradingStartTime string // 자율 거래 시작 시간 (HH:MM)
 	TradingEndTime   string // 자율 거래 종료 시간 (HH:MM)
@@ -296,6 +298,8 @@ func (db *DB) migrate() error {
 		{"ranking_disparity_d20_min", "0"},
 		{"ranking_disparity_d20_max", "0"},
 		{"ranking_top_n", "20"},
+		{"ranking_exchanges", `["0001","1001"]`},
+		{"ranking_volume_blng_cls_codes", `["0","1","2","3","4"]`},
 		{"trading_start_time", "09:15"},
 		{"trading_end_time", "15:15"},
 		{"stagnation_threshold_pct", "1.0"},
@@ -376,7 +380,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'indicator_rsi_sell_threshold','indicator_macd_bearish_sell','claude_model',`+
 			`'ranking_volume_min_incrrate','ranking_strength_min',`+
 			`'ranking_execcount_net_buy_only','ranking_disparity_d20_min','ranking_disparity_d20_max',`+
-			`'ranking_top_n',`+
+			`'ranking_top_n','ranking_exchanges','ranking_volume_blng_cls_codes',`+
 			`'trading_start_time','trading_end_time',`+
 			`'stagnation_threshold_pct','stagnation_duration_min',`+
 			`'ranking_condition',`+
@@ -486,6 +490,14 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	rankingCondition := vals["ranking_condition"]
 	if rankingCondition != "AND" && rankingCondition != "OR" {
 		rankingCondition = "AND"
+	}
+	rankingExchanges := strSlice("ranking_exchanges")
+	if len(rankingExchanges) == 0 {
+		rankingExchanges = []string{"0001", "1001"}
+	}
+	rankingVolumeBlngClsCodes := strSlice("ranking_volume_blng_cls_codes")
+	if len(rankingVolumeBlngClsCodes) == 0 {
+		rankingVolumeBlngClsCodes = []string{"0", "1", "2", "3", "4"}
 	}
 
 	usTradingStartTime := vals["us_trading_start_time"]
@@ -656,6 +668,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		RankingDisparityD20Min:     f64("ranking_disparity_d20_min"),
 		RankingDisparityD20Max:     f64("ranking_disparity_d20_max"),
 		RankingTopN:                i64("ranking_top_n"),
+		RankingExchanges:           rankingExchanges,
+		RankingVolumeBlngClsCodes:  rankingVolumeBlngClsCodes,
 		TradingStartTime:           tradingStartTime,
 		TradingEndTime:             tradingEndTime,
 		StagnationThresholdPct:     stagnationThresholdPct,

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-03-26 — 순위 조회 개선: 가격 필터 클라이언트 이전, 거래소 분리, BLNG_CLS 다중 조회
+
+- **`kis/client.go`**: `GetVolumeRank`에 `inputIscd` 파라미터 추가 (`FID_INPUT_ISCD` 하드코딩 제거)
+- **`agent/ranking.go`**: `GetVolumeRank` 래퍼 시그니처에 `inputIscd` 추가
+- **`database/db.go`**: `TradingSettings`에 `RankingExchanges`, `RankingVolumeBlngClsCodes` 필드 추가 및 기본값 설정
+- **`trader/engine.go`**: 4개 순위 case를 거래소×BLNG_CLS 다중 API 호출+dedup 구조로 교체; 가격 필터 API 전달 제거 (클라이언트 필터만 사용)
+- **`api/handlers.go`**: GET/PATCH 설정 핸들러에 신규 필드 추가; 수동 랭킹 핸들러에 `input_iscd` 쿼리 파라미터 추가
+- **`Settings.jsx`**: 조회 거래소(KOSPI/KOSDAQ/KOSPI200) 및 거래량 분류 코드(0~4) 체크박스 UI 추가
+
 ## 2026-03-26 — 버그 수정 6종 (모바일 포커스·잘림, 미장 설정 완전 분리, Hard Rejection 표시, P&L %, 멀티 거래소)
 
 - **`Settings.jsx`**: `PresetPanel`을 컴포넌트 외부로 이동 → 모바일 입력 포커스 버그 수정 (이슈1); sticky 헤더 `top-14 md:top-0` 수정 (이슈2)

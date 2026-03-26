@@ -590,6 +590,8 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"stagnation_threshold_pct":       ts.StagnationThresholdPct,
 		"stagnation_duration_min":        ts.StagnationDurationMin,
 		"ranking_condition":              ts.RankingCondition,
+		"ranking_exchanges":              ts.RankingExchanges,
+		"ranking_volume_blng_cls_codes":  ts.RankingVolumeBlngClsCodes,
 		// US market settings
 		"us_trading_enabled":    ts.USTradingEnabled,
 		"us_trading_start_time": ts.USTradingStartTime,
@@ -684,6 +686,8 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		StagnationThresholdPct     *float64 `json:"stagnation_threshold_pct"`
 		StagnationDurationMin      *int     `json:"stagnation_duration_min"`
 		RankingCondition           string   `json:"ranking_condition"`
+		RankingExchanges           []string `json:"ranking_exchanges"`
+		RankingVolumeBlngClsCodes  []string `json:"ranking_volume_blng_cls_codes"`
 		// US market settings
 		USTradingEnabled   *bool    `json:"us_trading_enabled"`
 		USTradingStartTime string   `json:"us_trading_start_time"`
@@ -937,6 +941,18 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 
 	if req.RankingCondition == "AND" || req.RankingCondition == "OR" {
 		if !save("ranking_condition", req.RankingCondition) {
+			return
+		}
+	}
+	if len(req.RankingExchanges) > 0 {
+		b, _ := json.Marshal(req.RankingExchanges)
+		if !save("ranking_exchanges", string(b)) {
+			return
+		}
+	}
+	if len(req.RankingVolumeBlngClsCodes) > 0 {
+		b, _ := json.Marshal(req.RankingVolumeBlngClsCodes)
+		if !save("ranking_volume_blng_cls_codes", string(b)) {
 			return
 		}
 	}
@@ -1288,16 +1304,18 @@ func (h *Handler) resolvePriceFilter(c *gin.Context) (priceMin, priceMax string)
 	return c.Query("price_min"), c.Query("price_max")
 }
 
-// GET /api/ranking/volume?market=J&sort=0 — 거래량 순위 (FHPST01710000, max 30)
-// sort: 0=평균거래량(default), 1=거래량증가율, 2=거래회전율, 3=거래대금순
+// GET /api/ranking/volume?market=J&input_iscd=0000&sort=0 — 거래량 순위 (FHPST01710000, max 30)
+// input_iscd: 0000=전체(default), 0001=KOSPI, 1001=KOSDAQ, 2001=KOSPI200
+// sort (FID_BLNG_CLS_CODE): 0=평균거래량(default), 1=거래량증가율, 2=거래회전율, 3=거래대금순, 4=평균거래대금
 // price_min/price_max: 가격 범위 직접 입력 (원). use_balance_filter=true: 예수금 기준 자동 설정.
 // ETF/ETN/우선주 등 비정상 종목은 항상 제외됨.
 func (h *Handler) GetVolumeRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "J")
+	inputIscd := c.DefaultQuery("input_iscd", "0000")
 	sort := c.DefaultQuery("sort", "0")
 	priceMin, priceMax := h.resolvePriceFilter(c)
 	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
-	items, err := agent.GetVolumeRank(c.Request.Context(), h.client, market, sort, priceMin, priceMax, excludeCls)
+	items, err := agent.GetVolumeRank(c.Request.Context(), h.client, market, inputIscd, sort, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return

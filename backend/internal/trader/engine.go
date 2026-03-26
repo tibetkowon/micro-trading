@@ -877,8 +877,17 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	priceMin := settings.RankingPriceMin
 	priceMax := settings.RankingPriceMax
 
-	// KIS API price filter params may be ignored by some ranking endpoints,
-	// so we enforce the price range ourselves after each API call.
+	exchanges := settings.RankingExchanges
+	if len(exchanges) == 0 {
+		exchanges = []string{"0001", "1001"}
+	}
+	blngClsCodes := settings.RankingVolumeBlngClsCodes
+	if len(blngClsCodes) == 0 {
+		blngClsCodes = []string{"0", "1", "2", "3", "4"}
+	}
+
+	// Price range is enforced client-side after each API call (not passed to API params)
+	// to maximise the pool of results fetched before filtering.
 	priceMinF, _ := strconv.ParseFloat(priceMin, 64)
 	priceMaxF, _ := strconv.ParseFloat(priceMax, 64)
 	withinPriceRange := func(currentPrice string) bool {
@@ -903,16 +912,28 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 
 		switch rt {
 		case "volume":
-			items, err := e.kisClient.GetVolumeRank(ctx, "J", "0", priceMin, priceMax, excludeCls)
-			if err != nil {
-				logger.Warn("engine: GetVolumeRank failed", map[string]any{"error": err.Error()})
-				continue
+			// exchanges × blng_cls_codes 조합으로 복수 호출 후 dedup
+			rawByCode := make(map[string]kis.VolumeRankItem)
+			for _, exch := range exchanges {
+				for _, blngCls := range blngClsCodes {
+					items, err := e.kisClient.GetVolumeRank(ctx, "J", exch, blngCls, "", "", excludeCls)
+					if err != nil {
+						logger.Warn("engine: GetVolumeRank failed", map[string]any{"exchange": exch, "blng_cls": blngCls, "error": err.Error()})
+						continue
+					}
+					for _, item := range items {
+						if _, exists := rawByCode[item.StockCode]; !exists {
+							rawByCode[item.StockCode] = item
+						}
+					}
+				}
+			}
+			dedupedVol := make([]kis.VolumeRankItem, 0, len(rawByCode))
+			for _, item := range rawByCode {
+				dedupedVol = append(dedupedVol, item)
 			}
 			count := 0
-			for _, item := range items {
-				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
-					break
-				}
+			for _, item := range dedupedVol {
 				if !withinPriceRange(item.CurrentPrice) {
 					continue
 				}
@@ -928,19 +949,32 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 					Volume: item.Volume, VolIncrRate: item.VolIncrRate,
 				}
 				count++
-			}
-
-		case "strength":
-			items, err := e.kisClient.GetStrengthRank(ctx, "0000", priceMin, priceMax, excludeCls)
-			if err != nil {
-				logger.Warn("engine: GetStrengthRank failed", map[string]any{"error": err.Error()})
-				continue
-			}
-			count := 0
-			for _, item := range items {
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
 				}
+			}
+
+		case "strength":
+			// 거래소별 복수 호출 후 dedup
+			rawByCodeStr := make(map[string]kis.StrengthRankItem)
+			for _, exch := range exchanges {
+				items, err := e.kisClient.GetStrengthRank(ctx, exch, "", "", excludeCls)
+				if err != nil {
+					logger.Warn("engine: GetStrengthRank failed", map[string]any{"exchange": exch, "error": err.Error()})
+					continue
+				}
+				for _, item := range items {
+					if _, exists := rawByCodeStr[item.StockCode]; !exists {
+						rawByCodeStr[item.StockCode] = item
+					}
+				}
+			}
+			dedupedStr := make([]kis.StrengthRankItem, 0, len(rawByCodeStr))
+			for _, item := range rawByCodeStr {
+				dedupedStr = append(dedupedStr, item)
+			}
+			count := 0
+			for _, item := range dedupedStr {
 				if !withinPriceRange(item.CurrentPrice) {
 					continue
 				}
@@ -956,19 +990,32 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 					Volume: item.Volume, Strength: item.Strength,
 				}
 				count++
-			}
-
-		case "exec_count":
-			items, err := e.kisClient.GetExecCountRank(ctx, "0000", "0", priceMin, priceMax, excludeCls)
-			if err != nil {
-				logger.Warn("engine: GetExecCountRank failed", map[string]any{"error": err.Error()})
-				continue
-			}
-			count := 0
-			for _, item := range items {
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
 				}
+			}
+
+		case "exec_count":
+			// 거래소별 복수 호출 후 dedup
+			rawByCodeExec := make(map[string]kis.ExecCountRankItem)
+			for _, exch := range exchanges {
+				items, err := e.kisClient.GetExecCountRank(ctx, exch, "0", "", "", excludeCls)
+				if err != nil {
+					logger.Warn("engine: GetExecCountRank failed", map[string]any{"exchange": exch, "error": err.Error()})
+					continue
+				}
+				for _, item := range items {
+					if _, exists := rawByCodeExec[item.StockCode]; !exists {
+						rawByCodeExec[item.StockCode] = item
+					}
+				}
+			}
+			dedupedExec := make([]kis.ExecCountRankItem, 0, len(rawByCodeExec))
+			for _, item := range rawByCodeExec {
+				dedupedExec = append(dedupedExec, item)
+			}
+			count := 0
+			for _, item := range dedupedExec {
 				if !withinPriceRange(item.CurrentPrice) {
 					continue
 				}
@@ -984,19 +1031,32 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 					Volume: item.Volume, NetBuyQty: item.NetBuyQty,
 				}
 				count++
-			}
-
-		case "disparity":
-			items, err := e.kisClient.GetDisparityRank(ctx, "0000", "20", "0", priceMin, priceMax, excludeCls)
-			if err != nil {
-				logger.Warn("engine: GetDisparityRank failed", map[string]any{"error": err.Error()})
-				continue
-			}
-			count := 0
-			for _, item := range items {
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
 					break
 				}
+			}
+
+		case "disparity":
+			// 거래소별 복수 호출 후 dedup
+			rawByCodeDisp := make(map[string]kis.DisparityRankItem)
+			for _, exch := range exchanges {
+				items, err := e.kisClient.GetDisparityRank(ctx, exch, "20", "0", "", "", excludeCls)
+				if err != nil {
+					logger.Warn("engine: GetDisparityRank failed", map[string]any{"exchange": exch, "error": err.Error()})
+					continue
+				}
+				for _, item := range items {
+					if _, exists := rawByCodeDisp[item.StockCode]; !exists {
+						rawByCodeDisp[item.StockCode] = item
+					}
+				}
+			}
+			dedupedDisp := make([]kis.DisparityRankItem, 0, len(rawByCodeDisp))
+			for _, item := range rawByCodeDisp {
+				dedupedDisp = append(dedupedDisp, item)
+			}
+			count := 0
+			for _, item := range dedupedDisp {
 				if !withinPriceRange(item.CurrentPrice) {
 					continue
 				}
@@ -1015,6 +1075,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 					Volume: item.Volume, DisparityD20: item.D20,
 				}
 				count++
+				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
+					break
+				}
 			}
 		}
 	}

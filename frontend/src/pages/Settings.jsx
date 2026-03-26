@@ -252,6 +252,8 @@ export default function Settings() {
   const [disparityD20Min, setDisparityD20Min] = useState('0')
   const [disparityD20Max, setDisparityD20Max] = useState('0')
   const [rankingCondition, setRankingCondition] = useState('AND')
+  const [rankingExchanges, setRankingExchanges] = useState(['0001', '1001'])
+  const [rankingVolumeBlngClsCodes, setRankingVolumeBlngClsCodes] = useState(['0', '1', '2', '3', '4'])
 
   // ── 매수 설정 ──
   const [maxPositions, setMaxPositions] = useState('1')
@@ -361,6 +363,8 @@ export default function Settings() {
     if (data.ranking_disparity_d20_min != null) setDisparityD20Min(String(data.ranking_disparity_d20_min))
     if (data.ranking_disparity_d20_max != null) setDisparityD20Max(String(data.ranking_disparity_d20_max))
     if (data.ranking_condition === 'AND' || data.ranking_condition === 'OR') setRankingCondition(data.ranking_condition)
+    if (Array.isArray(data.ranking_exchanges)) setRankingExchanges(data.ranking_exchanges)
+    if (Array.isArray(data.ranking_volume_blng_cls_codes)) setRankingVolumeBlngClsCodes(data.ranking_volume_blng_cls_codes)
 
     if (data.max_positions != null) setMaxPositions(String(data.max_positions))
     if (data.order_amount_pct != null) setOrderAmountPct(String(data.order_amount_pct))
@@ -479,6 +483,8 @@ export default function Settings() {
       ranking_disparity_d20_min: parseFloat(disparityD20Min) || 0,
       ranking_disparity_d20_max: parseFloat(disparityD20Max) || 0,
       ranking_condition: rankingCondition,
+      ranking_exchanges: rankingExchanges,
+      ranking_volume_blng_cls_codes: rankingVolumeBlngClsCodes,
       max_positions: parseInt(maxPositions) || 1,
       order_amount_pct: parseFloat(orderAmountPct) || 95,
       take_profit_pct: parseFloat(takeProfitPct) || 3.0,
@@ -765,6 +771,34 @@ export default function Settings() {
             </div>
 
             <div className={`space-y-3 ${divider}`}>
+              <div className="space-y-2">
+                <p className={labelText}>조회 거래소 (복수 선택 시 합산)</p>
+                <p className="text-xs text-th-on-muted">선택한 거래소별로 각각 순위를 조회한 후 종목을 합산합니다</p>
+                <div className="flex flex-wrap gap-4">
+                  {[
+                    { code: '0001', label: 'KOSPI (거래소)' },
+                    { code: '1001', label: 'KOSDAQ (코스닥)' },
+                    { code: '2001', label: 'KOSPI200' },
+                  ].map(({ code, label }) => (
+                    <label key={code} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={rankingExchanges.includes(code)}
+                        onChange={(e) =>
+                          setRankingExchanges((prev) =>
+                            e.target.checked ? [...prev, code] : prev.filter((c) => c !== code)
+                          )
+                        }
+                        className="w-4 h-4 rounded bg-th-surface-high accent-orange-500"
+                      />
+                      <span className="text-sm text-th-on-surface">{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className={`space-y-3 ${divider}`}>
               {/* 거래량 순위 */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -773,7 +807,33 @@ export default function Settings() {
                   <span className="text-sm text-th-on-surface font-medium">거래량 순위</span>
                 </div>
                 {rankingTypes.includes('volume') && (
-                  <div className="ml-6">
+                  <div className="ml-6 space-y-3">
+                    <div className="space-y-1">
+                      <p className={labelText}>거래량 분류 코드 (복수 선택 시 합산)</p>
+                      <div className="flex flex-wrap gap-3">
+                        {[
+                          { code: '0', label: '평균거래량' },
+                          { code: '1', label: '거래량증가율' },
+                          { code: '2', label: '평균거래회전율' },
+                          { code: '3', label: '거래대금순' },
+                          { code: '4', label: '평균거래대금' },
+                        ].map(({ code, label }) => (
+                          <label key={code} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={rankingVolumeBlngClsCodes.includes(code)}
+                              onChange={(e) =>
+                                setRankingVolumeBlngClsCodes((prev) =>
+                                  e.target.checked ? [...prev, code] : prev.filter((c) => c !== code)
+                                )
+                              }
+                              className="w-4 h-4 rounded bg-th-surface-high accent-orange-500"
+                            />
+                            <span className="text-sm text-th-on-surface">{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                     <label className="space-y-1">
                       <span className={labelText}>전일대비 거래량 증가율 최솟값 (%, 0=필터없음)</span>
                       <input type="number" step="10" min="0" value={volumeMinIncrRate} onChange={(e) => setVolumeMinIncrRate(e.target.value)}

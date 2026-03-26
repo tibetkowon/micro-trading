@@ -402,15 +402,19 @@ func (c *Client) GetHoldings(ctx context.Context) ([]HoldingItem, error) {
 
 // GetVolumeRank fetches the volume ranking (거래량 순위 FHPST01710000). Max 30 results.
 // market: "J"=KRX(default), "NX"=NXT.
-// sort (FID_BLNG_CLS_CODE): "0"=평균거래량(default), "1"=거래량증가율, "2"=평균거래회전율, "3"=거래대금순.
+// inputIscd (FID_INPUT_ISCD): "0000"=전체(default), "0001"=KOSPI, "1001"=KOSDAQ, "2001"=KOSPI200.
+// sort (FID_BLNG_CLS_CODE): "0"=평균거래량(default), "1"=거래량증가율, "2"=평균거래회전율, "3"=거래대금순, "4"=평균거래대금.
 // priceMin/priceMax: 가격 범위 필터 (빈값="" 이면 전체 가격 조회).
 // excludeCls: FID_TRGT_EXLS_CLS_CODE 10자리 (각 자리 1=제외, 0=포함).
 // 자리 순서: 투자위험/경고/주의/관리종목/정리매매/불성실공시/우선주/거래정지/ETF/ETN
-func (c *Client) GetVolumeRank(ctx context.Context, market, sort, priceMin, priceMax, excludeCls string) ([]VolumeRankItem, error) {
+func (c *Client) GetVolumeRank(ctx context.Context, market, inputIscd, sort, priceMin, priceMax, excludeCls string) ([]VolumeRankItem, error) {
+	if inputIscd == "" {
+		inputIscd = "0000"
+	}
 	endpoint := "/uapi/domestic-stock/v1/quotations/volume-rank"
 	params := fmt.Sprintf(
-		"?FID_COND_MRKT_DIV_CODE=%s&FID_COND_SCR_DIV_CODE=20171&FID_INPUT_ISCD=0000&FID_DIV_CLS_CODE=0&FID_BLNG_CLS_CODE=%s&FID_TRGT_CLS_CODE=111111111&FID_TRGT_EXLS_CLS_CODE=%s&FID_INPUT_PRICE_1=%s&FID_INPUT_PRICE_2=%s&FID_VOL_CNT=&FID_INPUT_DATE_1=",
-		market, sort, excludeCls, priceMin, priceMax)
+		"?FID_COND_MRKT_DIV_CODE=%s&FID_COND_SCR_DIV_CODE=20171&FID_INPUT_ISCD=%s&FID_DIV_CLS_CODE=0&FID_BLNG_CLS_CODE=%s&FID_TRGT_CLS_CODE=111111111&FID_TRGT_EXLS_CLS_CODE=%s&FID_INPUT_PRICE_1=%s&FID_INPUT_PRICE_2=%s&FID_VOL_CNT=&FID_INPUT_DATE_1=",
+		market, inputIscd, sort, excludeCls, priceMin, priceMax)
 
 	raw, err := c.get(ctx, endpoint, params, "FHPST01710000")
 	if err != nil {
