@@ -82,63 +82,108 @@ const PNL_TABS = [
   { label: '1달', days: 30 },
 ]
 
-function PnLTooltip({ active, payload, label }) {
+function PnLTooltip({ active, payload, label, displayMode }) {
   if (!active || !payload?.length) return null
   const daily = payload.find(p => p.dataKey === 'pnl')?.value ?? 0
   const cum = payload.find(p => p.dataKey === 'cumPnl')?.value ?? 0
+  const dailyRaw = payload.find(p => p.dataKey === 'pnl')?.payload?.pnlRaw ?? 0
+  const cumRaw = payload.find(p => p.dataKey === 'cumPnl')?.payload?.cumPnlRaw ?? 0
+  const isPct = displayMode === 'pct'
   return (
     <div className="bg-th-surface-high rounded-lg px-3 py-2 text-xs shadow-lg border border-black/5 dark:border-white/5">
       <p className="text-th-on-subtle mb-1">{label}</p>
       <p className={`font-data font-semibold ${daily >= 0 ? 'text-red-400' : 'text-blue-400'}`}>
-        일별: {daily >= 0 ? '+' : ''}{daily.toLocaleString('ko-KR')}원
+        {isPct
+          ? `일별: ${daily >= 0 ? '+' : ''}${daily.toFixed(2)}% (${dailyRaw >= 0 ? '+' : ''}${dailyRaw.toLocaleString('ko-KR')}원)`
+          : `일별: ${daily >= 0 ? '+' : ''}${daily.toLocaleString('ko-KR')}원`}
       </p>
-      <p className={`font-data text-th-on-muted`}>
-        누적: {cum >= 0 ? '+' : ''}{cum.toLocaleString('ko-KR')}원
+      <p className="font-data text-th-on-muted">
+        {isPct
+          ? `누적: ${cum >= 0 ? '+' : ''}${cum.toFixed(2)}% (${cumRaw >= 0 ? '+' : ''}${cumRaw.toLocaleString('ko-KR')}원)`
+          : `누적: ${cum >= 0 ? '+' : ''}${cum.toLocaleString('ko-KR')}원`}
       </p>
     </div>
   )
 }
-PnLTooltip.propTypes = { active: PropTypes.bool, payload: PropTypes.array, label: PropTypes.string }
+PnLTooltip.propTypes = { active: PropTypes.bool, payload: PropTypes.array, label: PropTypes.string, displayMode: PropTypes.string }
 
 function PnLGraph() {
   const [activeDays, setActiveDays] = useState(7)
+  const [displayMode, setDisplayMode] = useState('pct')
   const { data } = useApi(`/api/stats/daily-pnl?days=${activeDays}`)
+  const { data: balanceData } = useApi('/api/balance')
+
+  const totalEval = balanceData?.total_eval ? parseFloat(balanceData.total_eval) : 0
+  const isPct = displayMode === 'pct' && totalEval > 0
 
   const raw = data?.data || []
   let cumulative = 0
+  let cumulativeRaw = 0
   const chartData = raw.map(d => {
-    cumulative += d.pnl
+    cumulative += isPct ? (d.pnl / totalEval) * 100 : d.pnl
+    cumulativeRaw += d.pnl
     return {
       dateLabel: d.date.slice(5).replace('-', '/'), // "03/15"
-      pnl: d.pnl,
+      pnl: isPct ? (d.pnl / totalEval) * 100 : d.pnl,
       cumPnl: cumulative,
+      pnlRaw: d.pnl,
+      cumPnlRaw: cumulativeRaw,
     }
   })
-  const totalPnl = raw.reduce((s, d) => s + d.pnl, 0)
+  const totalPnlRaw = raw.reduce((s, d) => s + d.pnl, 0)
+  const totalPnlPct = totalEval > 0 ? (totalPnlRaw / totalEval) * 100 : 0
 
   return (
     <div className="bg-th-surface rounded-xl p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-[10px] text-th-on-subtle uppercase tracking-widest mb-1">실현 손익</p>
-          <p className={`text-xl font-bold font-data ${totalPnl >= 0 ? 'text-red-400' : 'text-blue-400'}`}>
-            {totalPnl >= 0 ? '+' : ''}{totalPnl.toLocaleString('ko-KR')}원
-          </p>
+          {isPct ? (
+            <div className="flex items-baseline gap-2">
+              <p className={`text-xl font-bold font-data ${totalPnlPct >= 0 ? 'text-red-400' : 'text-blue-400'}`}>
+                {totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
+              </p>
+              <p className="text-xs text-th-on-subtle font-data">
+                ({totalPnlRaw >= 0 ? '+' : ''}{totalPnlRaw.toLocaleString('ko-KR')}원)
+              </p>
+            </div>
+          ) : (
+            <p className={`text-xl font-bold font-data ${totalPnlRaw >= 0 ? 'text-red-400' : 'text-blue-400'}`}>
+              {totalPnlRaw >= 0 ? '+' : ''}{totalPnlRaw.toLocaleString('ko-KR')}원
+            </p>
+          )}
+          {displayMode === 'pct' && totalEval === 0 && (
+            <p className="text-[10px] text-th-on-subtle mt-0.5">잔고 미연결 — 원화 모드로 표시</p>
+          )}
         </div>
-        <div className="flex gap-1">
-          {PNL_TABS.map(t => (
-            <button
-              key={t.days}
-              onClick={() => setActiveDays(t.days)}
-              className={`px-3 py-1 rounded-lg text-xs transition-colors ${
-                activeDays === t.days
-                  ? 'bg-th-surface-high text-th-on-surface font-medium'
-                  : 'text-th-on-muted hover:text-th-on-surface'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          {totalEval > 0 && (
+            <div className="flex border border-black/10 dark:border-white/10 rounded-lg overflow-hidden text-xs">
+              <button
+                onClick={() => setDisplayMode('pct')}
+                className={`px-2.5 py-1 transition-colors ${displayMode === 'pct' ? 'bg-th-surface-high text-th-on-surface font-medium' : 'text-th-on-muted hover:text-th-on-surface'}`}
+              >%</button>
+              <button
+                onClick={() => setDisplayMode('krw')}
+                className={`px-2.5 py-1 transition-colors ${displayMode === 'krw' ? 'bg-th-surface-high text-th-on-surface font-medium' : 'text-th-on-muted hover:text-th-on-surface'}`}
+              >원</button>
+            </div>
+          )}
+          <div className="flex gap-1">
+            {PNL_TABS.map(t => (
+              <button
+                key={t.days}
+                onClick={() => setActiveDays(t.days)}
+                className={`px-3 py-1 rounded-lg text-xs transition-colors ${
+                  activeDays === t.days
+                    ? 'bg-th-surface-high text-th-on-surface font-medium'
+                    : 'text-th-on-muted hover:text-th-on-surface'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -158,7 +203,7 @@ function PnLGraph() {
               interval="preserveStartEnd"
             />
             <YAxis hide domain={['auto', 'auto']} />
-            <Tooltip content={<PnLTooltip />} cursor={{ fill: 'var(--th-outline)' }} />
+            <Tooltip content={<PnLTooltip displayMode={isPct ? 'pct' : 'krw'} />} cursor={{ fill: 'var(--th-outline)' }} />
             <Bar dataKey="pnl" radius={[3, 3, 0, 0]} maxBarSize={20}>
               {chartData.map((entry, i) => (
                 <Cell

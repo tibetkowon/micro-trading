@@ -19,6 +19,7 @@ type RankItem struct {
 	CurrentPrice string `json:"current_price"`
 	Volume       string `json:"volume"`
 	RankingType  string `json:"ranking_type"`            // e.g. "volume+strength"
+	Exchange     string `json:"exchange,omitempty"`      // 미장 거래소 코드 (NAS/NYS/AMS)
 	VolIncrRate  string `json:"vol_incr_rate,omitempty"` // 거래량 증가율 % (volume)
 	Strength     string `json:"strength,omitempty"`      // 체결강도 % (strength)
 	NetBuyQty    string `json:"net_buy_qty,omitempty"`   // 순매수체결량 (exec_count)

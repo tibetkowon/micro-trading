@@ -596,11 +596,24 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"us_trading_end_time":   ts.USTradingEndTime,
 		"us_dst_enabled":        ts.USDSTEnabled,
 		"us_ranking_types":      ts.USRankingTypes,
-		"us_ranking_exchange":   ts.USRankingExchange,
+		"us_ranking_exchanges":  ts.USRankingExchanges,
 		"us_ranking_price_min":  ts.USRankingPriceMin,
 		"us_ranking_price_max":  ts.USRankingPriceMax,
 		"us_ranking_vol_rang":   ts.USRankingVolRang,
 		"us_ranking_top_n":      ts.USRankingTopN,
+		// 미장 전용 매매 기준
+		"us_take_profit_pct":  ts.USTakeProfitPct,
+		"us_stop_loss_pct":    ts.USStopLossPct,
+		"us_order_amount_pct": ts.USOrderAmountPct,
+		"us_max_positions":    ts.USMaxPositions,
+		// 미장 전용 소프트 필터
+		"us_filter_rsi_max":             ts.USFilterRsiMax,
+		"us_filter_disparity_m5_max":    ts.USFilterDisparityM5Max,
+		"us_filter_high_price_diff_min": ts.USFilterHighPriceDiffMin,
+		"us_filter_open_price_diff_max": ts.USFilterOpenPriceDiffMax,
+		// 미장 전용 하드 리젝션
+		"us_hard_disparity_m5_max":   ts.USHardDisparityM5Max,
+		"us_hard_open_price_diff_max": ts.USHardOpenPriceDiffMax,
 		// 거래대금 하한선
 		"min_trading_value": ts.MinTradingValue,
 		// 매수 중단 시간대
@@ -677,11 +690,24 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		USTradingEndTime   string   `json:"us_trading_end_time"`
 		USDSTEnabled       *bool    `json:"us_dst_enabled"`
 		USRankingTypes     []string `json:"us_ranking_types"`
-		USRankingExchange  string   `json:"us_ranking_exchange"`
+		USRankingExchanges []string `json:"us_ranking_exchanges"`
 		USRankingPriceMin  string   `json:"us_ranking_price_min"`
 		USRankingPriceMax  string   `json:"us_ranking_price_max"`
 		USRankingVolRang   string   `json:"us_ranking_vol_rang"`
 		USRankingTopN      *int     `json:"us_ranking_top_n"`
+		// 미장 전용 매매 기준
+		USTakeProfitPct  *float64 `json:"us_take_profit_pct"`
+		USStopLossPct    *float64 `json:"us_stop_loss_pct"`
+		USOrderAmountPct *float64 `json:"us_order_amount_pct"`
+		USMaxPositions   *int     `json:"us_max_positions"`
+		// 미장 전용 소프트 필터
+		USFilterRsiMax           *float64 `json:"us_filter_rsi_max"`
+		USFilterDisparityM5Max   *float64 `json:"us_filter_disparity_m5_max"`
+		USFilterHighPriceDiffMin *float64 `json:"us_filter_high_price_diff_min"`
+		USFilterOpenPriceDiffMax *float64 `json:"us_filter_open_price_diff_max"`
+		// 미장 전용 하드 리젝션
+		USHardDisparityM5Max   *float64 `json:"us_hard_disparity_m5_max"`
+		USHardOpenPriceDiffMax *float64 `json:"us_hard_open_price_diff_max"`
 		// 거래대금 하한선
 		MinTradingValue *float64 `json:"min_trading_value"`
 		// 매수 중단 시간대
@@ -958,8 +984,9 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
-	if req.USRankingExchange != "" {
-		if !save("us_ranking_exchange", req.USRankingExchange) {
+	if len(req.USRankingExchanges) > 0 {
+		b, _ := json.Marshal(req.USRankingExchanges)
+		if !save("us_ranking_exchange", string(b)) {
 			return
 		}
 	}
@@ -980,6 +1007,56 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.USRankingTopN != nil {
 		if !save("us_ranking_top_n", strconv.Itoa(*req.USRankingTopN)) {
+			return
+		}
+	}
+	if req.USTakeProfitPct != nil {
+		if !save("us_take_profit_pct", strconv.FormatFloat(*req.USTakeProfitPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.USStopLossPct != nil {
+		if !save("us_stop_loss_pct", strconv.FormatFloat(*req.USStopLossPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.USOrderAmountPct != nil {
+		if !save("us_order_amount_pct", strconv.FormatFloat(*req.USOrderAmountPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.USMaxPositions != nil {
+		if !save("us_max_positions", strconv.Itoa(*req.USMaxPositions)) {
+			return
+		}
+	}
+	if req.USFilterRsiMax != nil {
+		if !save("us_filter_rsi_max", strconv.FormatFloat(*req.USFilterRsiMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.USFilterDisparityM5Max != nil {
+		if !save("us_filter_disparity_m5_max", strconv.FormatFloat(*req.USFilterDisparityM5Max, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.USFilterHighPriceDiffMin != nil {
+		if !save("us_filter_high_price_diff_min", strconv.FormatFloat(*req.USFilterHighPriceDiffMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.USFilterOpenPriceDiffMax != nil {
+		if !save("us_filter_open_price_diff_max", strconv.FormatFloat(*req.USFilterOpenPriceDiffMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.USHardDisparityM5Max != nil {
+		if !save("us_hard_disparity_m5_max", strconv.FormatFloat(*req.USHardDisparityM5Max, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.USHardOpenPriceDiffMax != nil {
+		if !save("us_hard_open_price_diff_max", strconv.FormatFloat(*req.USHardOpenPriceDiffMax, 'f', -1, 64)) {
 			return
 		}
 	}

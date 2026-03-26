@@ -1155,9 +1155,9 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 // getRankingsUS fetches overseas volume ranking for US market.
 // The second return value is the ranking log ID (0 if log insert failed).
 func (e *Engine) getRankingsUS(ctx context.Context, settings database.TradingSettings) ([]RankItem, int64, error) {
-	excd := settings.USRankingExchange
-	if excd == "" {
-		excd = "NAS"
+	exchanges := settings.USRankingExchanges
+	if len(exchanges) == 0 {
+		exchanges = []string{"NAS"}
 	}
 	prc1 := settings.USRankingPriceMin
 	prc2 := settings.USRankingPriceMax
@@ -1170,25 +1170,39 @@ func (e *Engine) getRankingsUS(ctx context.Context, settings database.TradingSet
 		topN = 20
 	}
 
-	items, err := e.kisClient.GetOverseasVolumeRank(ctx, excd, prc1, prc2, volRang)
-	if err != nil {
-		return nil, 0, fmt.Errorf("GetOverseasVolumeRank: %w", err)
-	}
-
-	result := make([]RankItem, 0, len(items))
-	for i, item := range items {
-		if topN > 0 && i >= topN {
-			break
+	// 각 거래소별로 조회 후 합산 (중복 종목은 첫 번째 유지)
+	var allItems []RankItem
+	seen := make(map[string]bool)
+	for _, excd := range exchanges {
+		items, err := e.kisClient.GetOverseasVolumeRank(ctx, excd, prc1, prc2, volRang)
+		if err != nil {
+			logger.Warn("engine US: GetOverseasVolumeRank failed for exchange",
+				map[string]any{"exchange": excd, "error": err.Error()})
+			continue
 		}
-		result = append(result, RankItem{
-			DataRank:     item.Rank,
-			StockCode:    item.Symb,
-			StockName:    item.Ename,
-			CurrentPrice: item.Last,
-			Volume:       item.TVol,
-			RankingType:  "us_volume",
-		})
+		for i, item := range items {
+			if topN > 0 && i >= topN {
+				break
+			}
+			if seen[item.Symb] {
+				continue
+			}
+			seen[item.Symb] = true
+			allItems = append(allItems, RankItem{
+				DataRank:     item.Rank,
+				StockCode:    item.Symb,
+				StockName:    item.Ename,
+				CurrentPrice: item.Last,
+				Volume:       item.TVol,
+				RankingType:  "us_volume",
+				Exchange:     excd,
+			})
+		}
 	}
+	if len(allItems) == 0 {
+		return nil, 0, fmt.Errorf("GetOverseasVolumeRank: no results from any exchange")
+	}
+	result := allItems
 
 	typesJSON, _ := json.Marshal(settings.USRankingTypes)
 	rankingLogID, logErr := e.db.InsertRankingLog(ctx, models.TraderRankingLog{
@@ -1250,6 +1264,19 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		}
 	}
 
+	// 미장 최대 포지션 수 체크
+	{
+		usMaxPos := settings.USMaxPositions
+		if usMaxPos <= 0 {
+			usMaxPos = 1
+		}
+		currentCount := e.mon.Count() + e.countPendingOrders(ctx)
+		if currentCount >= usMaxPos {
+			e.setState(StateMonitoring)
+			return fmt.Errorf("미장 최대 포지션 수 도달 (%d/%d)", currentCount, usMaxPos)
+		}
+	}
+
 	excludedCodes := e.getTodayTradedCodes(ctx)
 
 	rankings, rankingLogID, err := e.getRankingsUS(ctx, settings)
@@ -1288,18 +1315,19 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		return fmt.Errorf("no US ranking results after excluding already-traded stocks")
 	}
 
-	excd := settings.USRankingExchange
-	if excd == "" {
-		excd = "NAS"
+	// 첫 번째 종목의 거래소를 available USD 조회에 사용
+	firstExcd := "NAS"
+	if len(rankings) > 0 && rankings[0].Exchange != "" {
+		firstExcd = rankings[0].Exchange
 	}
-	exchCode := excdToExchCode(excd)
+	firstExchCode := excdToExchCode(firstExcd)
 
 	// Get available USD amount (use first candidate's price for estimate)
 	availableUSD := float64(10000) // fallback default
 	if len(rankings) > 0 {
-		priceResp, priceErr := e.kisClient.GetOverseasPrice(ctx, excd, rankings[0].StockCode)
+		priceResp, priceErr := e.kisClient.GetOverseasPrice(ctx, firstExcd, rankings[0].StockCode)
 		if priceErr == nil && priceResp.Last != "" {
-			availStr, avErr := e.kisClient.GetOverseasAvailableOrder(ctx, exchCode, rankings[0].StockCode, priceResp.Last)
+			availStr, avErr := e.kisClient.GetOverseasAvailableOrder(ctx, firstExchCode, rankings[0].StockCode, priceResp.Last)
 			if avErr == nil {
 				if v, pErr := strconv.ParseFloat(availStr, 64); pErr == nil && v > 0 {
 					availableUSD = v
@@ -1311,9 +1339,6 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 	// 일일 최대 손실 한도 체크 (US — USD 기준)
 	{
 		usDailyMaxLoss := settings.USDailyMaxLossPct
-		if usDailyMaxLoss == 0 {
-			usDailyMaxLoss = settings.DailyMaxLossPct // fallback: 국장 손실 한도 공유
-		}
 		if usDailyMaxLoss > 0 {
 			pnl := e.db.GetTodayRealizedPnLByMarket(ctx, "US")
 			if pnl < 0 {
@@ -1330,7 +1355,11 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 
 	// Enrich each candidate with technical indicators via 5-minute bars (MA5/MA20/RSI/MACD/DisparityM5).
 	for i, r := range rankings {
-		info, enrichErr := agent.GetOverseasStockInfo(ctx, e.kisClient, excd, r.StockCode)
+		stockExcd := r.Exchange
+		if stockExcd == "" {
+			stockExcd = firstExcd
+		}
+		info, enrichErr := agent.GetOverseasStockInfo(ctx, e.kisClient, stockExcd, r.StockCode)
 		if enrichErr != nil {
 			logger.Warn("engine US: GetOverseasStockInfo failed, skipping indicators",
 				map[string]any{"stock_code": r.StockCode, "error": enrichErr.Error()})
@@ -1354,11 +1383,8 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		rankings[i].BidAskRatio = info.BidAskRatio
 	}
 
-	// 최소 거래대금 필터 (USD) — us_min_trading_value 우선, 0이면 min_trading_value fallback
+	// 최소 거래대금 필터 (USD)
 	usMinTV := settings.USMinTradingValue
-	if usMinTV == 0 {
-		usMinTV = settings.MinTradingValue
-	}
 	if usMinTV > 0 {
 		var passed []RankItem
 		for _, item := range rankings {
@@ -1384,19 +1410,19 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 
 	// 하드 필터: LLM 전달 전 부적격 종목 제거 (제거된 종목은 ranking log에 기록)
 	{
-		filterRsiMax := settings.FilterRsiMax
+		filterRsiMax := settings.USFilterRsiMax
 		if filterRsiMax == 0 {
 			filterRsiMax = 80
 		}
-		filterDisparityM5Max := settings.FilterDisparityM5Max
+		filterDisparityM5Max := settings.USFilterDisparityM5Max
 		if filterDisparityM5Max == 0 {
 			filterDisparityM5Max = 3.0
 		}
-		filterHighPriceDiffMin := settings.FilterHighPriceDiffMin
+		filterHighPriceDiffMin := settings.USFilterHighPriceDiffMin
 		if filterHighPriceDiffMin == 0 {
 			filterHighPriceDiffMin = -5.0
 		}
-		filterOpenPriceDiffMax := settings.FilterOpenPriceDiffMax
+		filterOpenPriceDiffMax := settings.USFilterOpenPriceDiffMax
 		if filterOpenPriceDiffMax == 0 {
 			filterOpenPriceDiffMax = 20.0
 		}
@@ -1458,7 +1484,7 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 	}
 
 	usRules := DefaultTradingRules()
-	usRules.HardDisparityM5Max = settings.HardDisparityM5Max
+	usRules.HardDisparityM5Max = settings.USHardDisparityM5Max
 	if usRules.HardDisparityM5Max == 0 {
 		usRules.HardDisparityM5Max = 3.0
 	}
@@ -1466,7 +1492,7 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 	if usRules.HardRSIMax == 0 {
 		usRules.HardRSIMax = 70.0
 	}
-	usRules.HardOpenPriceDiffMax = settings.HardOpenPriceDiffMax
+	usRules.HardOpenPriceDiffMax = settings.USHardOpenPriceDiffMax
 	if usRules.HardOpenPriceDiffMax == 0 {
 		usRules.HardOpenPriceDiffMax = 15.0
 	}
@@ -1512,8 +1538,18 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 
 		e.setState(StateOrdering)
 
+		// 해당 종목의 거래소 코드 결정
+		candExcd := firstExcd
+		for _, r := range rankings {
+			if r.StockCode == code && r.Exchange != "" {
+				candExcd = r.Exchange
+				break
+			}
+		}
+		candExchCode := excdToExchCode(candExcd)
+
 		// Get current price
-		priceResp, priceErr := e.kisClient.GetOverseasPrice(ctx, excd, code)
+		priceResp, priceErr := e.kisClient.GetOverseasPrice(ctx, candExcd, code)
 		if priceErr != nil {
 			logger.Warn("engine US: GetOverseasPrice failed, skipping",
 				map[string]any{"stock_code": code, "error": priceErr.Error()})
@@ -1526,13 +1562,17 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		}
 
 		// Get available USD for this stock
-		availStr, _ := e.kisClient.GetOverseasAvailableOrder(ctx, exchCode, code, priceResp.Last)
+		availStr, _ := e.kisClient.GetOverseasAvailableOrder(ctx, candExchCode, code, priceResp.Last)
 		availUSD, _ := strconv.ParseFloat(availStr, 64)
 		if availUSD <= 0 {
 			availUSD = availableUSD
 		}
 
-		orderAmt := availUSD * settings.OrderAmountPct / 100
+		usOrderAmt := settings.USOrderAmountPct
+		if usOrderAmt <= 0 {
+			usOrderAmt = 95
+		}
+		orderAmt := availUSD * usOrderAmt / 100
 		qty := int(orderAmt / currentPrice)
 		if qty <= 0 {
 			qty = 1
@@ -1551,7 +1591,7 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		}
 
 		// Place buy order
-		usResp, usErr := e.kisClient.PlaceOverseasBuyOrder(ctx, exchCode, code, qty, currentPrice)
+		usResp, usErr := e.kisClient.PlaceOverseasBuyOrder(ctx, candExchCode, code, qty, currentPrice)
 		if usErr != nil {
 			logger.Warn("engine US: PlaceOverseasBuyOrder failed, skipping",
 				map[string]any{"stock_code": code, "error": usErr.Error()})
@@ -1559,11 +1599,19 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		}
 
 		// Insert order to DB
+		usTakeProfit := settings.USTakeProfitPct
+		if usTakeProfit <= 0 {
+			usTakeProfit = 3.0
+		}
+		usStopLoss := settings.USStopLossPct
+		if usStopLoss <= 0 {
+			usStopLoss = 2.0
+		}
 		dbRes, dbErr := e.db.ExecContext(ctx,
 			`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, source, target_pct, stop_pct, market, created_at)
 			 VALUES (?, ?, 'BUY', ?, ?, 'PENDING', ?, 'AGENT', ?, ?, 'US', ?)`,
 			code, candidateName, qty, currentPrice, usResp.KISOrderID,
-			settings.TakeProfitPct, settings.StopLossPct, time.Now().UTC())
+			usTakeProfit, usStopLoss, time.Now().UTC())
 		if dbErr != nil {
 			logger.Warn("engine US: DB insert failed", map[string]any{"error": dbErr.Error()})
 		}
@@ -1639,16 +1687,35 @@ func (e *Engine) selectAndBuyUS(ctx context.Context, settings database.TradingSe
 		`UPDATE orders SET filled_price = ?, status = ? WHERE id = ?`,
 		filledPrice, string(models.OrderStatusFilled), orderID)
 
+	// 체결된 종목의 거래소 코드 결정
+	filledExcd := firstExcd
+	for _, r := range rankings {
+		if r.StockCode == stockCode && r.Exchange != "" {
+			filledExcd = r.Exchange
+			break
+		}
+	}
+	filledExchCode := excdToExchCode(filledExcd)
+
+	usTakeProfitFinal := settings.USTakeProfitPct
+	if usTakeProfitFinal <= 0 {
+		usTakeProfitFinal = 3.0
+	}
+	usStopLossFinal := settings.USStopLossPct
+	if usStopLossFinal <= 0 {
+		usStopLossFinal = 2.0
+	}
+
 	// Register with monitor (트레일링 스탑 파라미터 포함)
 	entry := monitor.MonitoredEntry{
 		StockCode:          stockCode,
 		StockName:          stockName,
 		FilledPrice:        filledPrice,
-		TargetPrice:        filledPrice * (1 + settings.TakeProfitPct/100),
-		StopPrice:          filledPrice * (1 - settings.StopLossPct/100),
+		TargetPrice:        filledPrice * (1 + usTakeProfitFinal/100),
+		StopPrice:          filledPrice * (1 - usStopLossFinal/100),
 		OrderID:            orderID,
 		Market:             "US",
-		ExchCode:           exchCode,
+		ExchCode:           filledExchCode,
 		SoldCh:             e.soldCh,
 		TrailingTriggerPct: settings.TrailingTriggerPct,
 		TrailingStopPct:    settings.TrailingStopPct,

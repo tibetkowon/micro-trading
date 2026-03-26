@@ -107,8 +107,28 @@ HardFilterSection.propTypes = {
 }
 
 /* ── LLM 선정 결과 섹션 ── */
-function SelectionSection({ selLog }) {
-  if (!selLog) return <p className="text-xs text-th-on-subtle">연결된 선정 로그 없음</p>
+function SelectionSection({ selLog, filteredStocks }) {
+  if (!selLog) {
+    if (filteredStocks && filteredStocks.length > 0) {
+      return (
+        <div className="space-y-2">
+          <p className="text-xs text-amber-400">
+            LLM에 전달된 후보 없음 — 하드 필터에서 {filteredStocks.length}종목 전체 제거
+          </p>
+          <div className="space-y-1.5">
+            {filteredStocks.map((f) => (
+              <div key={f.stock_code} className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-data text-th-on-muted shrink-0">{f.stock_code}</span>
+                {f.stock_name && <span className="text-xs text-th-on-subtle shrink-0">{f.stock_name}</span>}
+                <span className="badge bg-th-warn/10 text-amber-400 border-th-warn/20 text-xs shrink-0">{f.filter_reason}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+    return <p className="text-xs text-th-on-subtle">LLM 선정 단계 미실행 — 순위/필터 단계에서 후보 없음</p>
+  }
 
   const candidates = parseJSON(selLog.candidates) || []
   const llmResult = parseJSON(selLog.llm_result) || []
@@ -135,7 +155,10 @@ function SelectionSection({ selLog }) {
         <p className="text-sm text-th-on-muted">{selLog.selected_reason}</p>
       )}
       {hasFailed && (
-        <p className="text-xs text-red-400">{selLog.fail_reason}</p>
+        <div className="space-y-1">
+          <p className="text-xs text-th-on-subtle">Hard Rejection Rule 적용 결과</p>
+          <p className="text-xs text-red-400">{selLog.fail_reason}</p>
+        </div>
       )}
 
       {/* Claude 순위 결과 */}
@@ -208,6 +231,7 @@ function SelectionSection({ selLog }) {
 }
 SelectionSection.propTypes = {
   selLog: PropTypes.object,
+  filteredStocks: PropTypes.array,
 }
 
 /* ── 단계 패널 ── */
@@ -346,7 +370,7 @@ function RankingCard({ log, selLog }) {
                 : null
             }
           >
-            <SelectionSection selLog={selLog} />
+            <SelectionSection selLog={selLog} filteredStocks={filteredStocks} />
           </StagePanel>
         </div>
       )}

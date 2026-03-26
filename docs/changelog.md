@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-26 — 버그 수정 6종 (모바일 포커스·잘림, 미장 설정 완전 분리, Hard Rejection 표시, P&L %, 멀티 거래소)
+
+- **`Settings.jsx`**: `PresetPanel`을 컴포넌트 외부로 이동 → 모바일 입력 포커스 버그 수정 (이슈1); sticky 헤더 `top-14 md:top-0` 수정 (이슈2)
+- **`Settings.jsx`**: 미장 전용 매매기준·소프트필터·하드리젝션 10개 신규 UI 섹션 추가; 거래소 단일선택 → 복수선택(NASDAQ/NYSE/AMEX) (이슈3, 6)
+- **`db.go`**: `TradingSettings` 10개 미장 전용 필드 추가; `USRankingExchanges []string`; DB default INSERT 및 GetTradingSettings 파싱 (이슈3, 6)
+- **`handlers.go`**: 설정 응답/요청 구조체에 미장 전용 10개 필드 + `us_ranking_exchanges` 추가, save 로직 반영 (이슈3, 6)
+- **`engine.go`**: `selectAndBuyUS` 미장 전용 설정값 적용; 멀티 거래소 루프 + 중복제거; KR fallback 제거 (이슈3, 6)
+- **`StockLogs.jsx`**: `SelectionSection`에 `filteredStocks` prop 추가 — Hard Rejection으로 전체 제거 시 종목·이유 목록 표시 (이슈4)
+- **`Dashboard.jsx`**: `PnLGraph`에 원/% 토글 추가 — 총 평가금액 기준 수익률 % 표시, 툴팁에 원화 병기 (이슈5)
+
 ## 2026-03-25 — 설정 페이지 탭 분할 (국장 / 미장 / AI·서버)
 
 - **`Settings.jsx`**: 단일 스크롤 페이지를 **국장 / 미장 / AI·서버** 3개 탭으로 분할. `hidden` CSS 클래스로 비활성 탭 숨김(unmount 없음) — 단일 `<form>` 내에서 모든 설정값 유지. 국장·미장 탭 각각에 해당 시장 프리셋 패널 배치. AI·서버 탭은 별도 저장 버튼 사용

@@ -53,6 +53,113 @@ const SELL_CONDITIONS = [
   { value: 'stagnation', label: '횡보 감지 (가격 정체 자동 매도)' },
 ]
 
+const inputCls = 'w-full px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50'
+const sectionCls = 'bg-th-surface rounded-xl p-5 space-y-4'
+const sectionTitle = 'text-sm font-semibold text-th-on-surface'
+const hintText = 'text-xs text-th-on-subtle'
+const divider = 'pt-3 border-t border-black/5 dark:border-white/5'
+
+function PresetPanel({
+  market, presets, nameVal, descVal, setName, setDesc,
+  presetSaving, presetApplying, presetMsg,
+  handleSavePreset, handleApplyPreset, handleDeletePreset,
+}) {
+  const isKR = market === 'KR'
+  const filteredPresets = presets.filter((p) => p.market === market)
+  const emptyMsg = isKR ? '저장된 국장 프리셋이 없습니다.' : '저장된 미장 프리셋이 없습니다.'
+  const saveBtnLabel = isKR ? '국장 설정 저장' : '미장 설정 저장'
+  const placeholder = isKR ? '예: 공격적' : '예: 나스닥 변동성'
+
+  return (
+    <div className={`${sectionCls} !space-y-3`}>
+      <div className="flex items-center gap-2">
+        <p className={sectionTitle}>{isKR ? '국장' : '미장'} 프리셋</p>
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${isKR ? 'bg-blue-500/10 text-blue-400' : 'bg-orange-500/10 text-orange-400'}`}>
+          {isKR ? '국내' : '해외'}
+        </span>
+      </div>
+      <p className={hintText}>
+        {isKR
+          ? '국장 설정(거래 제어, 종목 선정, 매수/매도, 필터 등)만 저장·적용합니다.'
+          : '미장 설정(us_ 접두사 항목)만 저장·적용합니다. 국장 설정은 영향받지 않습니다.'}
+      </p>
+      {filteredPresets.length > 0 ? (
+        <div className="space-y-2">
+          {filteredPresets.map((p) => (
+            <div key={p.id} className="flex items-center gap-2 bg-th-surface-high rounded-lg px-3 py-2">
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-th-on-surface">{p.name}</span>
+                {p.description && (
+                  <span className="text-xs text-th-on-muted ml-2">{p.description}</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset(p.id)}
+                disabled={presetApplying === p.id}
+                className="shrink-0 px-3 py-1 text-xs rounded-md bg-orange-500/15 text-orange-400 hover:bg-orange-500/25 disabled:opacity-50 transition-colors"
+              >
+                {presetApplying === p.id ? '적용 중...' : '적용'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeletePreset(p.id, p.name)}
+                className="shrink-0 p-1 text-th-on-subtle hover:text-red-400 transition-colors rounded"
+                title="삭제"
+              >
+                <span className="material-symbols-outlined text-[16px]">delete</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-th-on-subtle">{emptyMsg}</p>
+      )}
+      <div className={`flex flex-col sm:flex-row gap-2 ${divider}`}>
+        <input
+          type="text"
+          placeholder={`프리셋 이름 (${placeholder})`}
+          value={nameVal}
+          onChange={(e) => setName(e.target.value)}
+          className={`flex-1 ${inputCls}`}
+        />
+        <input
+          type="text"
+          placeholder="설명 (선택)"
+          value={descVal}
+          onChange={(e) => setDesc(e.target.value)}
+          className={`flex-1 ${inputCls}`}
+        />
+        <button
+          type="button"
+          onClick={() => handleSavePreset(market)}
+          disabled={presetSaving}
+          className="shrink-0 px-4 py-1.5 bg-th-surface-high hover:bg-th-surface-highest text-th-on-surface text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors"
+        >
+          {presetSaving ? '저장 중...' : saveBtnLabel}
+        </button>
+      </div>
+      {presetMsg && (
+        <p className={`text-xs ${presetMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{presetMsg.text}</p>
+      )}
+    </div>
+  )
+}
+PresetPanel.propTypes = {
+  market: PropTypes.string,
+  presets: PropTypes.array,
+  nameVal: PropTypes.string,
+  descVal: PropTypes.string,
+  setName: PropTypes.func,
+  setDesc: PropTypes.func,
+  presetSaving: PropTypes.bool,
+  presetApplying: PropTypes.any,
+  presetMsg: PropTypes.object,
+  handleSavePreset: PropTypes.func,
+  handleApplyPreset: PropTypes.func,
+  handleDeletePreset: PropTypes.func,
+}
+
 export default function Settings() {
   const { data, loading, error, refetch } = useApi('/api/settings')
 
@@ -209,13 +316,26 @@ export default function Settings() {
   const [usTradingStartTime, setUsTradingStartTime] = useState('22:30')
   const [usTradingEndTime, setUsTradingEndTime] = useState('05:00')
   const [usRankingTypes, setUsRankingTypes] = useState(['volume'])
-  const [usRankingExchange, setUsRankingExchange] = useState('NAS')
+  const [usRankingExchanges, setUsRankingExchanges] = useState(['NAS'])
   const [usRankingPriceMin, setUsRankingPriceMin] = useState('10')
   const [usRankingPriceMax, setUsRankingPriceMax] = useState('500')
   const [usRankingVolRang, setUsRankingVolRang] = useState('0')
   const [usRankingTopN, setUsRankingTopN] = useState('20')
   const [usDailyMaxLossPct, setUsDailyMaxLossPct] = useState('0')
   const [usMinTradingValue, setUsMinTradingValue] = useState('0')
+  // ── 미장 전용 매매 기준 ──
+  const [usTakeProfitPct, setUsTakeProfitPct] = useState('3.0')
+  const [usStopLossPct, setUsStopLossPct] = useState('2.0')
+  const [usOrderAmountPct, setUsOrderAmountPct] = useState('95')
+  const [usMaxPositions, setUsMaxPositions] = useState('1')
+  // ── 미장 전용 소프트 필터 ──
+  const [usFilterRsiMax, setUsFilterRsiMax] = useState('80')
+  const [usFilterDisparityM5Max, setUsFilterDisparityM5Max] = useState('3.0')
+  const [usFilterHighPriceDiffMin, setUsFilterHighPriceDiffMin] = useState('-5.0')
+  const [usFilterOpenPriceDiffMax, setUsFilterOpenPriceDiffMax] = useState('20.0')
+  // ── 미장 전용 하드 리젝션 ──
+  const [usHardDisparityM5Max, setUsHardDisparityM5Max] = useState('3.0')
+  const [usHardOpenPriceDiffMax, setUsHardOpenPriceDiffMax] = useState('15.0')
 
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
@@ -291,13 +411,23 @@ export default function Settings() {
     if (data.us_trading_start_time) setUsTradingStartTime(data.us_trading_start_time)
     if (data.us_trading_end_time) setUsTradingEndTime(data.us_trading_end_time)
     if (Array.isArray(data.us_ranking_types)) setUsRankingTypes(data.us_ranking_types)
-    if (data.us_ranking_exchange) setUsRankingExchange(data.us_ranking_exchange)
+    if (Array.isArray(data.us_ranking_exchanges)) setUsRankingExchanges(data.us_ranking_exchanges)
     if (data.us_ranking_price_min) setUsRankingPriceMin(data.us_ranking_price_min)
     if (data.us_ranking_price_max) setUsRankingPriceMax(data.us_ranking_price_max)
     if (data.us_ranking_vol_rang != null) setUsRankingVolRang(String(data.us_ranking_vol_rang))
     if (data.us_ranking_top_n != null) setUsRankingTopN(String(data.us_ranking_top_n))
     if (data.us_daily_max_loss_pct != null) setUsDailyMaxLossPct(String(data.us_daily_max_loss_pct))
     if (data.us_min_trading_value != null) setUsMinTradingValue(String(data.us_min_trading_value))
+    if (data.us_take_profit_pct != null) setUsTakeProfitPct(String(data.us_take_profit_pct))
+    if (data.us_stop_loss_pct != null) setUsStopLossPct(String(data.us_stop_loss_pct))
+    if (data.us_order_amount_pct != null) setUsOrderAmountPct(String(data.us_order_amount_pct))
+    if (data.us_max_positions != null) setUsMaxPositions(String(data.us_max_positions))
+    if (data.us_filter_rsi_max != null) setUsFilterRsiMax(String(data.us_filter_rsi_max))
+    if (data.us_filter_disparity_m5_max != null) setUsFilterDisparityM5Max(String(data.us_filter_disparity_m5_max))
+    if (data.us_filter_high_price_diff_min != null) setUsFilterHighPriceDiffMin(String(data.us_filter_high_price_diff_min))
+    if (data.us_filter_open_price_diff_max != null) setUsFilterOpenPriceDiffMax(String(data.us_filter_open_price_diff_max))
+    if (data.us_hard_disparity_m5_max != null) setUsHardDisparityM5Max(String(data.us_hard_disparity_m5_max))
+    if (data.us_hard_open_price_diff_max != null) setUsHardOpenPriceDiffMax(String(data.us_hard_open_price_diff_max))
   }, [data])
 
   function toggleBit(i) {
@@ -372,13 +502,23 @@ export default function Settings() {
       us_trading_start_time: usTradingStartTime,
       us_trading_end_time: usTradingEndTime,
       us_ranking_types: usRankingTypes,
-      us_ranking_exchange: usRankingExchange,
+      us_ranking_exchanges: usRankingExchanges,
       us_ranking_price_min: usRankingPriceMin,
       us_ranking_price_max: usRankingPriceMax,
       us_ranking_vol_rang: usRankingVolRang,
       us_ranking_top_n: parseInt(usRankingTopN) || 20,
       us_daily_max_loss_pct: parseFloat(usDailyMaxLossPct) || 0,
       us_min_trading_value: parseFloat(usMinTradingValue) || 0,
+      us_take_profit_pct: parseFloat(usTakeProfitPct) || 3.0,
+      us_stop_loss_pct: parseFloat(usStopLossPct) || 2.0,
+      us_order_amount_pct: parseFloat(usOrderAmountPct) || 95,
+      us_max_positions: parseInt(usMaxPositions) || 1,
+      us_filter_rsi_max: parseFloat(usFilterRsiMax) || 80,
+      us_filter_disparity_m5_max: parseFloat(usFilterDisparityM5Max) || 3.0,
+      us_filter_high_price_diff_min: parseFloat(usFilterHighPriceDiffMin) || -5.0,
+      us_filter_open_price_diff_max: parseFloat(usFilterOpenPriceDiffMax) || 20.0,
+      us_hard_disparity_m5_max: parseFloat(usHardDisparityM5Max) || 3.0,
+      us_hard_open_price_diff_max: parseFloat(usHardOpenPriceDiffMax) || 15.0,
       filter_rsi_max: parseFloat(filterRsiMax) || 80,
       filter_disparity_m5_max: parseFloat(filterDisparityM5Max) || 3.0,
       filter_high_price_diff_min: parseFloat(filterHighPriceDiffMin) || -5.0,
@@ -421,107 +561,12 @@ export default function Settings() {
   }
 
   const stagnationActive = sellConditions.includes('stagnation')
-
-  const inputCls = 'w-full px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50'
-  const sectionCls = 'bg-th-surface rounded-xl p-5 space-y-4'
-  const sectionTitle = 'text-sm font-semibold text-th-on-surface'
   const labelText = 'text-xs text-th-on-muted'
-  const hintText = 'text-xs text-th-on-subtle'
-  const divider = 'pt-3 border-t border-black/5 dark:border-white/5'
-
-  // ── 프리셋 패널 공통 렌더 헬퍼 ──
-  function PresetPanel({ market }) {
-    const isKR = market === 'KR'
-    const filteredPresets = presets.filter((p) => p.market === market)
-    const nameVal = isKR ? krPresetName : usPresetName
-    const descVal = isKR ? krPresetDesc : usPresetDesc
-    const setName = isKR ? setKrPresetName : setUsPresetName
-    const setDesc = isKR ? setKrPresetDesc : setUsPresetDesc
-    const emptyMsg = isKR ? '저장된 국장 프리셋이 없습니다.' : '저장된 미장 프리셋이 없습니다.'
-    const saveBtnLabel = isKR ? '국장 설정 저장' : '미장 설정 저장'
-    const placeholder = isKR ? '예: 공격적' : '예: 나스닥 변동성'
-
-    return (
-      <div className={`${sectionCls} !space-y-3`}>
-        <div className="flex items-center gap-2">
-          <p className={sectionTitle}>{isKR ? '국장' : '미장'} 프리셋</p>
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${isKR ? 'bg-blue-500/10 text-blue-400' : 'bg-orange-500/10 text-orange-400'}`}>
-            {isKR ? '국내' : '해외'}
-          </span>
-        </div>
-        <p className={hintText}>
-          {isKR
-            ? '국장 설정(거래 제어, 종목 선정, 매수/매도, 필터 등)만 저장·적용합니다.'
-            : '미장 설정(us_ 접두사 항목)만 저장·적용합니다. 국장 설정은 영향받지 않습니다.'}
-        </p>
-        {filteredPresets.length > 0 ? (
-          <div className="space-y-2">
-            {filteredPresets.map((p) => (
-              <div key={p.id} className="flex items-center gap-2 bg-th-surface-high rounded-lg px-3 py-2">
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium text-th-on-surface">{p.name}</span>
-                  {p.description && (
-                    <span className="text-xs text-th-on-muted ml-2">{p.description}</span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleApplyPreset(p.id)}
-                  disabled={presetApplying === p.id}
-                  className="shrink-0 px-3 py-1 text-xs rounded-md bg-orange-500/15 text-orange-400 hover:bg-orange-500/25 disabled:opacity-50 transition-colors"
-                >
-                  {presetApplying === p.id ? '적용 중...' : '적용'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeletePreset(p.id, p.name)}
-                  className="shrink-0 p-1 text-th-on-subtle hover:text-red-400 transition-colors rounded"
-                  title="삭제"
-                >
-                  <span className="material-symbols-outlined text-[16px]">delete</span>
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-th-on-subtle">{emptyMsg}</p>
-        )}
-        <div className={`flex flex-col sm:flex-row gap-2 ${divider}`}>
-          <input
-            type="text"
-            placeholder={`프리셋 이름 (${placeholder})`}
-            value={nameVal}
-            onChange={(e) => setName(e.target.value)}
-            className={`flex-1 ${inputCls}`}
-          />
-          <input
-            type="text"
-            placeholder="설명 (선택)"
-            value={descVal}
-            onChange={(e) => setDesc(e.target.value)}
-            className={`flex-1 ${inputCls}`}
-          />
-          <button
-            type="button"
-            onClick={() => handleSavePreset(market)}
-            disabled={presetSaving}
-            className="shrink-0 px-4 py-1.5 bg-th-surface-high hover:bg-th-surface-highest text-th-on-surface text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors"
-          >
-            {presetSaving ? '저장 중...' : saveBtnLabel}
-          </button>
-        </div>
-        {presetMsg && (
-          <p className={`text-xs ${presetMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{presetMsg.text}</p>
-        )}
-      </div>
-    )
-  }
-  PresetPanel.propTypes = { market: PropTypes.string }
 
   return (
     <div className="space-y-4 pb-20">
       {/* ── 스티키 헤더 ── */}
-      <div className="sticky top-0 z-30 glass-panel -mx-4 md:-mx-8 px-4 md:px-8 py-3 flex items-center justify-between">
+      <div className="sticky top-14 md:top-0 z-30 glass-panel -mx-4 md:-mx-8 px-4 md:px-8 py-3 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-th-on-surface tracking-tight">설정</h1>
           <p className="text-xs text-th-on-muted mt-0.5 uppercase tracking-widest">트레이딩 파라미터 및 서버 구성</p>
@@ -578,7 +623,15 @@ export default function Settings() {
         {/* ════════════════ KR 탭 ════════════════ */}
         <div className={activeTab !== 'KR' ? 'hidden' : 'space-y-5'}>
 
-          <PresetPanel market="KR" />
+          <PresetPanel
+            market="KR"
+            presets={presets}
+            nameVal={krPresetName} descVal={krPresetDesc}
+            setName={setKrPresetName} setDesc={setKrPresetDesc}
+            presetSaving={presetSaving} presetApplying={presetApplying} presetMsg={presetMsg}
+            handleSavePreset={handleSavePreset} handleApplyPreset={handleApplyPreset}
+            handleDeletePreset={handleDeletePreset}
+          />
 
           {/* ── 섹션 1: 거래 제어 ── */}
           <div className={sectionCls}>
@@ -1054,7 +1107,15 @@ export default function Settings() {
         {/* ════════════════ US 탭 ════════════════ */}
         <div className={activeTab !== 'US' ? 'hidden' : 'space-y-5'}>
 
-          <PresetPanel market="US" />
+          <PresetPanel
+            market="US"
+            presets={presets}
+            nameVal={usPresetName} descVal={usPresetDesc}
+            setName={setUsPresetName} setDesc={setUsPresetDesc}
+            presetSaving={presetSaving} presetApplying={presetApplying} presetMsg={presetMsg}
+            handleSavePreset={handleSavePreset} handleApplyPreset={handleApplyPreset}
+            handleDeletePreset={handleDeletePreset}
+          />
 
           {/* ── 섹션 6: 미장 자동매매 ── */}
           <div className={sectionCls}>
@@ -1096,12 +1157,15 @@ export default function Settings() {
                 </div>
 
                 <div className="pt-2 border-t border-black/10 dark:border-white/10">
-                  <p className={`${labelText} mb-2`}>거래소</p>
+                  <p className={`${labelText} mb-2`}>거래소 <span className="text-th-on-subtle">(복수 선택 가능)</span></p>
                   <div className="flex gap-2">
                     {['NAS', 'NYS', 'AMS'].map(exch => (
-                      <button key={exch} type="button" onClick={() => setUsRankingExchange(exch)}
+                      <button key={exch} type="button"
+                        onClick={() => setUsRankingExchanges(prev =>
+                          prev.includes(exch) ? (prev.length > 1 ? prev.filter(e => e !== exch) : prev) : [...prev, exch]
+                        )}
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
-                          usRankingExchange === exch
+                          usRankingExchanges.includes(exch)
                             ? 'bg-th-surface-high text-th-on-surface border-black/10 dark:border-white/10 ring-1 ring-zinc-600'
                             : 'bg-transparent text-th-on-muted border-black/10 dark:border-white/10 hover:text-th-on-surface'
                         }`}>
@@ -1161,18 +1225,88 @@ export default function Settings() {
                     <span className={labelText}>미장 일일 최대 손실 한도 (%)</span>
                     <input type="number" step="0.1" min="0" value={usDailyMaxLossPct} onChange={e => setUsDailyMaxLossPct(e.target.value)}
                       className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
-                    <p className={hintText}>가용 USD 대비 최대 손실 기준. 0 = 국장 손실 한도 공유.</p>
+                    <p className={hintText}>가용 USD 대비 최대 손실 기준. 0 = 제한 없음.</p>
                   </label>
                   <label className="space-y-1 block">
                     <span className={labelText}>미장 최소 거래대금 (USD)</span>
                     <input type="number" step="1" min="0" value={usMinTradingValue} onChange={e => setUsMinTradingValue(e.target.value)}
                       className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
-                    <p className={hintText}>0 = 국장 최소 거래대금(원) 설정 공유.</p>
+                    <p className={hintText}>0 = 필터 없음.</p>
                   </label>
                 </div>
               </div>
             )}
           </div>
+
+          {/* ── 섹션: 미장 매매 기준 ── */}
+          {usTradingEnabled && (
+            <div className={sectionCls}>
+              <p className={sectionTitle}>미장 매매 기준</p>
+              <p className={hintText}>국장과 독립적으로 미장 전용 매매 기준을 설정합니다.</p>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="space-y-1">
+                  <span className={labelText}>목표가 (%)</span>
+                  <input type="number" step="0.1" min="0.1" value={usTakeProfitPct} onChange={e => setUsTakeProfitPct(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>손절 (%)</span>
+                  <input type="number" step="0.1" min="0.1" value={usStopLossPct} onChange={e => setUsStopLossPct(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>주문 금액 비율 (%)</span>
+                  <input type="number" step="1" min="1" max="100" value={usOrderAmountPct} onChange={e => setUsOrderAmountPct(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>최대 동시 보유 종목</span>
+                  <input type="number" step="1" min="1" max="10" value={usMaxPositions} onChange={e => setUsMaxPositions(e.target.value)} className={inputCls} />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* ── 섹션: 미장 소프트 필터 ── */}
+          {usTradingEnabled && (
+            <div className={sectionCls}>
+              <p className={sectionTitle}>미장 소프트 필터</p>
+              <p className={hintText}>LLM에 전달하기 전 부적격 종목을 제거합니다 (국장 필터와 독립).</p>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="space-y-1">
+                  <span className={labelText}>RSI 최대</span>
+                  <input type="number" step="1" min="0" max="100" value={usFilterRsiMax} onChange={e => setUsFilterRsiMax(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>5분봉 이격도 최대</span>
+                  <input type="number" step="0.1" value={usFilterDisparityM5Max} onChange={e => setUsFilterDisparityM5Max(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>고가 대비 최소 (%)</span>
+                  <input type="number" step="0.1" value={usFilterHighPriceDiffMin} onChange={e => setUsFilterHighPriceDiffMin(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>시가 대비 최대 (%)</span>
+                  <input type="number" step="0.1" value={usFilterOpenPriceDiffMax} onChange={e => setUsFilterOpenPriceDiffMax(e.target.value)} className={inputCls} />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* ── 섹션: 미장 하드 리젝션 ── */}
+          {usTradingEnabled && (
+            <div className={sectionCls}>
+              <p className={sectionTitle}>미장 하드 리젝션 룰</p>
+              <p className={hintText}>LLM 종목 선정 기준 (국장 hard_ 값과 독립).</p>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="space-y-1">
+                  <span className={labelText}>이격도 상한 (과열 스킵)</span>
+                  <input type="number" step="0.1" value={usHardDisparityM5Max} onChange={e => setUsHardDisparityM5Max(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>시가대비 상승률 상한 (%)</span>
+                  <input type="number" step="0.1" value={usHardOpenPriceDiffMax} onChange={e => setUsHardOpenPriceDiffMax(e.target.value)} className={inputCls} />
+                </label>
+              </div>
+            </div>
+          )}
 
         </div>{/* ── end US 탭 ── */}
 
