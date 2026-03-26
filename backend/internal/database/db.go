@@ -45,16 +45,16 @@ type TradingSettings struct {
 	// 순위 조건
 	RankingCondition string // "AND" | "OR"
 	// 미장 설정
-	USTradingEnabled    bool
-	USTradingStartTime  string // "HH:MM" KST
-	USTradingEndTime    string // "HH:MM" KST
-	USDSTEnabled        bool   // 서머타임 여부
-	USRankingTypes      []string
-	USRankingExchanges  []string // NAS/NYS/AMS 복수 선택
-	USRankingPriceMin   string   // USD
-	USRankingPriceMax   string   // USD
-	USRankingVolRang    string   // 0=전체, 1=100주↑, ...
-	USRankingTopN       int
+	USTradingEnabled   bool
+	USTradingStartTime string // "HH:MM" KST
+	USTradingEndTime   string // "HH:MM" KST
+	USDSTEnabled       bool   // 서머타임 여부
+	USRankingTypes     []string
+	USRankingExchanges []string // NAS/NYS/AMS 복수 선택
+	USRankingPriceMin  string   // USD
+	USRankingPriceMax  string   // USD
+	USRankingVolRang   string   // 0=전체, 1=100주↑, ...
+	USRankingTopN      int
 	// 미장 전용 매매 기준
 	USTakeProfitPct  float64 // 미장 익절 기준 %. 기본 3.0
 	USStopLossPct    float64 // 미장 손절 기준 %. 기본 2.0

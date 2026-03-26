@@ -612,7 +612,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"us_filter_high_price_diff_min": ts.USFilterHighPriceDiffMin,
 		"us_filter_open_price_diff_max": ts.USFilterOpenPriceDiffMax,
 		// 미장 전용 하드 리젝션
-		"us_hard_disparity_m5_max":   ts.USHardDisparityM5Max,
+		"us_hard_disparity_m5_max":    ts.USHardDisparityM5Max,
 		"us_hard_open_price_diff_max": ts.USHardOpenPriceDiffMax,
 		// 거래대금 하한선
 		"min_trading_value": ts.MinTradingValue,
