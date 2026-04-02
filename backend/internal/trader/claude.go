@@ -19,10 +19,8 @@ type RankItem struct {
 	CurrentPrice string `json:"current_price"`
 	Volume       string `json:"volume"`
 	RankingType  string `json:"ranking_type"`            // e.g. "volume+strength"
-	VolIncrRate  string `json:"vol_incr_rate,omitempty"` // 거래량 증가율 % (volume)
-	Strength     string `json:"strength,omitempty"`      // 체결강도 % (strength)
-	NetBuyQty    string `json:"net_buy_qty,omitempty"`   // 순매수체결량 (exec_count)
-	DisparityD20 string `json:"disparity_d20,omitempty"` // 20일 이격도 (disparity)
+	VolIncrRate string `json:"vol_incr_rate,omitempty"` // 거래량 증가율 % (volume)
+	Strength    string `json:"strength,omitempty"`      // 체결강도 % (strength)
 	// 당일 OHLC
 	DayOpen string `json:"day_open,omitempty"`
 	DayHigh string `json:"day_high,omitempty"`

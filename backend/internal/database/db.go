@@ -19,7 +19,7 @@ import (
 type TradingSettings struct {
 	TakeProfitPct             float64  // 익절 기준 %
 	StopLossPct               float64  // 손절 기준 %
-	RankingTypes              []string // 순위 유형 우선순위 (volume, strength, exec_count, disparity)
+	RankingTypes              []string // 순위 유형 우선순위 (volume, strength, fluctuation)
 	RankingPriceMin           string   // 순위 조회 최소 주가
 	RankingPriceMax           string   // 순위 조회 최대 주가
 	MaxPositions              int      // 동시 보유 최대 종목 수
@@ -30,12 +30,9 @@ type TradingSettings struct {
 	IndicatorMACDBearishSell  bool     // MACD 데드크로스 매도 여부
 	ClaudeModel               string   // 사용할 Claude 모델
 	// 순위별 필터
-	RankingVolumeMinIncrRate   float64  // 거래량 증가율 최솟값 (0=필터없음)
-	RankingStrengthMin         float64  // 체결강도 최솟값 (0=필터없음)
-	RankingExecCountNetBuyOnly bool     // 대량체결: 순매수 우세 종목만
-	RankingDisparityD20Min     float64  // 20일 이격도 최솟값 (0=필터없음)
-	RankingDisparityD20Max     float64  // 20일 이격도 최댓값 (0=필터없음)
-	RankingTopN                int      // 각 순위별 상위 N개만 교집합 대상 (0=전체)
+	RankingVolumeMinIncrRate  float64  // 거래량 증가율 최솟값 (0=필터없음)
+	RankingStrengthMin        float64  // 체결강도 최솟값 (0=필터없음)
+	RankingTopN               int      // 각 순위별 상위 N개만 교집합 대상 (0=전체)
 	RankingExchanges           []string // 국장 순위 조회 거래소 코드 (0001=KOSPI, 1001=KOSDAQ, 2001=KOSPI200)
 	RankingVolumeBlngClsCodes  []string // 거래량순위 FID_BLNG_CLS_CODE 목록 (0=평균거래량, 1=거래량증가율, 2=거래회전율, 3=거래대금순, 4=평균거래대금)
 	// 거래 시간
@@ -205,8 +202,6 @@ func (db *DB) migrate() error {
 			price_max          TEXT     NOT NULL DEFAULT '',
 			volume_count       INTEGER  NOT NULL DEFAULT -1,
 			strength_count     INTEGER  NOT NULL DEFAULT -1,
-			exec_count_count   INTEGER  NOT NULL DEFAULT -1,
-			disparity_count    INTEGER  NOT NULL DEFAULT -1,
 			intersection_count INTEGER  NOT NULL DEFAULT 0,
 			error_message      TEXT     NOT NULL DEFAULT ''
 		)`,
@@ -255,7 +250,7 @@ func (db *DB) migrate() error {
 	defaultSettings := []struct{ key, val string }{
 		{"take_profit_pct", "3.0"},
 		{"stop_loss_pct", "2.0"},
-		{"ranking_types", `["volume","strength","exec_count","disparity"]`},
+		{"ranking_types", `["volume","strength"]`},
 		{"ranking_price_min", "5000"},
 		{"ranking_price_max", "100000"},
 		{"max_positions", "1"},
@@ -267,9 +262,6 @@ func (db *DB) migrate() error {
 		{"claude_model", "claude-sonnet-4-6"},
 		{"ranking_volume_min_incrrate", "0"},
 		{"ranking_strength_min", "100"},
-		{"ranking_execcount_net_buy_only", "true"},
-		{"ranking_disparity_d20_min", "0"},
-		{"ranking_disparity_d20_max", "0"},
 		{"ranking_top_n", "20"},
 		{"ranking_exchanges", `["0001","1001"]`},
 		{"ranking_volume_blng_cls_codes", `["0","1","2","3","4"]`},
@@ -330,7 +322,6 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'order_amount_pct','sell_conditions','indicator_check_interval_min',`+
 			`'indicator_rsi_sell_threshold','indicator_macd_bearish_sell','claude_model',`+
 			`'ranking_volume_min_incrrate','ranking_strength_min',`+
-			`'ranking_execcount_net_buy_only','ranking_disparity_d20_min','ranking_disparity_d20_max',`+
 			`'ranking_top_n','ranking_exchanges','ranking_volume_blng_cls_codes',`+
 			`'trading_start_time','trading_end_time',`+
 			`'stagnation_threshold_pct','stagnation_duration_min',`+
@@ -408,7 +399,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 
 	rankingTypes := strSlice("ranking_types")
 	if len(rankingTypes) == 0 {
-		rankingTypes = []string{"volume", "strength", "exec_count", "disparity"}
+		rankingTypes = []string{"volume", "strength"}
 	}
 	sellConditions := strSlice("sell_conditions")
 	if len(sellConditions) == 0 {
@@ -535,12 +526,9 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		IndicatorRSISellThreshold:  rsiThreshold,
 		IndicatorMACDBearishSell:   vals["indicator_macd_bearish_sell"] == "true",
 		ClaudeModel:                claudeModel,
-		RankingVolumeMinIncrRate:   f64("ranking_volume_min_incrrate"),
-		RankingStrengthMin:         f64("ranking_strength_min"),
-		RankingExecCountNetBuyOnly: vals["ranking_execcount_net_buy_only"] != "false",
-		RankingDisparityD20Min:     f64("ranking_disparity_d20_min"),
-		RankingDisparityD20Max:     f64("ranking_disparity_d20_max"),
-		RankingTopN:                i64("ranking_top_n"),
+		RankingVolumeMinIncrRate: f64("ranking_volume_min_incrrate"),
+		RankingStrengthMin:       f64("ranking_strength_min"),
+		RankingTopN:              i64("ranking_top_n"),
 		RankingExchanges:           rankingExchanges,
 		RankingVolumeBlngClsCodes:  rankingVolumeBlngClsCodes,
 		TradingStartTime:           tradingStartTime,
@@ -728,11 +716,11 @@ func (db *DB) InsertRankingLog(ctx context.Context, log models.TraderRankingLog)
 	res, err := db.ExecContext(ctx,
 		`INSERT INTO trader_ranking_logs
 		 (timestamp, ranking_types, price_min, price_max,
-		  volume_count, strength_count, exec_count_count, disparity_count,
+		  volume_count, strength_count,
 		  ranking_condition, intersection_count, result_stocks, error_message, market)
-		 VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.RankingTypes, log.PriceMin, log.PriceMax,
-		log.VolumeCount, log.StrengthCount, log.ExecCountCount, log.DisparityCount,
+		log.VolumeCount, log.StrengthCount,
 		log.RankingCondition, log.IntersectionCount, log.ResultStocks, log.ErrorMessage, log.Market)
 	if err != nil {
 		return 0, err
@@ -748,7 +736,7 @@ func (db *DB) GetRankingLogs(ctx context.Context, limit int) ([]models.TraderRan
 
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, timestamp, ranking_types, price_min, price_max,
-		        volume_count, strength_count, exec_count_count, disparity_count,
+		        volume_count, strength_count,
 		        ranking_condition, intersection_count, result_stocks, error_message, market,
 		        filtered_stocks
 		 FROM trader_ranking_logs ORDER BY id DESC LIMIT ?`, limit)
@@ -762,7 +750,7 @@ func (db *DB) GetRankingLogs(ctx context.Context, limit int) ([]models.TraderRan
 		var l models.TraderRankingLog
 		if err := rows.Scan(
 			&l.ID, &l.Timestamp, &l.RankingTypes, &l.PriceMin, &l.PriceMax,
-			&l.VolumeCount, &l.StrengthCount, &l.ExecCountCount, &l.DisparityCount,
+			&l.VolumeCount, &l.StrengthCount,
 			&l.RankingCondition, &l.IntersectionCount, &l.ResultStocks, &l.ErrorMessage, &l.Market,
 			&l.FilteredStocks,
 		); err != nil {

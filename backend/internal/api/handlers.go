@@ -527,12 +527,9 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"indicator_rsi_sell_threshold":   ts.IndicatorRSISellThreshold,
 		"indicator_macd_bearish_sell":    ts.IndicatorMACDBearishSell,
 		"claude_model":                   ts.ClaudeModel,
-		"ranking_volume_min_incrrate":    ts.RankingVolumeMinIncrRate,
-		"ranking_strength_min":           ts.RankingStrengthMin,
-		"ranking_execcount_net_buy_only": ts.RankingExecCountNetBuyOnly,
-		"ranking_disparity_d20_min":      ts.RankingDisparityD20Min,
-		"ranking_disparity_d20_max":      ts.RankingDisparityD20Max,
-		"ranking_top_n":                  ts.RankingTopN,
+		"ranking_volume_min_incrrate": ts.RankingVolumeMinIncrRate,
+		"ranking_strength_min":        ts.RankingStrengthMin,
+		"ranking_top_n":               ts.RankingTopN,
 		"trading_start_time":             ts.TradingStartTime,
 		"trading_end_time":               ts.TradingEndTime,
 		"stagnation_threshold_pct":       ts.StagnationThresholdPct,
@@ -597,12 +594,9 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		IndicatorRSISellThreshold  *float64 `json:"indicator_rsi_sell_threshold"`
 		IndicatorMACDBearishSell   *bool    `json:"indicator_macd_bearish_sell"`
 		ClaudeModel                string   `json:"claude_model"`
-		RankingVolumeMinIncrRate   *float64 `json:"ranking_volume_min_incrrate"`
-		RankingStrengthMin         *float64 `json:"ranking_strength_min"`
-		RankingExecCountNetBuyOnly *bool    `json:"ranking_execcount_net_buy_only"`
-		RankingDisparityD20Min     *float64 `json:"ranking_disparity_d20_min"`
-		RankingDisparityD20Max     *float64 `json:"ranking_disparity_d20_max"`
-		RankingTopN                *int     `json:"ranking_top_n"`
+		RankingVolumeMinIncrRate *float64 `json:"ranking_volume_min_incrrate"`
+		RankingStrengthMin       *float64 `json:"ranking_strength_min"`
+		RankingTopN              *int     `json:"ranking_top_n"`
 		TradingStartTime           string   `json:"trading_start_time"`
 		TradingEndTime             string   `json:"trading_end_time"`
 		StagnationThresholdPct     *float64 `json:"stagnation_threshold_pct"`
@@ -757,25 +751,6 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.RankingStrengthMin != nil {
 		if !save("ranking_strength_min", strconv.FormatFloat(*req.RankingStrengthMin, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.RankingExecCountNetBuyOnly != nil {
-		val := "false"
-		if *req.RankingExecCountNetBuyOnly {
-			val = "true"
-		}
-		if !save("ranking_execcount_net_buy_only", val) {
-			return
-		}
-	}
-	if req.RankingDisparityD20Min != nil {
-		if !save("ranking_disparity_d20_min", strconv.FormatFloat(*req.RankingDisparityD20Min, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.RankingDisparityD20Max != nil {
-		if !save("ranking_disparity_d20_max", strconv.FormatFloat(*req.RankingDisparityD20Max, 'f', -1, 64)) {
 			return
 		}
 	}
@@ -1097,40 +1072,6 @@ func (h *Handler) GetStrengthRank(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ranking": items})
 }
 
-// GET /api/ranking/exec-count?market=0000&sort=0 — 대량체결건수 상위 (FHKST190900C0, max 30)
-// sort: 0=매수상위(default), 1=매도상위
-// price_min/price_max: 가격 범위 직접 입력 (원). use_balance_filter=true: 예수금 기준 자동 설정.
-// ETF/ETN/우선주 등 비정상 종목은 항상 제외 시도.
-func (h *Handler) GetExecCountRank(c *gin.Context) {
-	market := c.DefaultQuery("market", "0000")
-	sort := c.DefaultQuery("sort", "0")
-	priceMin, priceMax := h.resolvePriceFilter(c)
-	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
-	items, err := agent.GetExecCountRank(c.Request.Context(), h.client, market, sort, priceMin, priceMax, excludeCls)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"ranking": items})
-}
-
-// GET /api/ranking/disparity?market=0000&period=20&sort=0 — 이격도 순위 (FHPST01780000, max 30)
-// period: 5, 10, 20(default), 60, 120 / sort: 0=이격도상위(default), 1=이격도하위
-// price_min/price_max: 가격 범위 직접 입력 (원). use_balance_filter=true: 예수금 기준 자동 설정.
-// ETF/ETN/우선주 등 비정상 종목은 항상 제외 시도.
-func (h *Handler) GetDisparityRank(c *gin.Context) {
-	market := c.DefaultQuery("market", "0000")
-	period := c.DefaultQuery("period", "20")
-	sort := c.DefaultQuery("sort", "0")
-	priceMin, priceMax := h.resolvePriceFilter(c)
-	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
-	items, err := agent.GetDisparityRank(c.Request.Context(), h.client, market, period, sort, priceMin, priceMax, excludeCls)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"ranking": items})
-}
 
 // GET /api/market/status — 현재 장운영 여부 조회
 // Response: { "is_open": bool, "checked_at": RFC3339, "reason": "open"|"weekend"|"outside_hours"|"holiday"|"check_failed" }

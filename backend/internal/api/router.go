@@ -52,8 +52,6 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		{
 			ranking.GET("/volume", h.GetVolumeRank)
 			ranking.GET("/strength", h.GetStrengthRank)
-			ranking.GET("/exec-count", h.GetExecCountRank)
-			ranking.GET("/disparity", h.GetDisparityRank)
 		}
 
 		ws := api.Group("/ws")

@@ -981,90 +981,6 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				}
 			}
 
-		case "exec_count":
-			// 거래소별 복수 호출 후 dedup
-			rawByCodeExec := make(map[string]kis.ExecCountRankItem)
-			for _, exch := range exchanges {
-				items, err := e.kisClient.GetExecCountRank(ctx, exch, "0", "", "", excludeCls)
-				if err != nil {
-					logger.Warn("engine: GetExecCountRank failed", map[string]any{"exchange": exch, "error": err.Error()})
-					continue
-				}
-				for _, item := range items {
-					if _, exists := rawByCodeExec[item.StockCode]; !exists {
-						rawByCodeExec[item.StockCode] = item
-					}
-				}
-			}
-			dedupedExec := make([]kis.ExecCountRankItem, 0, len(rawByCodeExec))
-			for _, item := range rawByCodeExec {
-				dedupedExec = append(dedupedExec, item)
-			}
-			count := 0
-			for _, item := range dedupedExec {
-				if !withinPriceRange(item.CurrentPrice) {
-					continue
-				}
-				if settings.RankingExecCountNetBuyOnly {
-					netBuy, _ := strconv.ParseFloat(item.NetBuyQty, 64)
-					if netBuy <= 0 {
-						continue
-					}
-				}
-				byType[rt][item.StockCode] = RankItem{
-					DataRank: item.DataRank, StockCode: item.StockCode,
-					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
-					Volume: item.Volume, NetBuyQty: item.NetBuyQty,
-				}
-				count++
-				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
-					break
-				}
-			}
-
-		case "disparity":
-			// 거래소별 복수 호출 후 dedup
-			rawByCodeDisp := make(map[string]kis.DisparityRankItem)
-			for _, exch := range exchanges {
-				items, err := e.kisClient.GetDisparityRank(ctx, exch, "20", "0", "", "", excludeCls)
-				if err != nil {
-					logger.Warn("engine: GetDisparityRank failed", map[string]any{"exchange": exch, "error": err.Error()})
-					continue
-				}
-				for _, item := range items {
-					if _, exists := rawByCodeDisp[item.StockCode]; !exists {
-						rawByCodeDisp[item.StockCode] = item
-					}
-				}
-			}
-			dedupedDisp := make([]kis.DisparityRankItem, 0, len(rawByCodeDisp))
-			for _, item := range rawByCodeDisp {
-				dedupedDisp = append(dedupedDisp, item)
-			}
-			count := 0
-			for _, item := range dedupedDisp {
-				if !withinPriceRange(item.CurrentPrice) {
-					continue
-				}
-				if settings.RankingDisparityD20Min > 0 || settings.RankingDisparityD20Max > 0 {
-					d20, _ := strconv.ParseFloat(item.D20, 64)
-					if settings.RankingDisparityD20Min > 0 && d20 < settings.RankingDisparityD20Min {
-						continue
-					}
-					if settings.RankingDisparityD20Max > 0 && d20 > settings.RankingDisparityD20Max {
-						continue
-					}
-				}
-				byType[rt][item.StockCode] = RankItem{
-					DataRank: item.DataRank, StockCode: item.StockCode,
-					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
-					Volume: item.Volume, DisparityD20: item.D20,
-				}
-				count++
-				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
-					break
-				}
-			}
 		}
 	}
 
@@ -1076,8 +992,6 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			PriceMax:          settings.RankingPriceMax,
 			VolumeCount:       -1,
 			StrengthCount:     -1,
-			ExecCountCount:    -1,
-			DisparityCount:    -1,
 			RankingCondition:  settings.RankingCondition,
 			IntersectionCount: 0,
 			ResultStocks:      "[]",
@@ -1103,12 +1017,6 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 					}
 					if item.Strength != "" {
 						existing.Strength = item.Strength
-					}
-					if item.NetBuyQty != "" {
-						existing.NetBuyQty = item.NetBuyQty
-					}
-					if item.DisparityD20 != "" {
-						existing.DisparityD20 = item.DisparityD20
 					}
 					seen[code] = existing
 				}
@@ -1155,13 +1063,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				if other.Strength != "" {
 					merged.Strength = other.Strength
 				}
-				if other.NetBuyQty != "" {
-					merged.NetBuyQty = other.NetBuyQty
-				}
-				if other.DisparityD20 != "" {
-					merged.DisparityD20 = other.DisparityD20
-				}
-			}
+		}
 			result = append(result, merged)
 		}
 	}
@@ -1187,8 +1089,6 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		PriceMax:          settings.RankingPriceMax,
 		VolumeCount:       countFor("volume"),
 		StrengthCount:     countFor("strength"),
-		ExecCountCount:    countFor("exec_count"),
-		DisparityCount:    countFor("disparity"),
 		RankingCondition:  settings.RankingCondition,
 		IntersectionCount: len(result),
 		ResultStocks:      string(resultStocksJSON),

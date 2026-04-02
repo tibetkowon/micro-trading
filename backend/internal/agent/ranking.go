@@ -33,33 +33,3 @@ func GetStrengthRank(ctx context.Context, client *kis.Client, market, priceMin, 
 	return client.GetStrengthRank(ctx, market, priceMin, priceMax, excludeCls)
 }
 
-// GetExecCountRank returns the bulk execution count ranking (대량체결건수 상위).
-// market: "0000"=전체(default). sort: "0"=매수상위(default), "1"=매도상위.
-// priceMin/priceMax: 가격 범위 (빈값="" 이면 전체).
-// excludeCls: fid_trgt_exls_cls_code 10자리 문자열 (빈값이면 "1111111111" 사용).
-func GetExecCountRank(ctx context.Context, client *kis.Client, market, sort, priceMin, priceMax, excludeCls string) ([]kis.ExecCountRankItem, error) {
-	if market == "" {
-		market = "0000"
-	}
-	if sort == "" {
-		sort = "0"
-	}
-	return client.GetExecCountRank(ctx, market, sort, priceMin, priceMax, excludeCls)
-}
-
-// GetDisparityRank returns the disparity index ranking (이격도 순위).
-// market: "0000"=전체(default). period: "5","10","20"(default),"60","120". sort: "0"=상위(default), "1"=하위.
-// priceMin/priceMax: 가격 범위 (빈값="" 이면 전체).
-// excludeCls: fid_trgt_exls_cls_code 10자리 문자열 (빈값이면 "1111111111" 사용).
-func GetDisparityRank(ctx context.Context, client *kis.Client, market, period, sort, priceMin, priceMax, excludeCls string) ([]kis.DisparityRankItem, error) {
-	if market == "" {
-		market = "0000"
-	}
-	if period == "" {
-		period = "20"
-	}
-	if sort == "" {
-		sort = "0"
-	}
-	return client.GetDisparityRank(ctx, market, period, sort, priceMin, priceMax, excludeCls)
-}

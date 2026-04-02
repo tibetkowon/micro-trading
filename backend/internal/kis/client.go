@@ -115,32 +115,6 @@ type StrengthRankItem struct {
 	SellQty      string `json:"seln_cnqn_smtn"` // 매도체결량합계
 }
 
-// ExecCountRankItem holds one entry from the bulk execution count ranking (FHKST190900C0).
-type ExecCountRankItem struct {
-	DataRank     string `json:"data_rank"`      // 순위
-	StockCode    string `json:"mksc_shrn_iscd"` // 종목코드
-	StockName    string `json:"hts_kor_isnm"`   // 종목명
-	CurrentPrice string `json:"stck_prpr"`      // 현재가
-	Volume       string `json:"acml_vol"`       // 누적거래량
-	BuyCount     string `json:"shnu_cntg_csnu"` // 매수체결건수
-	SellCount    string `json:"seln_cntg_csnu"` // 매도체결건수
-	NetBuyQty    string `json:"ntby_cnqn"`      // 순매수체결량
-}
-
-// DisparityRankItem holds one entry from the disparity index ranking (FHPST01780000).
-type DisparityRankItem struct {
-	DataRank     string `json:"data_rank"`      // 순위
-	StockCode    string `json:"mksc_shrn_iscd"` // 종목코드
-	StockName    string `json:"hts_kor_isnm"`   // 종목명
-	CurrentPrice string `json:"stck_prpr"`      // 현재가
-	ChangeRate   string `json:"prdy_ctrt"`      // 전일대비율
-	Volume       string `json:"acml_vol"`       // 누적거래량
-	D5           string `json:"d5_dsrt"`        // 5일 이격도
-	D10          string `json:"d10_dsrt"`       // 10일 이격도
-	D20          string `json:"d20_dsrt"`       // 20일 이격도
-	D60          string `json:"d60_dsrt"`       // 60일 이격도
-	D120         string `json:"d120_dsrt"`      // 120일 이격도
-}
 
 // HolidayInfo holds market open/close status for a given date (CTCA0903R).
 type HolidayInfo struct {
@@ -461,66 +435,6 @@ func (c *Client) GetStrengthRank(ctx context.Context, market, priceMin, priceMax
 	return result.Output, nil
 }
 
-// GetExecCountRank fetches the bulk execution count ranking (대량체결건수 상위 FHKST190900C0). Max 30 results.
-// market (fid_input_iscd): "0000"=전체(default), "0001"=거래소, "1001"=코스닥, "2001"=코스피200.
-// sort (fid_rank_sort_cls_code): "0"=매수상위(default), "1"=매도상위.
-// priceMin/priceMax: 가격 범위 필터 (빈값="" 이면 전체 가격 조회).
-func (c *Client) GetExecCountRank(ctx context.Context, market, sort, priceMin, priceMax, excludeCls string) ([]ExecCountRankItem, error) {
-	endpoint := "/uapi/domestic-stock/v1/ranking/bulk-trans-num"
-	params := fmt.Sprintf(
-		"?fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=11909&fid_input_iscd=%s&fid_div_cls_code=0&fid_rank_sort_cls_code=%s&fid_input_price_1=%s&fid_input_price_2=%s&fid_aply_rang_prc_1=&fid_aply_rang_prc_2=&fid_input_iscd_2=&fid_vol_cnt=&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=%s",
-		market, sort, priceMin, priceMax, excludeCls)
-
-	raw, err := c.get(ctx, endpoint, params, "FHKST190900C0")
-	if err != nil {
-		return nil, err
-	}
-	var result struct {
-		Output  []ExecCountRankItem `json:"output"`
-		MsgCode string              `json:"msg_cd"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
-		return nil, fmt.Errorf("parse exec count rank: %w", err)
-	}
-	if result.Output == nil {
-		return []ExecCountRankItem{}, nil
-	}
-	return result.Output, nil
-}
-
-// GetDisparityRank fetches the disparity index ranking (이격도 순위 FHPST01780000). Max 30 results.
-// market (fid_input_iscd): "0000"=전체(default), "0001"=거래소, "1001"=코스닥, "2001"=코스피200.
-// period (fid_hour_cls_code): "5", "10", "20"(default), "60", "120".
-// sort (fid_rank_sort_cls_code): "0"=이격도 상위순(default), "1"=이격도 하위순.
-// priceMin/priceMax: 가격 범위 필터 (빈값="" 이면 전체 가격 조회).
-// excludeCls (fid_trgt_exls_cls_code): 10자리 0/1 문자열. 빈값이면 "1111111111" 사용.
-func (c *Client) GetDisparityRank(ctx context.Context, market, period, sort, priceMin, priceMax, excludeCls string) ([]DisparityRankItem, error) {
-	if excludeCls == "" {
-		excludeCls = "1111111111"
-	}
-	endpoint := "/uapi/domestic-stock/v1/ranking/disparity"
-	params := fmt.Sprintf(
-		"?fid_input_price_2=%s&fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=20178&fid_div_cls_code=6&fid_rank_sort_cls_code=%s&fid_hour_cls_code=%s&fid_input_iscd=%s&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=%s&fid_input_price_1=%s&fid_vol_cnt=",
-		priceMax, sort, period, market, excludeCls, priceMin)
-
-	raw, err := c.get(ctx, endpoint, params, "FHPST01780000")
-	if err != nil {
-		return nil, err
-	}
-	var result struct {
-		Output  []DisparityRankItem `json:"output"`
-		MsgCode string              `json:"msg_cd"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
-		return nil, fmt.Errorf("parse disparity rank: %w", err)
-	}
-	if result.Output == nil {
-		return []DisparityRankItem{}, nil
-	}
-	return result.Output, nil
-}
 
 // GetMarketHolidayInfo checks whether the given date is a business day (CTCA0903R).
 // date format: "20060102". Returns the first output entry for the requested date.
