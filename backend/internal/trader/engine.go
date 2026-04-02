@@ -995,6 +995,41 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				}
 			}
 
+		case "fluctuation":
+			// 거래소별 복수 호출 후 dedup
+			rawByCodeFlt := make(map[string]kis.FluctuationRankItem)
+			for _, exch := range exchanges {
+				items, err := e.kisClient.GetFluctuationRank(ctx, exch, "", "", excludeCls)
+				if err != nil {
+					logger.Warn("engine: GetFluctuationRank failed", map[string]any{"exchange": exch, "error": err.Error()})
+					continue
+				}
+				for _, item := range items {
+					if _, exists := rawByCodeFlt[item.StockCode]; !exists {
+						rawByCodeFlt[item.StockCode] = item
+					}
+				}
+			}
+			dedupedFlt := make([]kis.FluctuationRankItem, 0, len(rawByCodeFlt))
+			for _, item := range rawByCodeFlt {
+				dedupedFlt = append(dedupedFlt, item)
+			}
+			count := 0
+			for _, item := range dedupedFlt {
+				if !withinPriceRange(item.CurrentPrice) {
+					continue
+				}
+				byType[rt][item.StockCode] = RankItem{
+					DataRank: item.DataRank, StockCode: item.StockCode,
+					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
+					Volume: item.Volume, VolIncrRate: item.ChangeRate,
+				}
+				count++
+				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
+					break
+				}
+			}
+
 		}
 	}
 

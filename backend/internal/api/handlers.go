@@ -1109,6 +1109,22 @@ func (h *Handler) GetStrengthRank(c *gin.Context) {
 }
 
 
+// GET /api/ranking/fluctuation?market=0000 — 등락률 상위 (FHPST01700000, max 30)
+// market: 0000=전체(default), 0001=거래소(KOSPI), 1001=코스닥
+// price_min/price_max: 가격 범위 직접 입력 (원). use_balance_filter=true: 예수금 기준 자동 설정.
+// ETF/ETN/우선주 등 비정상 종목은 항상 제외 시도.
+func (h *Handler) GetFluctuationRank(c *gin.Context) {
+	market := c.DefaultQuery("market", "0000")
+	priceMin, priceMax := h.resolvePriceFilter(c)
+	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
+	items, err := agent.GetFluctuationRank(c.Request.Context(), h.client, market, priceMin, priceMax, excludeCls)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ranking": items})
+}
+
 // GET /api/market/status — 현재 장운영 여부 조회
 // Response: { "is_open": bool, "checked_at": RFC3339, "reason": "open"|"weekend"|"outside_hours"|"holiday"|"check_failed" }
 func (h *Handler) GetMarketStatus(c *gin.Context) {

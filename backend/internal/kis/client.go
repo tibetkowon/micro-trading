@@ -116,6 +116,19 @@ type StrengthRankItem struct {
 }
 
 
+// FluctuationRankItem holds one entry from the price change rate ranking (FHPST01700000).
+type FluctuationRankItem struct {
+	DataRank     string `json:"data_rank"`          // 순위
+	StockCode    string `json:"stck_shrn_iscd"`     // 종목코드
+	StockName    string `json:"hts_kor_isnm"`       // 종목명
+	CurrentPrice string `json:"stck_prpr"`          // 현재가
+	ChangeRate   string `json:"prdy_ctrt"`          // 등락률 (%)
+	Volume       string `json:"acml_vol"`           // 누적거래량
+	DayHigh      string `json:"stck_hgpr"`          // 당일 고가
+	DayLow       string `json:"stck_lwpr"`          // 당일 저가
+	HighVsPrPct  string `json:"hgpr_vrss_prpr_rate"` // 고가대비현재가비율
+}
+
 // HolidayInfo holds market open/close status for a given date (CTCA0903R).
 type HolidayInfo struct {
 	BassDate string `json:"bass_dt"` // YYYYMMDD
@@ -435,6 +448,37 @@ func (c *Client) GetStrengthRank(ctx context.Context, market, priceMin, priceMax
 	return result.Output, nil
 }
 
+
+// GetFluctuationRank fetches the price change rate ranking (등락률순위 FHPST01700000). Max 30 results.
+// market (fid_input_iscd): "0000"=전체(default), "0001"=거래소(KOSPI), "1001"=코스닥.
+// priceMin/priceMax: 가격 범위 필터 (빈값="" 이면 전체 가격 조회).
+// excludeCls (fid_trgt_exls_cls_code): 10자리 0/1 문자열. 빈값이면 "1111111111" 사용.
+func (c *Client) GetFluctuationRank(ctx context.Context, market, priceMin, priceMax, excludeCls string) ([]FluctuationRankItem, error) {
+	if excludeCls == "" {
+		excludeCls = "1111111111"
+	}
+	endpoint := "/uapi/domestic-stock/v1/ranking/fluctuation"
+	params := fmt.Sprintf(
+		"?fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=20170&fid_input_iscd=%s&fid_rank_sort_cls_code=0000&fid_input_cnt_1=0&fid_prc_cls_code=0&fid_input_price_1=%s&fid_input_price_2=%s&fid_vol_cnt=&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=%s&fid_div_cls_code=0&fid_rsfl_rate1=&fid_rsfl_rate2=",
+		market, priceMin, priceMax, excludeCls)
+
+	raw, err := c.get(ctx, endpoint, params, "FHPST01700000")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Output  []FluctuationRankItem `json:"output"`
+		MsgCode string                `json:"msg_cd"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse fluctuation rank: %w", err)
+	}
+	if result.Output == nil {
+		return []FluctuationRankItem{}, nil
+	}
+	return result.Output, nil
+}
 
 // GetMarketHolidayInfo checks whether the given date is a business day (CTCA0903R).
 // date format: "20060102". Returns the first output entry for the requested date.

@@ -33,3 +33,14 @@ func GetStrengthRank(ctx context.Context, client *kis.Client, market, priceMin, 
 	return client.GetStrengthRank(ctx, market, priceMin, priceMax, excludeCls)
 }
 
+// GetFluctuationRank returns the price change rate ranking (등락률 순위 FHPST01700000).
+// market: "0000"=전체(default), "0001"=거래소(KOSPI), "1001"=코스닥.
+// priceMin/priceMax: 가격 범위 (빈값="" 이면 전체).
+// excludeCls: fid_trgt_exls_cls_code 10자리 문자열 (빈값이면 "1111111111" 사용).
+func GetFluctuationRank(ctx context.Context, client *kis.Client, market, priceMin, priceMax, excludeCls string) ([]kis.FluctuationRankItem, error) {
+	if market == "" {
+		market = "0000"
+	}
+	return client.GetFluctuationRank(ctx, market, priceMin, priceMax, excludeCls)
+}
+
