@@ -46,30 +46,6 @@ type TradingSettings struct {
 	StagnationDurationMin  int     // 횡보 지속 시간 (분)
 	// 순위 조건
 	RankingCondition string // "AND" | "OR"
-	// 미장 설정
-	USTradingEnabled   bool
-	USTradingStartTime string // "HH:MM" KST
-	USTradingEndTime   string // "HH:MM" KST
-	USDSTEnabled       bool   // 서머타임 여부
-	USRankingTypes     []string
-	USRankingExchanges []string // NAS/NYS/AMS 복수 선택
-	USRankingPriceMin  string   // USD
-	USRankingPriceMax  string   // USD
-	USRankingVolRang   string   // 0=전체, 1=100주↑, ...
-	USRankingTopN      int
-	// 미장 전용 매매 기준
-	USTakeProfitPct  float64 // 미장 익절 기준 %. 기본 3.0
-	USStopLossPct    float64 // 미장 손절 기준 %. 기본 2.0
-	USOrderAmountPct float64 // 미장 주문 금액 비율 %. 기본 95
-	USMaxPositions   int     // 미장 동시 보유 최대 종목 수. 기본 1
-	// 미장 전용 소프트 필터
-	USFilterRsiMax           float64 // 미장 RSI 임계값. 기본 80
-	USFilterDisparityM5Max   float64 // 미장 5분봉 이격도 최대. 기본 3.0
-	USFilterHighPriceDiffMin float64 // 미장 고가 대비 최소%. 기본 -5.0
-	USFilterOpenPriceDiffMax float64 // 미장 시가 대비 최대%. 기본 20.0
-	// 미장 전용 하드 리젝션
-	USHardDisparityM5Max   float64 // 미장 이격도 상한. 기본 3.0
-	USHardOpenPriceDiffMax float64 // 미장 시가대비 상승률 상한. 기본 15.0
 	// 거래대금 하한선
 	MinTradingValue float64 // 최소 거래대금(원). 0=필터없음
 	// 매수 중단 시간대
@@ -79,10 +55,7 @@ type TradingSettings struct {
 	TrailingTriggerPct float64 // 활성화 기준 수익률(%). 0=비활성
 	TrailingStopPct    float64 // 최고가 대비 하락 허용폭(%)
 	// 일일 최대 손실
-	DailyMaxLossPct   float64 // 일일 최대 손실 한도(%). 0=제한없음 (국장 KRW 기준)
-	USDailyMaxLossPct float64 // 미장 일일 최대 손실 한도(%). 0=제한없음
-	// 미장 최소 거래대금 (USD)
-	USMinTradingValue float64 // 미장 최소 거래대금(USD). 0=필터없음
+	DailyMaxLossPct float64 // 일일 최대 손실 한도(%). 0=제한없음 (국장 KRW 기준)
 	// 지수 필터
 	IndexCodes []string // 지수 코드 목록 ("0001"=코스피, "1001"=코스닥). 빈 배열=비활성
 	// 하드 필터 (매수 품질 필터)
@@ -305,34 +278,12 @@ func (db *DB) migrate() error {
 		{"stagnation_threshold_pct", "1.0"},
 		{"stagnation_duration_min", "30"},
 		{"ranking_condition", "AND"},
-		{"us_trading_enabled", "false"},
-		{"us_trading_start_time", "22:30"},
-		{"us_trading_end_time", "05:00"},
-		{"us_dst_enabled", "true"},
-		{"us_ranking_types", `["volume"]`},
-		{"us_ranking_exchange", `["NAS"]`},
-		{"us_ranking_price_min", "10"},
-		{"us_ranking_price_max", "500"},
-		{"us_ranking_vol_rang", "0"},
-		{"us_ranking_top_n", "20"},
 		{"min_trading_value", "0"},
 		{"buy_pause_start", "11:00"},
 		{"buy_pause_end", "14:00"},
 		{"trailing_trigger_pct", "0"},
 		{"trailing_stop_pct", "1.0"},
 		{"daily_max_loss_pct", "0"},
-		{"us_daily_max_loss_pct", "0"},
-		{"us_min_trading_value", "0"},
-		{"us_take_profit_pct", "3.0"},
-		{"us_stop_loss_pct", "2.0"},
-		{"us_order_amount_pct", "95"},
-		{"us_max_positions", "1"},
-		{"us_filter_rsi_max", "80"},
-		{"us_filter_disparity_m5_max", "3.0"},
-		{"us_filter_high_price_diff_min", "-5.0"},
-		{"us_filter_open_price_diff_max", "20.0"},
-		{"us_hard_disparity_m5_max", "3.0"},
-		{"us_hard_open_price_diff_max", "15.0"},
 		{"index_codes", "[]"},
 		{"filter_rsi_max", "80"},
 		{"filter_disparity_m5_max", "3.0"},
@@ -384,13 +335,10 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'trading_start_time','trading_end_time',`+
 			`'stagnation_threshold_pct','stagnation_duration_min',`+
 			`'ranking_condition',`+
-			`'us_trading_enabled','us_trading_start_time','us_trading_end_time','us_dst_enabled',`+
-			`'us_ranking_types','us_ranking_exchange','us_ranking_price_min','us_ranking_price_max',`+
-			`'us_ranking_vol_rang','us_ranking_top_n',`+
 			`'min_trading_value',`+
 			`'buy_pause_start','buy_pause_end',`+
 			`'trailing_trigger_pct','trailing_stop_pct',`+
-			`'daily_max_loss_pct','us_daily_max_loss_pct','us_min_trading_value','index_codes',`+
+			`'daily_max_loss_pct','index_codes',`+
 			`'filter_rsi_max','filter_disparity_m5_max',`+
 			`'filter_high_price_diff_min','filter_open_price_diff_max',`+
 			`'index_drop_threshold_pct',`+
@@ -398,11 +346,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'hard_disparity_m5_min','hard_disparity_m5_max',`+
 			`'hard_high_price_diff_max','hard_high_price_diff_min',`+
 			`'hard_prev_vol_ratio_max','hard_strength_min','hard_rsi_max','hard_open_price_diff_max',`+
-			`'vwap_diff_min','vwap_diff_max','rsi_buy_min','rsi_buy_max','bid_ask_ratio_min',`+
-			`'us_take_profit_pct','us_stop_loss_pct','us_order_amount_pct','us_max_positions',`+
-			`'us_filter_rsi_max','us_filter_disparity_m5_max',`+
-			`'us_filter_high_price_diff_min','us_filter_open_price_diff_max',`+
-			`'us_hard_disparity_m5_max','us_hard_open_price_diff_max'`+
+			`'vwap_diff_min','vwap_diff_max','rsi_buy_min','rsi_buy_max','bid_ask_ratio_min'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -500,36 +444,6 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		rankingVolumeBlngClsCodes = []string{"0", "1", "2", "3", "4"}
 	}
 
-	usTradingStartTime := vals["us_trading_start_time"]
-	if usTradingStartTime == "" {
-		usTradingStartTime = "22:30"
-	}
-	usTradingEndTime := vals["us_trading_end_time"]
-	if usTradingEndTime == "" {
-		usTradingEndTime = "05:00"
-	}
-	// us_ranking_exchange: 신버전 JSON 배열 또는 구버전 단일 문자열 모두 허용
-	var usRankingExchanges []string
-	if raw := vals["us_ranking_exchange"]; raw != "" {
-		if len(raw) > 0 && raw[0] == '[' {
-			_ = json.Unmarshal([]byte(raw), &usRankingExchanges)
-		} else {
-			usRankingExchanges = []string{raw}
-		}
-	}
-	if len(usRankingExchanges) == 0 {
-		usRankingExchanges = []string{"NAS"}
-	}
-
-	usRankingTypes := strSlice("us_ranking_types")
-	if len(usRankingTypes) == 0 {
-		usRankingTypes = []string{"volume"}
-	}
-	usRankingTopN := i64("us_ranking_top_n")
-	if usRankingTopN == 0 {
-		usRankingTopN = 20
-	}
-
 	filterRsiMax := f64("filter_rsi_max")
 	if filterRsiMax == 0 {
 		filterRsiMax = 80
@@ -591,47 +505,6 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		hardOpenPriceDiffMax = 15.0
 	}
 
-	usTakeProfitPct := f64("us_take_profit_pct")
-	if usTakeProfitPct == 0 {
-		usTakeProfitPct = 3.0
-	}
-	usStopLossPct := f64("us_stop_loss_pct")
-	if usStopLossPct == 0 {
-		usStopLossPct = 2.0
-	}
-	usOrderAmountPct := f64("us_order_amount_pct")
-	if usOrderAmountPct == 0 {
-		usOrderAmountPct = 95
-	}
-	usMaxPositions := i64("us_max_positions")
-	if usMaxPositions == 0 {
-		usMaxPositions = 1
-	}
-	usFilterRsiMax := f64("us_filter_rsi_max")
-	if usFilterRsiMax == 0 {
-		usFilterRsiMax = 80
-	}
-	usFilterDisparityM5Max := f64("us_filter_disparity_m5_max")
-	if usFilterDisparityM5Max == 0 {
-		usFilterDisparityM5Max = 3.0
-	}
-	usFilterHighPriceDiffMin := f64("us_filter_high_price_diff_min")
-	if usFilterHighPriceDiffMin == 0 {
-		usFilterHighPriceDiffMin = -5.0
-	}
-	usFilterOpenPriceDiffMax := f64("us_filter_open_price_diff_max")
-	if usFilterOpenPriceDiffMax == 0 {
-		usFilterOpenPriceDiffMax = 20.0
-	}
-	usHardDisparityM5Max := f64("us_hard_disparity_m5_max")
-	if usHardDisparityM5Max == 0 {
-		usHardDisparityM5Max = 3.0
-	}
-	usHardOpenPriceDiffMax := f64("us_hard_open_price_diff_max")
-	if usHardOpenPriceDiffMax == 0 {
-		usHardOpenPriceDiffMax = 15.0
-	}
-
 	vwapDiffMax := f64("vwap_diff_max")
 	if vwapDiffMax == 0 {
 		vwapDiffMax = 1.5
@@ -675,34 +548,12 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		StagnationThresholdPct:     stagnationThresholdPct,
 		StagnationDurationMin:      stagnationDurationMin,
 		RankingCondition:           rankingCondition,
-		USTradingEnabled:           vals["us_trading_enabled"] == "true",
-		USTradingStartTime:         usTradingStartTime,
-		USTradingEndTime:           usTradingEndTime,
-		USDSTEnabled:               vals["us_dst_enabled"] != "false",
-		USRankingTypes:             usRankingTypes,
-		USRankingExchanges:         usRankingExchanges,
-		USRankingPriceMin:          vals["us_ranking_price_min"],
-		USRankingPriceMax:          vals["us_ranking_price_max"],
-		USRankingVolRang:           vals["us_ranking_vol_rang"],
-		USRankingTopN:              usRankingTopN,
-		USTakeProfitPct:            usTakeProfitPct,
-		USStopLossPct:              usStopLossPct,
-		USOrderAmountPct:           usOrderAmountPct,
-		USMaxPositions:             usMaxPositions,
-		USFilterRsiMax:             usFilterRsiMax,
-		USFilterDisparityM5Max:     usFilterDisparityM5Max,
-		USFilterHighPriceDiffMin:   usFilterHighPriceDiffMin,
-		USFilterOpenPriceDiffMax:   usFilterOpenPriceDiffMax,
-		USHardDisparityM5Max:       usHardDisparityM5Max,
-		USHardOpenPriceDiffMax:     usHardOpenPriceDiffMax,
 		MinTradingValue:            f64("min_trading_value"),
 		BuyPauseStart:              vals["buy_pause_start"],
 		BuyPauseEnd:                vals["buy_pause_end"],
 		TrailingTriggerPct:         f64("trailing_trigger_pct"),
 		TrailingStopPct:            f64("trailing_stop_pct"),
 		DailyMaxLossPct:            f64("daily_max_loss_pct"),
-		USDailyMaxLossPct:          f64("us_daily_max_loss_pct"),
-		USMinTradingValue:          f64("us_min_trading_value"),
 		IndexCodes:                 strSlice("index_codes"),
 		FilterRsiMax:               filterRsiMax,
 		FilterDisparityM5Max:       filterDisparityM5Max,

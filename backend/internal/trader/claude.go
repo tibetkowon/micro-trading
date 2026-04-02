@@ -19,7 +19,6 @@ type RankItem struct {
 	CurrentPrice string `json:"current_price"`
 	Volume       string `json:"volume"`
 	RankingType  string `json:"ranking_type"`            // e.g. "volume+strength"
-	Exchange     string `json:"exchange,omitempty"`      // 미장 거래소 코드 (NAS/NYS/AMS)
 	VolIncrRate  string `json:"vol_incr_rate,omitempty"` // 거래량 증가율 % (volume)
 	Strength     string `json:"strength,omitempty"`      // 체결강도 % (strength)
 	NetBuyQty    string `json:"net_buy_qty,omitempty"`   // 순매수체결량 (exec_count)
@@ -114,14 +113,12 @@ type StockCandidate struct {
 
 // SelectStocks asks Claude to rank all viable candidates from the ranking list.
 // Already-traded stocks are filtered server-side before this call.
-// market: "KR" (default) or "US" — selects the appropriate prompt and context.
 // Returns an ordered slice — index 0 is the top pick. Engine tries them in order.
 func (c *ClaudeClient) SelectStocks(
 	ctx context.Context,
 	rankings []RankItem,
 	availableCash float64,
 	_ []string, // excludedCodes: filtered server-side, kept for API compatibility
-	market string,
 	rules TradingRules,
 ) ([]StockCandidate, error) {
 	if len(rankings) == 0 {
@@ -130,47 +127,11 @@ func (c *ClaudeClient) SelectStocks(
 
 	rankJSON, _ := json.Marshal(rankings)
 
-	var prompt string
-	if market == "US" {
-		prompt = fmt.Sprintf(`You are an elite US day-trader focused on NASDAQ/NYSE/AMEX stocks, known for avoiding Bull Traps and finding momentum entries.
-
-## Hard Rejection Rules — skip if ANY apply:
-1. high_price_diff < -5%%  → dropped more than 5%% from today's high, avoid (selling pressure)
-2. ma5 < ma20  → downtrend, skip
-3. disparity_m5 > %.1f%%  → over-extended from 5-min MA, skip
-4. rsi14 >= %.0f  → overbought, skip
-5. open_price_diff > %.0f%%  → already at extreme daily high, skip
-
-## Ranking Criteria (for survivors):
-- Best entry: high_price_diff between -0.5%% and -3%% (slight pullback from high, ready to bounce)
-- MA trend: ma5 > ma20 confirms uptrend — prefer larger gap
-- MACD: macd_line > macd_signal preferred (upward momentum)
-- RSI: %.0f–%.0f is the ideal buy zone (not overbought, has momentum)
-- Disparity: disparity_m5 between 0%% and 2%% (near 5-min MA support, not overextended)
-- Volume confirmation: higher volume relative to average indicates institutional interest
-- Prioritize consolidation/pullback: open_price_diff between 2%% and 10%% (healthy gap-up, consolidating)
-- Best entry zone: stocks near 5-min MA support after a small pullback, not at daily peak
-- Avoid: open_price_diff > 15%% (already overextended today, late entry risk)
-
-Ranking data (JSON):
-%s
-Available cash: %.2f USD
-
-Respond with ONLY a valid JSON array — no explanation, no markdown, no extra text.
-If no stock passes, respond with exactly: []
-Best entry first:
-[{"stock_code":"TICKER","reason":"Pulled back -Y%% from high, MA5 > MA20, RSI=X (buy zone), MACD bullish, consolidating near 5min MA"},...]`,
-			rules.HardDisparityM5Max,
-			rules.HardRSIMax,
-			rules.HardOpenPriceDiffMax,
-			rules.RSIBuyMin, rules.RSIBuyMax,
-			string(rankJSON), availableCash)
-	} else {
-		marketIndexNote := ""
-		if rules.MarketIndexDrop != 0 {
-			marketIndexNote = fmt.Sprintf("Current market index: %.2f%% (시가 대비 등락률)\n", rules.MarketIndexDrop)
-		}
-		prompt = fmt.Sprintf(`You are an elite Korean day-trader known for strict risk management, avoiding Bull Traps, and finding high-probability pullback(눌림목) entries.
+	marketIndexNote := ""
+	if rules.MarketIndexDrop != 0 {
+		marketIndexNote = fmt.Sprintf("Current market index: %.2f%% (시가 대비 등락률)\n", rules.MarketIndexDrop)
+	}
+	prompt := fmt.Sprintf(`You are an elite Korean day-trader known for strict risk management, avoiding Bull Traps, and finding high-probability pullback(눌림목) entries.
 
 %s## Hard Rejection Rules — skip if ANY apply (Kill-switch & Defense):
 1. market_index_drop < %.1f%%  → 전체 시장 급락 중(투매 장세), skip all
@@ -197,19 +158,18 @@ Respond with ONLY a valid JSON array — no explanation, no markdown, no extra t
 If no stock passes, respond with exactly: []
 Best entry first:
 [{"stock_code":"6-digit","reason":"고점(X원) 대비 -Y%% 눌림, VWAP 지지선 근처, 거래량 감소 눌림목, 체결강도 Z%% 매수우세로 반등 기대"}]`,
-			marketIndexNote,
-			rules.IndexDropThreshold,
-			rules.HardDisparityM5Max, rules.HardDisparityM5Min,
-			rules.HardHighPriceDiffMax,
-			rules.HardHighPriceDiffMin, rules.HardPrevVolRatioMax,
-			rules.HardStrengthMin,
-			rules.HardRSIMax,
-			rules.HardOpenPriceDiffMax,
-			rules.VWAPDiffMin, rules.VWAPDiffMax,
-			rules.BidAskRatioMin,
-			rules.RSIBuyMin, rules.RSIBuyMax,
-			string(rankJSON), availableCash)
-	}
+		marketIndexNote,
+		rules.IndexDropThreshold,
+		rules.HardDisparityM5Max, rules.HardDisparityM5Min,
+		rules.HardHighPriceDiffMax,
+		rules.HardHighPriceDiffMin, rules.HardPrevVolRatioMax,
+		rules.HardStrengthMin,
+		rules.HardRSIMax,
+		rules.HardOpenPriceDiffMax,
+		rules.VWAPDiffMin, rules.VWAPDiffMax,
+		rules.BidAskRatioMin,
+		rules.RSIBuyMin, rules.RSIBuyMax,
+		string(rankJSON), availableCash)
 
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.model),

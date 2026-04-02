@@ -23,11 +23,6 @@ const (
 	// TrIDExecNotice is the TR_ID for real-time execution notice (국내주식 실시간체결통보).
 	TrIDExecNotice = "H0STCNI0"
 
-	// TrIDOverseasPrice is the TR_ID for real-time overseas stock price (해외주식 실시간체결가).
-	TrIDOverseasPrice = "HDFSCNT0"
-	// TrIDOverseasExecNotice is the TR_ID for overseas execution notice.
-	TrIDOverseasExecNotice = "H0GSCNI0"
-
 	// reconnect backoff limits — 재연결은 포기하지 않고 무제한 시도.
 	reconnectInitialBackoff = 10 * time.Second
 	reconnectMaxBackoff     = 5 * time.Minute
@@ -375,20 +370,6 @@ func (c *WebSocketClient) SubscribeExecNotice() error {
 	return c.Subscribe(TrIDExecNotice, c.htsID)
 }
 
-// SubscribeOverseasPrice subscribes to real-time overseas price.
-// excd: NAS/NYS/AMS. symb: e.g. "AAPL".
-// tr_key format: "D" + excd(3자리) + symb → "DNASAAPL"
-func (c *WebSocketClient) SubscribeOverseasPrice(excd, symb string) error {
-	trKey := "D" + excd + symb
-	return c.Subscribe(TrIDOverseasPrice, trKey)
-}
-
-// UnsubscribeOverseasPrice unsubscribes from real-time overseas price.
-func (c *WebSocketClient) UnsubscribeOverseasPrice(excd, symb string) error {
-	trKey := "D" + excd + symb
-	return c.Unsubscribe(TrIDOverseasPrice, trKey)
-}
-
 // --- Internal message parsing ---
 
 func (c *WebSocketClient) handleMessage(raw []byte) {
@@ -424,10 +405,6 @@ func (c *WebSocketClient) handleMessage(raw []byte) {
 		c.parsePriceData(data)
 	case TrIDExecNotice:
 		c.parseExecData(data)
-	case TrIDOverseasPrice:
-		c.parseOverseasPriceData(data)
-	case TrIDOverseasExecNotice:
-		c.parseExecData(data) // 해외 체결통보: CNTG_YN 필드 구조 동일
 	}
 }
 
@@ -541,39 +518,6 @@ func (c *WebSocketClient) parseExecData(data string) {
 		SellBuyDiv:  sellBuyDiv,
 		CntgYN:      cntgYN,
 		Timestamp:   time.Now(),
-	}:
-	default:
-	}
-}
-
-// parseOverseasPriceData parses a HDFSCNT0 pipe-delimited overseas price record.
-// fields[0]=RSYM (e.g. "DNASAAPL"), fields[10]=LAST (현재가)
-// We strip the first 4 chars of RSYM ("D"+"3-char exchange") to get the symbol.
-func (c *WebSocketClient) parseOverseasPriceData(data string) {
-	fields := strings.Split(data, "^")
-	if len(fields) < 11 {
-		return
-	}
-
-	rsym := fields[0]      // e.g. "DNASAAPL"
-	priceStr := fields[10] // LAST
-	if len(rsym) < 5 || priceStr == "" {
-		return
-	}
-	// Strip "D" + 3-char exchange code to get symbol
-	symbol := rsym[4:]
-
-	var price float64
-	fmt.Sscanf(priceStr, "%f", &price)
-	if price <= 0 {
-		return
-	}
-
-	select {
-	case c.PriceCh <- PriceEvent{
-		StockCode: symbol,
-		Price:     price,
-		Timestamp: time.Now(),
 	}:
 	default:
 	}

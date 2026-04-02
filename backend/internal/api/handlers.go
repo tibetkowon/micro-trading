@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +26,6 @@ type Handler struct {
 	monitor      *monitor.Monitor
 	wsClient     *kis.WebSocketClient
 	engine       *trader.Engine
-	usEngine     *trader.Engine
 }
 
 // NewHandler creates a new Handler with the given dependencies.
@@ -46,11 +44,6 @@ func NewHandler(db *database.DB, client *kis.Client, tokenManager *kis.TokenMana
 // SetEngine injects the trading engine (called after engine is created in main).
 func (h *Handler) SetEngine(e *trader.Engine) {
 	h.engine = e
-}
-
-// SetUSEngine injects the US trading engine (called after engine is created in main).
-func (h *Handler) SetUSEngine(e *trader.Engine) {
-	h.usEngine = e
 }
 
 // GET /api/balance
@@ -255,32 +248,6 @@ func (h *Handler) GetServerStatus(c *gin.Context) {
 		}
 	}
 
-	// US market open check (using settings-based time window)
-	usMarketOpen := false
-	usStartStr := h.db.GetSetting(c.Request.Context(), "us_trading_start_time")
-	usEndStr := h.db.GetSetting(c.Request.Context(), "us_trading_end_time")
-	if usStartStr == "" {
-		usStartStr = "22:30"
-	}
-	if usEndStr == "" {
-		usEndStr = "05:00"
-	}
-	hhmm := now.Hour()*100 + now.Minute()
-	parseHHMMLocal := func(s string, def int) int {
-		t, err := time.Parse("15:04", s)
-		if err != nil {
-			return def
-		}
-		return t.Hour()*100 + t.Minute()
-	}
-	usStart := parseHHMMLocal(usStartStr, 2230)
-	usEnd := parseHHMMLocal(usEndStr, 500)
-	if usStart > usEnd {
-		usMarketOpen = hhmm >= usStart || hhmm < usEnd
-	} else {
-		usMarketOpen = hhmm >= usStart && hhmm < usEnd
-	}
-
 	wsConnected := false
 	if h.wsClient != nil {
 		wsConnected = h.wsClient.IsConnected()
@@ -306,24 +273,14 @@ func (h *Handler) GetServerStatus(c *gin.Context) {
 		haltReason = h.engine.GetHaltReason()
 	}
 
-	traderStateUS := string(trader.StateIdle)
-	haltReasonUS := ""
-	if h.usEngine != nil {
-		traderStateUS = string(h.usEngine.GetState())
-		haltReasonUS = h.usEngine.GetHaltReason()
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"market_open":     marketOpen,
-		"us_market_open":  usMarketOpen,
 		"trading_enabled": tradingEnabled,
 		"available_cash":  availableCash,
 		"ws_connected":    wsConnected,
 		"monitored_count": monitoredCount,
 		"trader_state":    traderState,
-		"trader_state_us": traderStateUS,
 		"halt_reason":     haltReason,
-		"halt_reason_us":  haltReasonUS,
 	})
 }
 
@@ -494,23 +451,14 @@ func (h *Handler) GetRankingLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
 
-// POST /api/trader/force-run?market=KR|US — 강제 실행 (즉시 매수 사이클 트리거)
+// POST /api/trader/force-run — 강제 실행 (즉시 매수 사이클 트리거)
 func (h *Handler) ForceRunTrader(c *gin.Context) {
-	market := c.DefaultQuery("market", "KR")
-	if market == "US" {
-		if h.usEngine == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "US 엔진이 설정되지 않았습니다"})
-			return
-		}
-		h.usEngine.ForceRun(c.Request.Context())
-	} else {
-		if h.engine == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "KR 엔진이 설정되지 않았습니다"})
-			return
-		}
-		h.engine.ForceRun(c.Request.Context())
+	if h.engine == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "엔진이 설정되지 않았습니다"})
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "market": market})
+	h.engine.ForceRun(c.Request.Context())
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // GET /api/stock/:code — 현재가 + MA5 + MA20
@@ -592,30 +540,6 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"ranking_condition":              ts.RankingCondition,
 		"ranking_exchanges":              ts.RankingExchanges,
 		"ranking_volume_blng_cls_codes":  ts.RankingVolumeBlngClsCodes,
-		// US market settings
-		"us_trading_enabled":    ts.USTradingEnabled,
-		"us_trading_start_time": ts.USTradingStartTime,
-		"us_trading_end_time":   ts.USTradingEndTime,
-		"us_dst_enabled":        ts.USDSTEnabled,
-		"us_ranking_types":      ts.USRankingTypes,
-		"us_ranking_exchanges":  ts.USRankingExchanges,
-		"us_ranking_price_min":  ts.USRankingPriceMin,
-		"us_ranking_price_max":  ts.USRankingPriceMax,
-		"us_ranking_vol_rang":   ts.USRankingVolRang,
-		"us_ranking_top_n":      ts.USRankingTopN,
-		// 미장 전용 매매 기준
-		"us_take_profit_pct":  ts.USTakeProfitPct,
-		"us_stop_loss_pct":    ts.USStopLossPct,
-		"us_order_amount_pct": ts.USOrderAmountPct,
-		"us_max_positions":    ts.USMaxPositions,
-		// 미장 전용 소프트 필터
-		"us_filter_rsi_max":             ts.USFilterRsiMax,
-		"us_filter_disparity_m5_max":    ts.USFilterDisparityM5Max,
-		"us_filter_high_price_diff_min": ts.USFilterHighPriceDiffMin,
-		"us_filter_open_price_diff_max": ts.USFilterOpenPriceDiffMax,
-		// 미장 전용 하드 리젝션
-		"us_hard_disparity_m5_max":    ts.USHardDisparityM5Max,
-		"us_hard_open_price_diff_max": ts.USHardOpenPriceDiffMax,
 		// 거래대금 하한선
 		"min_trading_value": ts.MinTradingValue,
 		// 매수 중단 시간대
@@ -625,9 +549,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"trailing_trigger_pct": ts.TrailingTriggerPct,
 		"trailing_stop_pct":    ts.TrailingStopPct,
 		// 일일 최대 손실
-		"daily_max_loss_pct":    ts.DailyMaxLossPct,
-		"us_daily_max_loss_pct": ts.USDailyMaxLossPct,
-		"us_min_trading_value":  ts.USMinTradingValue,
+		"daily_max_loss_pct": ts.DailyMaxLossPct,
 		// 지수 필터
 		"index_codes": ts.IndexCodes,
 		// 하드 필터
@@ -688,30 +610,6 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		RankingCondition           string   `json:"ranking_condition"`
 		RankingExchanges           []string `json:"ranking_exchanges"`
 		RankingVolumeBlngClsCodes  []string `json:"ranking_volume_blng_cls_codes"`
-		// US market settings
-		USTradingEnabled   *bool    `json:"us_trading_enabled"`
-		USTradingStartTime string   `json:"us_trading_start_time"`
-		USTradingEndTime   string   `json:"us_trading_end_time"`
-		USDSTEnabled       *bool    `json:"us_dst_enabled"`
-		USRankingTypes     []string `json:"us_ranking_types"`
-		USRankingExchanges []string `json:"us_ranking_exchanges"`
-		USRankingPriceMin  string   `json:"us_ranking_price_min"`
-		USRankingPriceMax  string   `json:"us_ranking_price_max"`
-		USRankingVolRang   string   `json:"us_ranking_vol_rang"`
-		USRankingTopN      *int     `json:"us_ranking_top_n"`
-		// 미장 전용 매매 기준
-		USTakeProfitPct  *float64 `json:"us_take_profit_pct"`
-		USStopLossPct    *float64 `json:"us_stop_loss_pct"`
-		USOrderAmountPct *float64 `json:"us_order_amount_pct"`
-		USMaxPositions   *int     `json:"us_max_positions"`
-		// 미장 전용 소프트 필터
-		USFilterRsiMax           *float64 `json:"us_filter_rsi_max"`
-		USFilterDisparityM5Max   *float64 `json:"us_filter_disparity_m5_max"`
-		USFilterHighPriceDiffMin *float64 `json:"us_filter_high_price_diff_min"`
-		USFilterOpenPriceDiffMax *float64 `json:"us_filter_open_price_diff_max"`
-		// 미장 전용 하드 리젝션
-		USHardDisparityM5Max   *float64 `json:"us_hard_disparity_m5_max"`
-		USHardOpenPriceDiffMax *float64 `json:"us_hard_open_price_diff_max"`
 		// 거래대금 하한선
 		MinTradingValue *float64 `json:"min_trading_value"`
 		// 매수 중단 시간대
@@ -721,9 +619,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		TrailingTriggerPct *float64 `json:"trailing_trigger_pct"`
 		TrailingStopPct    *float64 `json:"trailing_stop_pct"`
 		// 일일 최대 손실
-		DailyMaxLossPct   *float64 `json:"daily_max_loss_pct"`
-		USDailyMaxLossPct *float64 `json:"us_daily_max_loss_pct"`
-		USMinTradingValue *float64 `json:"us_min_trading_value"`
+		DailyMaxLossPct *float64 `json:"daily_max_loss_pct"`
 		// 지수 필터 (nil = 변경 안 함)
 		IndexCodes []string `json:"index_codes"`
 		// 하드 필터
@@ -957,126 +853,6 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
-	// US market settings
-	if req.USTradingEnabled != nil {
-		val := "false"
-		if *req.USTradingEnabled {
-			val = "true"
-		}
-		if !save("us_trading_enabled", val) {
-			return
-		}
-	}
-	if req.USTradingStartTime != "" {
-		if _, err := time.Parse("15:04", req.USTradingStartTime); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "us_trading_start_time 형식 오류 (HH:MM)"})
-			return
-		}
-		if !save("us_trading_start_time", req.USTradingStartTime) {
-			return
-		}
-	}
-	if req.USTradingEndTime != "" {
-		if _, err := time.Parse("15:04", req.USTradingEndTime); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "us_trading_end_time 형식 오류 (HH:MM)"})
-			return
-		}
-		if !save("us_trading_end_time", req.USTradingEndTime) {
-			return
-		}
-	}
-	if req.USDSTEnabled != nil {
-		val := "false"
-		if *req.USDSTEnabled {
-			val = "true"
-		}
-		if !save("us_dst_enabled", val) {
-			return
-		}
-	}
-	if len(req.USRankingTypes) > 0 {
-		b, _ := json.Marshal(req.USRankingTypes)
-		if !save("us_ranking_types", string(b)) {
-			return
-		}
-	}
-	if len(req.USRankingExchanges) > 0 {
-		b, _ := json.Marshal(req.USRankingExchanges)
-		if !save("us_ranking_exchange", string(b)) {
-			return
-		}
-	}
-	if req.USRankingPriceMin != "" {
-		if !save("us_ranking_price_min", req.USRankingPriceMin) {
-			return
-		}
-	}
-	if req.USRankingPriceMax != "" {
-		if !save("us_ranking_price_max", req.USRankingPriceMax) {
-			return
-		}
-	}
-	if req.USRankingVolRang != "" {
-		if !save("us_ranking_vol_rang", req.USRankingVolRang) {
-			return
-		}
-	}
-	if req.USRankingTopN != nil {
-		if !save("us_ranking_top_n", strconv.Itoa(*req.USRankingTopN)) {
-			return
-		}
-	}
-	if req.USTakeProfitPct != nil {
-		if !save("us_take_profit_pct", strconv.FormatFloat(*req.USTakeProfitPct, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.USStopLossPct != nil {
-		if !save("us_stop_loss_pct", strconv.FormatFloat(*req.USStopLossPct, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.USOrderAmountPct != nil {
-		if !save("us_order_amount_pct", strconv.FormatFloat(*req.USOrderAmountPct, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.USMaxPositions != nil {
-		if !save("us_max_positions", strconv.Itoa(*req.USMaxPositions)) {
-			return
-		}
-	}
-	if req.USFilterRsiMax != nil {
-		if !save("us_filter_rsi_max", strconv.FormatFloat(*req.USFilterRsiMax, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.USFilterDisparityM5Max != nil {
-		if !save("us_filter_disparity_m5_max", strconv.FormatFloat(*req.USFilterDisparityM5Max, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.USFilterHighPriceDiffMin != nil {
-		if !save("us_filter_high_price_diff_min", strconv.FormatFloat(*req.USFilterHighPriceDiffMin, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.USFilterOpenPriceDiffMax != nil {
-		if !save("us_filter_open_price_diff_max", strconv.FormatFloat(*req.USFilterOpenPriceDiffMax, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.USHardDisparityM5Max != nil {
-		if !save("us_hard_disparity_m5_max", strconv.FormatFloat(*req.USHardDisparityM5Max, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.USHardOpenPriceDiffMax != nil {
-		if !save("us_hard_open_price_diff_max", strconv.FormatFloat(*req.USHardOpenPriceDiffMax, 'f', -1, 64)) {
-			return
-		}
-	}
-
 	if req.MinTradingValue != nil {
 		if *req.MinTradingValue < 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "min_trading_value는 0 이상이어야 합니다"})
@@ -1131,24 +907,6 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			return
 		}
 		if !save("daily_max_loss_pct", strconv.FormatFloat(*req.DailyMaxLossPct, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.USDailyMaxLossPct != nil {
-		if *req.USDailyMaxLossPct < 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "us_daily_max_loss_pct는 0 이상이어야 합니다"})
-			return
-		}
-		if !save("us_daily_max_loss_pct", strconv.FormatFloat(*req.USDailyMaxLossPct, 'f', -1, 64)) {
-			return
-		}
-	}
-	if req.USMinTradingValue != nil {
-		if *req.USMinTradingValue < 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "us_min_trading_value는 0 이상이어야 합니다"})
-			return
-		}
-		if !save("us_min_trading_value", strconv.FormatFloat(*req.USMinTradingValue, 'f', -1, 64)) {
 			return
 		}
 	}
@@ -1498,19 +1256,14 @@ func (h *Handler) ListPresets(c *gin.Context) {
 }
 
 // POST /api/presets — 현재 설정 스냅샷을 새 프리셋으로 저장
-// market: "KR" (국장, us_ 제외) | "US" (미장, us_ 만 포함). 기본값 "KR"
 func (h *Handler) CreatePreset(c *gin.Context) {
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
-		Market      string `json:"market"` // "KR" or "US"
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name은 필수입니다"})
 		return
-	}
-	if req.Market != "KR" && req.Market != "US" {
-		req.Market = "KR"
 	}
 
 	// 현재 settings 테이블의 모든 키-값 스냅샷
@@ -1520,27 +1273,16 @@ func (h *Handler) CreatePreset(c *gin.Context) {
 		return
 	}
 	defer rows.Close()
-	allSettings := map[string]string{}
+	snapshot := map[string]string{}
 	for rows.Next() {
 		var k, v string
 		if err := rows.Scan(&k, &v); err == nil {
-			allSettings[k] = v
-		}
-	}
-
-	// market 타입에 따라 관련 키만 필터링
-	snapshot := map[string]string{}
-	for k, v := range allSettings {
-		isUS := strings.HasPrefix(k, "us_")
-		if req.Market == "US" && isUS {
-			snapshot[k] = v
-		} else if req.Market == "KR" && !isUS {
 			snapshot[k] = v
 		}
 	}
 	b, _ := json.Marshal(snapshot)
 
-	id, err := h.db.CreateSettingsPreset(c.Request.Context(), req.Name, req.Description, req.Market, string(b))
+	id, err := h.db.CreateSettingsPreset(c.Request.Context(), req.Name, req.Description, "KR", string(b))
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "이미 동일한 이름의 프리셋이 있습니다: " + err.Error()})
 		return

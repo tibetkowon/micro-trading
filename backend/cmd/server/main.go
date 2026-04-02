@@ -95,8 +95,7 @@ func main() {
 		logger.Warn("ANTHROPIC_API_KEY not set — autonomous trading disabled", nil)
 	}
 
-	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, claudeClient, "KR")
-	usEngine := trader.NewEngine(db, kisClient, wsClient, mon, claudeClient, "US")
+	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, claudeClient)
 
 	// KIS 실제 잔고와 대조하여 누락된 포지션 자동 복구.
 	// DB에 등록되지 않은 보유 종목(버그·장애·수동 주문 등)을 모니터링에 추가.
@@ -106,7 +105,7 @@ func main() {
 
 	// --- Market hours scheduler ---
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" && wsClient != nil {
-		go runMarketScheduler(ctx, db, kisClient, wsClient, mon, tokenManager, tradingEngine, usEngine)
+		go runMarketScheduler(ctx, db, kisClient, wsClient, mon, tokenManager, tradingEngine)
 	}
 
 	// --- Price consumer ---
@@ -116,7 +115,6 @@ func main() {
 
 	handler := api.NewHandler(db, kisClient, tokenManager, cfg, mon, wsClient)
 	handler.SetEngine(tradingEngine)
-	handler.SetUSEngine(usEngine)
 	router := api.SetupRouter(handler, cfg.FrontendDist)
 
 	srv := &http.Server{
@@ -175,20 +173,9 @@ func parseHHMM(s string, def int) int {
 //	15:15 → stop engine → liquidate all positions
 //	15:20 → generate daily report → save to DB
 //	16:00 → disconnect
-//
-// isActiveUSTrading returns true if the current hhmm is within the US trading window.
-// Handles midnight crossover (e.g., 22:30~05:00).
-func isActiveUSTrading(hhmm, startHHMM, endHHMM int) bool {
-	if startHHMM > endHHMM {
-		// Midnight crossover: active if hhmm >= start OR hhmm < end
-		return hhmm >= startHHMM || hhmm < endHHMM
-	}
-	return hhmm >= startHHMM && hhmm < endHHMM
-}
-
 func runMarketScheduler(ctx context.Context,
 	db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mon *monitor.Monitor,
-	tokenManager *kis.TokenManager, eng *trader.Engine, usEng *trader.Engine) {
+	tokenManager *kis.TokenManager, eng *trader.Engine) {
 
 	kst, _ := time.LoadLocation("Asia/Seoul")
 
@@ -201,9 +188,6 @@ func runMarketScheduler(ctx context.Context,
 	var stopEngine func()
 	var stopIndicator context.CancelFunc
 
-	var usEngineRunning bool
-	var stopUSEngine func()
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -211,27 +195,6 @@ func runMarketScheduler(ctx context.Context,
 		case <-ticker.C:
 			now := time.Now().In(kst)
 			hhmm := now.Hour()*100 + now.Minute()
-
-			// US market scheduling (runs any day of week — US market hours)
-			usStartHHMM := parseHHMM(db.GetSetting(ctx, "us_trading_start_time"), 2230)
-			usEndHHMM := parseHHMM(db.GetSetting(ctx, "us_trading_end_time"), 500)
-			usEnabled := db.GetSetting(ctx, "us_trading_enabled") == "true"
-
-			switch {
-			case usEng != nil && usEnabled && !usEngineRunning && isActiveUSTrading(hhmm, usStartHHMM, usEndHHMM):
-				stopUSEngine = usEng.Start(ctx)
-				usEngineRunning = true
-				logger.Info("market scheduler: US trading engine started", map[string]any{"hhmm": hhmm})
-
-			case usEngineRunning && !isActiveUSTrading(hhmm, usStartHHMM, usEndHHMM):
-				if stopUSEngine != nil {
-					stopUSEngine()
-					stopUSEngine = nil
-					usEngineRunning = false
-				}
-				mon.LiquidateAll(ctx, "US")
-				logger.Info("market scheduler: US trading engine stopped", map[string]any{"hhmm": hhmm})
-			}
 
 			// KR market scheduling (weekdays only)
 			wd := now.Weekday()
