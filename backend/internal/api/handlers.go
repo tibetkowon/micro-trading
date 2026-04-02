@@ -517,6 +517,12 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		// Autonomous trading settings
 		"take_profit_pct":                ts.TakeProfitPct,
 		"stop_loss_pct":                  ts.StopLossPct,
+		// ETF/주식 분리 수익·손절
+		"etf_take_profit_pct":   ts.ETFTakeProfitPct,
+		"etf_stop_loss_pct":     ts.ETFStopLossPct,
+		"stock_take_profit_pct": ts.StockTakeProfitPct,
+		"stock_stop_loss_pct":   ts.StockStopLossPct,
+		"stock_tax_rate":        ts.StockTaxRate,
 		"ranking_types":                  ts.RankingTypes,
 		"ranking_price_min":              ts.RankingPriceMin,
 		"ranking_price_max":              ts.RankingPriceMax,
@@ -584,6 +590,11 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		// Autonomous trading settings (all optional)
 		TakeProfitPct              *float64 `json:"take_profit_pct"`
 		StopLossPct                *float64 `json:"stop_loss_pct"`
+		ETFTakeProfitPct           *float64 `json:"etf_take_profit_pct"`
+		ETFStopLossPct             *float64 `json:"etf_stop_loss_pct"`
+		StockTakeProfitPct         *float64 `json:"stock_take_profit_pct"`
+		StockStopLossPct           *float64 `json:"stock_stop_loss_pct"`
+		StockTaxRate               *float64 `json:"stock_tax_rate"`
 		RankingTypes               []string `json:"ranking_types"`
 		RankingPriceMin            string   `json:"ranking_price_min"`
 		RankingPriceMax            string   `json:"ranking_price_max"`
@@ -685,6 +696,31 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.StopLossPct != nil {
 		if !save("stop_loss_pct", strconv.FormatFloat(*req.StopLossPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.ETFTakeProfitPct != nil {
+		if !save("etf_take_profit_pct", strconv.FormatFloat(*req.ETFTakeProfitPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.ETFStopLossPct != nil {
+		if !save("etf_stop_loss_pct", strconv.FormatFloat(*req.ETFStopLossPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.StockTakeProfitPct != nil {
+		if !save("stock_take_profit_pct", strconv.FormatFloat(*req.StockTakeProfitPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.StockStopLossPct != nil {
+		if !save("stock_stop_loss_pct", strconv.FormatFloat(*req.StockStopLossPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.StockTaxRate != nil {
+		if !save("stock_tax_rate", strconv.FormatFloat(*req.StockTaxRate, 'f', -1, 64)) {
 			return
 		}
 	}

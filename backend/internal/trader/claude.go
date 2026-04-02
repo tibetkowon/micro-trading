@@ -21,6 +21,7 @@ type RankItem struct {
 	RankingType  string `json:"ranking_type"`            // e.g. "volume+strength"
 	VolIncrRate string `json:"vol_incr_rate,omitempty"` // 거래량 증가율 % (volume)
 	Strength    string `json:"strength,omitempty"`      // 체결강도 % (strength)
+	AssetType   string `json:"asset_type,omitempty"`    // "STOCK" | "ETF" | "ETF_DOMESTIC"
 	// 당일 OHLC
 	DayOpen string `json:"day_open,omitempty"`
 	DayHigh string `json:"day_high,omitempty"`

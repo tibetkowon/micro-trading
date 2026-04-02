@@ -15,6 +15,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
+	"github.com/micro-trading-for-agent/backend/internal/mst"
 )
 
 // filteredStockEntry records a single stock removed by the hard filter with the reason.
@@ -49,6 +50,7 @@ type Engine struct {
 	wsClient  *kis.WebSocketClient
 	mon       *monitor.Monitor
 	claude    *ClaudeClient
+	mstStore  *mst.Store // nil-safe: asset type tagging is skipped when nil
 
 	mu         sync.RWMutex
 	state      EngineState
@@ -59,12 +61,14 @@ type Engine struct {
 
 // NewEngine creates a new Engine with all required dependencies.
 // claude may be nil if ANTHROPIC_API_KEY is not configured (engine will log an error and sleep).
+// mstStore may be nil; asset type tagging is skipped when nil.
 func NewEngine(
 	db *database.DB,
 	kisClient *kis.Client,
 	wsClient *kis.WebSocketClient,
 	mon *monitor.Monitor,
 	claude *ClaudeClient,
+	mstStore *mst.Store,
 ) *Engine {
 	return &Engine{
 		db:        db,
@@ -72,6 +76,7 @@ func NewEngine(
 		wsClient:  wsClient,
 		mon:       mon,
 		claude:    claude,
+		mstStore:  mstStore,
 		state:     StateIdle,
 		soldCh:    make(chan string, 16),
 		stopCh:    make(chan struct{}),
@@ -361,6 +366,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		rankings[i].M5MA10 = info.M5MA10
 		rankings[i].PrevVolumeRatio = info.PrevVolumeRatio
 		rankings[i].BidAskRatio = info.BidAskRatio
+		// MST 기반 자산 타입 태깅
+		rankings[i].AssetType = e.resolveAssetType(ctx, r.StockCode)
 	}
 	// 거래대금 하한선 필터
 	if settings.MinTradingValue > 0 {
@@ -614,6 +621,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			}
 		}
 
+		orderAssetType := e.resolveAssetType(ctx, code)
+		orderTargetPct, orderStopPct := e.resolveProfitLoss(orderAssetType, settings)
 		res, perr := agent.PlaceOrder(ctx, e.kisClient, e.db, agent.PlaceOrderRequest{
 			StockCode: code,
 			StockName: candidateName,
@@ -621,8 +630,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			Qty:       qty,
 			Price:     0,
 			OrderDivn: "01",
-			TargetPct: settings.TakeProfitPct,
-			StopPct:   settings.StopLossPct,
+			TargetPct: orderTargetPct,
+			StopPct:   orderStopPct,
 		})
 		if perr != nil {
 			logger.Warn("engine: PlaceOrder failed, skipping",
@@ -700,14 +709,19 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		`UPDATE orders SET filled_price = ?, status = ?, stock_name = CASE WHEN stock_name = '' THEN ? ELSE stock_name END WHERE id = ?`,
 		filledPrice, string(models.OrderStatusFilled), stockName, result.OrderID)
 
+	// Resolve take-profit and stop-loss based on asset type.
+	assetType := e.resolveAssetType(ctx, stockCode)
+	takeProfitPct, stopLossPct := e.resolveProfitLoss(assetType, settings)
+
 	// Register with monitor.
 	entry := monitor.MonitoredEntry{
 		StockCode:          stockCode,
 		StockName:          stockName,
 		FilledPrice:        filledPrice,
-		TargetPrice:        filledPrice * (1 + settings.TakeProfitPct/100),
-		StopPrice:          filledPrice * (1 - settings.StopLossPct/100),
+		TargetPrice:        filledPrice * (1 + takeProfitPct/100),
+		StopPrice:          filledPrice * (1 - stopLossPct/100),
 		OrderID:            result.OrderID,
+		AssetType:          assetType,
 		SoldCh:             e.soldCh,
 		TrailingTriggerPct: settings.TrailingTriggerPct,
 		TrailingStopPct:    settings.TrailingStopPct,
@@ -1099,4 +1113,46 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	}
 
 	return result, rankingLogID, nil
+}
+
+// resolveProfitLoss returns the take-profit and stop-loss percentages for the given asset type.
+// ETF_DOMESTIC uses etf_take_profit_pct/etf_stop_loss_pct; ETF uses the same ETF values;
+// STOCK uses stock_take_profit_pct/stock_stop_loss_pct.
+// Falls back to legacy TakeProfitPct/StopLossPct when the type-specific value is 0.
+func (e *Engine) resolveProfitLoss(assetType string, s database.TradingSettings) (takePct, stopPct float64) {
+	switch assetType {
+	case "ETF_DOMESTIC", "ETF":
+		takePct = s.ETFTakeProfitPct
+		stopPct = s.ETFStopLossPct
+	default:
+		takePct = s.StockTakeProfitPct
+		stopPct = s.StockStopLossPct
+	}
+	if takePct == 0 {
+		takePct = s.TakeProfitPct
+	}
+	if stopPct == 0 {
+		stopPct = s.StopLossPct
+	}
+	return takePct, stopPct
+}
+
+// resolveAssetType looks up the stock in stock_masters and returns one of:
+// "ETF_DOMESTIC" (국내주식형 ETF, 비과세), "ETF" (기타 ETF, 과세), "STOCK" (일반 주식).
+// Returns "STOCK" when mstStore is nil or the stock is not in the table.
+func (e *Engine) resolveAssetType(ctx context.Context, stockCode string) string {
+	if e.mstStore == nil {
+		return "STOCK"
+	}
+	m, err := e.mstStore.GetByCode(ctx, stockCode)
+	if err != nil || m == nil {
+		return "STOCK"
+	}
+	if m.IsETF {
+		if m.IsDomesticEquityETF {
+			return "ETF_DOMESTIC"
+		}
+		return "ETF"
+	}
+	return "STOCK"
 }

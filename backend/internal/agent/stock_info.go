@@ -34,6 +34,8 @@ type StockInfo struct {
 	M5MA10          float64 `json:"m5_ma10"`           // 5분봉 MA10; 0=데이터부족
 	PrevVolumeRatio float64 `json:"prev_volume_ratio"` // 직전봉 대비 현재봉 거래량 비율; 0=데이터부족
 	BidAskRatio     float64 `json:"bid_ask_ratio"`     // 총 매수잔량 / 총 매도잔량; 0=API 실패 또는 데이터 없음
+	// 자산 타입 (MST 기반 — engine이 태깅)
+	AssetType string `json:"asset_type"` // "STOCK" | "ETF" | "ETF_DOMESTIC"
 }
 
 // GetStockInfo fetches the latest price and computes all technical indicators:

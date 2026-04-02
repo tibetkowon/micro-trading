@@ -118,7 +118,7 @@ func main() {
 		logger.Warn("ANTHROPIC_API_KEY not set — autonomous trading disabled", nil)
 	}
 
-	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, claudeClient)
+	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, claudeClient, mstStore)
 
 	// KIS 실제 잔고와 대조하여 누락된 포지션 자동 복구.
 	// DB에 등록되지 않은 보유 종목(버그·장애·수동 주문 등)을 모니터링에 추가.

@@ -17,8 +17,14 @@ import (
 
 // TradingSettings holds all autonomous trading configuration values.
 type TradingSettings struct {
-	TakeProfitPct             float64  // 익절 기준 %
-	StopLossPct               float64  // 손절 기준 %
+	TakeProfitPct             float64  // 익절 기준 % (STOCK 기본값, ETF_DOMESTIC 미설정 시 폴백)
+	StopLossPct               float64  // 손절 기준 % (STOCK 기본값, ETF_DOMESTIC 미설정 시 폴백)
+	// ETF/주식 분리 수익·손절 기준 (0이면 TakeProfitPct/StopLossPct 기본값 사용)
+	ETFTakeProfitPct  float64 // ETF 익절 기준 %
+	ETFStopLossPct    float64 // ETF 손절 기준 %
+	StockTakeProfitPct float64 // 주식 익절 기준 %
+	StockStopLossPct   float64 // 주식 손절 기준 %
+	StockTaxRate       float64 // 주식·과세ETF 세율 (0=미사용)
 	RankingTypes              []string // 순위 유형 우선순위 (volume, strength, fluctuation)
 	RankingPriceMin           string   // 순위 조회 최소 주가
 	RankingPriceMax           string   // 순위 조회 최대 주가
@@ -261,6 +267,11 @@ func (db *DB) migrate() error {
 	defaultSettings := []struct{ key, val string }{
 		{"take_profit_pct", "3.0"},
 		{"stop_loss_pct", "2.0"},
+		{"etf_take_profit_pct", "0.5"},
+		{"etf_stop_loss_pct", "0.4"},
+		{"stock_take_profit_pct", "1.5"},
+		{"stock_stop_loss_pct", "1.0"},
+		{"stock_tax_rate", "0.002"},
 		{"ranking_types", `["volume","strength"]`},
 		{"ranking_price_min", "5000"},
 		{"ranking_price_max", "100000"},
@@ -328,7 +339,9 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	vals := make(map[string]string, len(keys))
 	rows, err := db.QueryContext(ctx,
 		`SELECT key, value FROM settings WHERE key IN (`+
-			`'take_profit_pct','stop_loss_pct','ranking_types',`+
+			`'take_profit_pct','stop_loss_pct',`+
+			`'etf_take_profit_pct','etf_stop_loss_pct','stock_take_profit_pct','stock_stop_loss_pct','stock_tax_rate',`+
+			`'ranking_types',`+
 			`'ranking_price_min','ranking_price_max','max_positions',`+
 			`'order_amount_pct','sell_conditions','indicator_check_interval_min',`+
 			`'indicator_rsi_sell_threshold','indicator_macd_bearish_sell','claude_model',`+
@@ -527,6 +540,11 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	return TradingSettings{
 		TakeProfitPct:              takeProfitPct,
 		StopLossPct:                stopLossPct,
+		ETFTakeProfitPct:           f64("etf_take_profit_pct"),
+		ETFStopLossPct:             f64("etf_stop_loss_pct"),
+		StockTakeProfitPct:         f64("stock_take_profit_pct"),
+		StockStopLossPct:           f64("stock_stop_loss_pct"),
+		StockTaxRate:               f64("stock_tax_rate"),
 		RankingTypes:               rankingTypes,
 		RankingPriceMin:            vals["ranking_price_min"],
 		RankingPriceMax:            vals["ranking_price_max"],
