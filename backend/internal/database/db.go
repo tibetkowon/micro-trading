@@ -214,6 +214,17 @@ func (db *DB) migrate() error {
 			created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
 			updated_at    DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS stock_masters (
+			stock_code             TEXT     PRIMARY KEY,
+			stock_name             TEXT     NOT NULL DEFAULT '',
+			isin                   TEXT     NOT NULL DEFAULT '',
+			market_type            TEXT     NOT NULL DEFAULT '',
+			group_code             TEXT     NOT NULL DEFAULT '',
+			is_etf                 INTEGER  NOT NULL DEFAULT 0,
+			is_domestic_equity_etf INTEGER  NOT NULL DEFAULT 0,
+			updated_at             DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
 	}
 
 	for _, s := range stmts {

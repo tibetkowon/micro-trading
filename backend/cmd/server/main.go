@@ -17,6 +17,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
+	"github.com/micro-trading-for-agent/backend/internal/mst"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
 
@@ -79,6 +80,28 @@ func main() {
 			map[string]any{"error": err.Error()})
 	}
 
+	// --- MST (종목 마스터) 초기화 ---
+	mstStore := mst.NewStore(db.DB)
+	if cnt, err := mstStore.Count(ctx); err == nil && cnt == 0 {
+		logger.Info("stock_masters empty — downloading MST now", nil)
+		go func() {
+			results, err := mst.DownloadAndParse(ctx)
+			if err != nil {
+				logger.Warn("initial MST download failed — stock_masters will be empty",
+					map[string]any{"error": err.Error()})
+				return
+			}
+			for _, r := range results {
+				if err := mstStore.Upsert(ctx, r.Records); err != nil {
+					logger.Error("MST upsert failed",
+						map[string]any{"market": r.Market, "error": err.Error()})
+				} else {
+					logger.Info("MST upserted", map[string]any{"market": r.Market, "count": len(r.Records)})
+				}
+			}
+		}()
+	}
+
 	// --- Order sync scheduler (폴링 폴백) ---
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" {
 		agent.StartOrderSyncScheduler(ctx, kisClient, db, 5*time.Minute)
@@ -105,7 +128,7 @@ func main() {
 
 	// --- Market hours scheduler ---
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" && wsClient != nil {
-		go runMarketScheduler(ctx, db, kisClient, wsClient, mon, tokenManager, tradingEngine)
+		go runMarketScheduler(ctx, db, kisClient, wsClient, mon, tokenManager, tradingEngine, mstStore)
 	}
 
 	// --- Price consumer ---
@@ -175,7 +198,7 @@ func parseHHMM(s string, def int) int {
 //	16:00 → disconnect
 func runMarketScheduler(ctx context.Context,
 	db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mon *monitor.Monitor,
-	tokenManager *kis.TokenManager, eng *trader.Engine) {
+	tokenManager *kis.TokenManager, eng *trader.Engine, mstStore *mst.Store) {
 
 	kst, _ := time.LoadLocation("Asia/Seoul")
 
@@ -185,6 +208,7 @@ func runMarketScheduler(ctx context.Context,
 	var wsRunning bool
 	var engineRunning bool
 	var tradingReady bool
+	var mstDownloaded bool
 	var stopEngine func()
 	var stopIndicator context.CancelFunc
 
@@ -205,6 +229,28 @@ func runMarketScheduler(ctx context.Context,
 			endHHMM := parseHHMM(db.GetSetting(ctx, "trading_end_time"), 1515)
 
 			switch {
+			case !mstDownloaded && hhmm >= 840 && hhmm < 900:
+				// 08:40 — MST 파일 다운로드
+				mstDownloaded = true
+				go func() {
+					results, err := mst.DownloadAndParse(ctx)
+					if err != nil {
+						logger.Warn("MST daily download failed",
+							map[string]any{"error": err.Error()})
+						mstDownloaded = false // 다음 틱에 재시도 허용
+						return
+					}
+					for _, r := range results {
+						if err := mstStore.Upsert(ctx, r.Records); err != nil {
+							logger.Error("MST upsert failed",
+								map[string]any{"market": r.Market, "error": err.Error()})
+						} else {
+							logger.Info("MST daily update complete",
+								map[string]any{"market": r.Market, "count": len(r.Records)})
+						}
+					}
+				}()
+
 			case !wsRunning && hhmm >= 850 && hhmm < 1600:
 				// 08:50 또는 장중 서버 재시작 시 WebSocket 연결.
 				// hhmm == 850 에만 의존하면 서버가 08:50 이후 시작될 때 영구 미연결됨.
