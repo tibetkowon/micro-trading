@@ -42,6 +42,9 @@ type RankItem struct {
 	M5MA10          float64 `json:"m5_ma10,omitempty"`           // 5분봉 MA10
 	PrevVolumeRatio float64 `json:"prev_volume_ratio,omitempty"` // 직전봉 대비 거래량 비율
 	BidAskRatio     float64 `json:"bid_ask_ratio,omitempty"`     // 총 매수잔량/총 매도잔량 (0=데이터 없음)
+	// 세금보정 필드
+	TradingValue      float64 `json:"trading_value,omitempty"`       // 당일 거래대금 (원)
+	ApplicableTaxRate float64 `json:"applicable_tax_rate,omitempty"` // 0.0=ETF비과세, 0.002=주식
 }
 
 // TradingRules holds parameterized hard rejection and ranking criteria for Claude prompts.
@@ -65,6 +68,9 @@ type TradingRules struct {
 	BidAskRatioMin float64
 	// 지수 하락 임계값
 	IndexDropThreshold float64 // 기본 -1.0
+	// 세금보정 기준값
+	MinExpectedProfitPct float64 // 주식 세후 최소 기대수익 (%). 0=미사용
+	StockTaxRate         float64 // 주식 세율 (기본 0.002)
 }
 
 // DefaultTradingRules returns safe default values (matches the hard-coded prompt values).
@@ -130,6 +136,20 @@ func (c *ClaudeClient) SelectStocks(
 	if rules.MarketIndexDrop != 0 {
 		marketIndexNote = fmt.Sprintf("Current market index: %.2f%% (시가 대비 등락률)\n", rules.MarketIndexDrop)
 	}
+	taxNote := ""
+	if rules.MinExpectedProfitPct > 0 {
+		stockTaxRate := rules.StockTaxRate
+		if stockTaxRate <= 0 {
+			stockTaxRate = 0.002
+		}
+		taxNote = fmt.Sprintf(`
+## Tax-Adjusted Return Rule (세금보정):
+- ETF_DOMESTIC: applicable_tax_rate=0.0 → 비과세, net_expected = target_pct
+- ETF: applicable_tax_rate=0.0 → 비과세, net_expected = target_pct
+- STOCK: applicable_tax_rate=%.3f → net_expected = target_pct - %.1f%%
+- If asset_type == "STOCK" AND net_expected < %.1f%% → SKIP (세후 기대수익 불충분)
+- 동일 신호 강도면 ETF_DOMESTIC > ETF > STOCK 우선`, stockTaxRate, stockTaxRate*100, rules.MinExpectedProfitPct)
+	}
 	prompt := fmt.Sprintf(`You are an elite Korean day-trader known for strict risk management, avoiding Bull Traps, and finding high-probability pullback(눌림목) entries.
 
 %s## Hard Rejection Rules — skip if ANY apply (Kill-switch & Defense):
@@ -141,7 +161,7 @@ func (c *ClaudeClient) SelectStocks(
 6. strength < %.0f  → 매수 체결 우위 아님(매수세 소멸), skip
 7. rsi14 > %.0f  → 단기 과매수 상태에서 꺾이는 중, skip
 8. open_price_diff > %.0f%%  → 이미 너무 많이 오른 종목(설거지 위험), skip
-
+%s
 ## Ranking Criteria (for survivors):
 - 진정한 눌림목(True Pullback): vwap_diff between %.1f%% ~ %.1f%% (VWAP 지지선 부근 반등 대기); if vwap_diff is 0, use high_price_diff -1%% ~ -3%%
 - 건전한 거래량: 하락 시 prev_volume_ratio < 0.8 (거래량 감소) 및 net_buy_qty > 0 (순매수 우세)
@@ -165,6 +185,7 @@ Best entry first:
 		rules.HardStrengthMin,
 		rules.HardRSIMax,
 		rules.HardOpenPriceDiffMax,
+		taxNote,
 		rules.VWAPDiffMin, rules.VWAPDiffMax,
 		rules.BidAskRatioMin,
 		rules.RSIBuyMin, rules.RSIBuyMax,

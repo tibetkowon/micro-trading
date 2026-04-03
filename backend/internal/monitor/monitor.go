@@ -11,6 +11,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
+	"github.com/micro-trading-for-agent/backend/internal/mst"
 )
 
 // IndicatorSnapshot holds key technical indicators for sell condition evaluation.
@@ -48,6 +49,7 @@ type Monitor struct {
 	kisClient *kis.Client
 	wsClient  *kis.WebSocketClient
 	db        *database.DB
+	mstStore  *mst.Store
 
 	// 횡보 감지
 	stagnMu                sync.Mutex
@@ -57,13 +59,14 @@ type Monitor struct {
 }
 
 // New creates a Monitor.
-func New(db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient) *Monitor {
+func New(db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mstStore *mst.Store) *Monitor {
 	return &Monitor{
 		positions:     make(map[string]*MonitoredEntry),
 		stagnantSince: make(map[string]*time.Time),
 		kisClient:     kisClient,
 		wsClient:      wsClient,
 		db:            db,
+		mstStore:      mstStore,
 	}
 }
 
@@ -472,13 +475,44 @@ func (m *Monitor) RecoverFromHoldings(ctx context.Context, soldCh chan<- string)
 			h.StockCode,
 		).Scan(&orderID)
 
+		// MST 기반 AssetType 결정 — ETF/주식별 익절/손절 분리 적용.
+		assetType := "STOCK"
+		if m.mstStore != nil {
+			if sm, err := m.mstStore.GetByCode(ctx, h.StockCode); err == nil && sm != nil {
+				if sm.IsDomesticEquityETF {
+					assetType = "ETF_DOMESTIC"
+				} else if sm.IsETF {
+					assetType = "ETF"
+				}
+			}
+		}
+
+		takePct := settings.TakeProfitPct
+		stopPct := settings.StopLossPct
+		if assetType == "ETF_DOMESTIC" || assetType == "ETF" {
+			if settings.ETFTakeProfitPct > 0 {
+				takePct = settings.ETFTakeProfitPct
+			}
+			if settings.ETFStopLossPct > 0 {
+				stopPct = settings.ETFStopLossPct
+			}
+		} else {
+			if settings.StockTakeProfitPct > 0 {
+				takePct = settings.StockTakeProfitPct
+			}
+			if settings.StockStopLossPct > 0 {
+				stopPct = settings.StockStopLossPct
+			}
+		}
+
 		entry := MonitoredEntry{
 			StockCode:   h.StockCode,
 			StockName:   h.StockName,
 			FilledPrice: filledPrice,
-			TargetPrice: filledPrice * (1 + settings.TakeProfitPct/100),
-			StopPrice:   filledPrice * (1 - settings.StopLossPct/100),
+			TargetPrice: filledPrice * (1 + takePct/100),
+			StopPrice:   filledPrice * (1 - stopPct/100),
 			OrderID:     orderID,
+			AssetType:   assetType,
 			SoldCh:      soldCh,
 		}
 
@@ -495,6 +529,7 @@ func (m *Monitor) RecoverFromHoldings(ctx context.Context, soldCh chan<- string)
 				"filled_price": filledPrice,
 				"target_price": entry.TargetPrice,
 				"stop_price":   entry.StopPrice,
+				"asset_type":   assetType,
 			})
 	}
 

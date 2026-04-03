@@ -44,3 +44,9 @@ func GetFluctuationRank(ctx context.Context, client *kis.Client, market, priceMi
 	return client.GetFluctuationRank(ctx, market, priceMin, priceMax, excludeCls)
 }
 
+// GetVIStatus returns today's VI 발동현황 (변동성완화장치) activated stocks (FHPST01390000).
+// date: "YYYYMMDD". 미해제(vi_cncl_hour=="") 건을 포함하여 반환하므로 호출자에서 필터링 필요.
+func GetVIStatus(ctx context.Context, client *kis.Client, date string) ([]kis.VIStatusItem, error) {
+	return client.GetVIStatus(ctx, date)
+}
+

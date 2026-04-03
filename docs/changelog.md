@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-04-03 — 트레이딩 시스템 고도화 2차 (Phase A~G)
+
+### Phase A — RecoverFromHoldings() AssetType 버그 수정
+- **`monitor/monitor.go`**: `mstStore *mst.Store` 필드 추가, `New()` 시그니처에 포함
+- `RecoverFromHoldings()`: MST 조회로 AssetType 결정 → ETF/주식별 익절·손절 분리 적용 (0이면 기본값 폴백)
+- **`cmd/server/main.go`**: mstStore 생성을 monitor 초기화 이전으로 이동, `monitor.New()`에 mstStore 주입, 중복 생성 제거
+
+### Phase B — VI 발동현황 (FHPST01390000)
+- **`kis/client.go`**: `VIStatusItem` 구조체 추가, `GetVIStatus()` 함수 추가
+- **`agent/ranking.go`**: `GetVIStatus()` 래퍼 추가
+- **`trader/engine.go`**: `getRankings()` switch-case에 `vi_status` 처리 추가 (미해제 건 제외)
+- **`api/handlers.go`**: `GET /api/ranking/vi-status` 핸들러 추가
+- **`api/router.go`**: `/ranking/vi-status` 라우트 추가
+- **`frontend/Settings.jsx`**: VI 발동현황 체크박스 추가
+
+### Phase C — MST 확장 (listed_shares + min_market_cap 필터)
+- **`mst/parser.go`**: `StockMaster`에 `ListedShares int64` 필드 추가
+- **`mst/store.go`**: Upsert/GetByCode에 `listed_shares` 컬럼 추가
+- **`database/db.go`**: `stock_masters` 테이블에 `listed_shares` 컬럼 추가(DDL + ALTER 마이그레이션), `TradingSettings`에 `MinMarketCap`·`MinExpectedProfitPct` 추가, 기본값 INSERT OR IGNORE
+- **`trader/engine.go`**: 시가총액 필터 추가 (상장주식수 × 현재가 ÷ 1억 ≥ MinMarketCap)
+- **`api/handlers.go`**: GetSettings/UpdateSettings에 `min_market_cap`·`min_expected_profit_pct` 추가
+- **`frontend/Settings.jsx`**: 하드 필터 섹션에 최소 시가총액 입력 추가
+
+### Phase D — 세금보정 기대수익률
+- **`trader/claude.go`**: `RankItem`에 `TradingValue`·`ApplicableTaxRate` 추가; `TradingRules`에 `MinExpectedProfitPct`·`StockTaxRate` 추가; SelectStocks 프롬프트에 세금보정 규칙 삽입
+- **`trader/engine.go`**: RankItem 보강 단계에서 `TradingValue`·`ApplicableTaxRate` 설정; TradingRules 빌드 시 `MinExpectedProfitPct`·`StockTaxRate` 반영
+- **`frontend/Settings.jsx`**: 주식 세후 최소 기대수익(%) 입력 추가
+
+### Phase E — 패닉셀 버튼
+- **`api/handlers.go`**: `POST /api/monitor/liquidate-all` 핸들러 추가 (비동기 실행)
+- **`api/router.go`**: `/monitor/liquidate-all` 라우트 추가
+- **`frontend/Monitor.jsx`**: 헤더에 "전체 매도" 빨간색 버튼 추가 (2중 확인, 포지션 있을 때만 표시)
+
+### Phase F — 프리셋 동기화 개선
+- **`database/db.go`**: `active_preset_id` 기본값 추가, `UpdateSettingsPreset()` 함수 추가
+- **`api/handlers.go`**: `ApplyPreset`·`CreatePreset` 후 `active_preset_id` 갱신; `UpdateSettings` 완료 시 활성 프리셋 스냅샷 동시 업데이트; GetSettings에 `active_preset_id` 반환
+- **`frontend/Settings.jsx`**: 활성 프리셋에 "적용 중" 뱃지 표시
+
+### Phase G — 문서 정리
+- **`docs/kis-api/순위분석.md`**: VI 발동현황 상태 "🆕 신규" → "✅ 구현됨"으로 업데이트
+
+---
+
 ## 2026-04-03 — 트레이딩 시스템 고도화 (Phase 1~6 완료)
 
 ### Phase 1 — US 마켓 코드 제거 / ExecCount·Disparity 순위 제거

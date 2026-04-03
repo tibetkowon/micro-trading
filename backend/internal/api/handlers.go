@@ -291,6 +291,16 @@ func (h *Handler) GetServerStatus(c *gin.Context) {
 	})
 }
 
+// POST /api/monitor/liquidate-all — 전체 보유 종목 즉시 시장가 매도 (패닉셀)
+func (h *Handler) LiquidateAll(c *gin.Context) {
+	if h.monitor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "monitor not available"})
+		return
+	}
+	go h.monitor.LiquidateAll(c.Request.Context(), "KR")
+	c.JSON(http.StatusOK, gin.H{"message": "전체 매도 실행 중"})
+}
+
 // GET /api/monitor/positions — 현재 모니터링 중인 포지션 목록
 func (h *Handler) GetMonitorPositions(c *gin.Context) {
 	if h.monitor == nil {
@@ -585,7 +595,10 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"vwap_diff_max":     ts.VWAPDiffMax,
 		"rsi_buy_min":       ts.RSIBuyMin,
 		"rsi_buy_max":       ts.RSIBuyMax,
-		"bid_ask_ratio_min": ts.BidAskRatioMin,
+		"bid_ask_ratio_min":       ts.BidAskRatioMin,
+		"min_market_cap":          ts.MinMarketCap,
+		"min_expected_profit_pct": ts.MinExpectedProfitPct,
+		"active_preset_id":        h.db.GetSetting(c.Request.Context(), "active_preset_id"),
 	})
 }
 
@@ -657,7 +670,9 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		VWAPDiffMax    *float64 `json:"vwap_diff_max"`
 		RSIBuyMin      *float64 `json:"rsi_buy_min"`
 		RSIBuyMax      *float64 `json:"rsi_buy_max"`
-		BidAskRatioMin *float64 `json:"bid_ask_ratio_min"`
+		BidAskRatioMin       *float64 `json:"bid_ask_ratio_min"`
+		MinMarketCap         *float64 `json:"min_market_cap"`
+		MinExpectedProfitPct *float64 `json:"min_expected_profit_pct"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1037,10 +1052,40 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.MinMarketCap != nil {
+		if !save("min_market_cap", strconv.FormatFloat(*req.MinMarketCap, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.MinExpectedProfitPct != nil {
+		if !save("min_expected_profit_pct", strconv.FormatFloat(*req.MinExpectedProfitPct, 'f', -1, 64)) {
+			return
+		}
+	}
 
 	if !changed {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "변경할 항목이 없습니다"})
 		return
+	}
+
+	// 활성 프리셋이 있으면 프리셋 스냅샷도 동시 갱신
+	if activeIDStr := h.db.GetSetting(c.Request.Context(), "active_preset_id"); activeIDStr != "" && activeIDStr != "0" {
+		if activeID, err := strconv.ParseInt(activeIDStr, 10, 64); err == nil && activeID > 0 {
+			rows, err := h.db.QueryContext(c.Request.Context(), `SELECT key, value FROM settings`)
+			if err == nil {
+				defer rows.Close()
+				snap := map[string]string{}
+				for rows.Next() {
+					var k, v string
+					if rows.Scan(&k, &v) == nil {
+						snap[k] = v
+					}
+				}
+				if b, err := json.Marshal(snap); err == nil {
+					_ = h.db.UpdateSettingsPreset(c.Request.Context(), activeID, string(b))
+				}
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "설정이 저장되었습니다."})
@@ -1130,6 +1175,26 @@ func (h *Handler) GetFluctuationRank(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ranking": items})
+}
+
+// GET /api/ranking/vi-status — VI 발동현황 (FHPST01390000)
+// date: YYYYMMDD (default: 오늘). vi_cncl_hour가 비어있는 미해제 건은 제외하여 반환.
+func (h *Handler) GetVIStatus(c *gin.Context) {
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	date := c.DefaultQuery("date", time.Now().In(kst).Format("20060102"))
+	items, err := agent.GetVIStatus(c.Request.Context(), h.client, date)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	// 미해제(vi_cncl_hour=="") 건 제외
+	released := items[:0]
+	for _, item := range items {
+		if item.ViCnclHour != "" {
+			released = append(released, item)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"ranking": released})
 }
 
 // GET /api/market/status — 현재 장운영 여부 조회
@@ -1287,6 +1352,7 @@ func (h *Handler) CreatePreset(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "이미 동일한 이름의 프리셋이 있습니다: " + err.Error()})
 		return
 	}
+	_ = h.db.SetSetting(c.Request.Context(), "active_preset_id", strconv.FormatInt(id, 10))
 	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "프리셋이 저장되었습니다."})
 }
 
@@ -1315,6 +1381,8 @@ func (h *Handler) ApplyPreset(c *gin.Context) {
 			return
 		}
 	}
+	// 활성 프리셋 ID 기록
+	_ = h.db.SetSetting(ctx, "active_preset_id", strconv.FormatInt(id, 10))
 	c.JSON(http.StatusOK, gin.H{"message": preset.Name + " 프리셋이 적용되었습니다."})
 }
 

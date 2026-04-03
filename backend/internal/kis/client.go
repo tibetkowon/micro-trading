@@ -129,6 +129,18 @@ type FluctuationRankItem struct {
 	HighVsPrPct  string `json:"hgpr_vrss_prpr_rate"` // 고가대비현재가비율
 }
 
+// VIStatusItem holds one entry from the VI 발동현황 API (FHPST01390000).
+type VIStatusItem struct {
+	StockCode    string `json:"mksc_shrn_iscd"` // 단축종목코드
+	StockName    string `json:"hts_kor_isnm"`   // 종목명
+	CurrentPrice string `json:"stck_prpr"`       // 현재가
+	VIClsCode    string `json:"vi_cls_code"`     // VI발동상태 (01=정적, 02=동적, 03=정적+동적)
+	ViCnclHour   string `json:"vi_cncl_hour"`   // VI해제시간 (빈값=미해제)
+	ViKindCode   string `json:"vi_kind_code"`   // VI종류코드 (1=정적, 2=동적)
+	ViPrc        string `json:"vi_prc"`          // VI발동가격
+	ViCount      string `json:"vi_count"`        // VI발동횟수
+}
+
 // HolidayInfo holds market open/close status for a given date (CTCA0903R).
 type HolidayInfo struct {
 	BassDate string `json:"bass_dt"` // YYYYMMDD
@@ -476,6 +488,33 @@ func (c *Client) GetFluctuationRank(ctx context.Context, market, priceMin, price
 	}
 	if result.Output == nil {
 		return []FluctuationRankItem{}, nil
+	}
+	return result.Output, nil
+}
+
+// GetVIStatus fetches the VI 발동현황 (FHPST01390000).
+// date format: "20060102". Returns all VI-activated stocks for the given date.
+// 미해제(vi_cncl_hour=="") 건을 포함하여 반환하므로 호출자에서 필터링 필요.
+func (c *Client) GetVIStatus(ctx context.Context, date string) ([]VIStatusItem, error) {
+	endpoint := "/uapi/domestic-stock/v1/quotations/inquire-vi-status"
+	params := fmt.Sprintf(
+		"?fid_div_cls_code=0&fid_cond_scr_div_code=20139&fid_mrkt_cls_code=0&fid_input_iscd=0000&fid_rank_sort_cls_code=0&fid_input_date_1=%s&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=0000000000",
+		date)
+
+	raw, err := c.get(ctx, endpoint, params, "FHPST01390000")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Output  []VIStatusItem `json:"output"`
+		MsgCode string         `json:"msg_cd"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse vi status: %w", err)
+	}
+	if result.Output == nil {
+		return []VIStatusItem{}, nil
 	}
 	return result.Output, nil
 }

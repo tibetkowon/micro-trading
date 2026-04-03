@@ -88,6 +88,10 @@ type TradingSettings struct {
 	RSIBuyMin      float64 // 이상적 매수 RSI 하한. 기본 40.0
 	RSIBuyMax      float64 // 이상적 매수 RSI 상한. 기본 60.0
 	BidAskRatioMin float64 // 매수호가 우세 최솟값. 기본 1.2 (0=미사용)
+	// 시가총액 필터
+	MinMarketCap float64 // 최소 시가총액 (억원). 0=필터없음. MST 상장주식수 × 현재가 기준
+	// 세금보정
+	MinExpectedProfitPct float64 // 주식 진입 시 세후 최소 기대수익 (%). 0=미사용
 }
 
 // DB wraps the sql.DB connection.
@@ -232,6 +236,7 @@ func (db *DB) migrate() error {
 			group_code             TEXT     NOT NULL DEFAULT '',
 			is_etf                 INTEGER  NOT NULL DEFAULT 0,
 			is_domestic_equity_etf INTEGER  NOT NULL DEFAULT 0,
+			listed_shares          INTEGER  NOT NULL DEFAULT 0,
 			updated_at             DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
 	}
@@ -260,6 +265,7 @@ func (db *DB) migrate() error {
 		`ALTER TABLE trader_ranking_logs ADD COLUMN filtered_stocks TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE trader_selection_logs ADD COLUMN ranking_log_id INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE settings_presets ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
+		`ALTER TABLE stock_masters ADD COLUMN listed_shares INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, s := range alterStmts {
 		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시
@@ -323,6 +329,9 @@ func (db *DB) migrate() error {
 		{"rsi_buy_min", "40.0"},
 		{"rsi_buy_max", "60.0"},
 		{"bid_ask_ratio_min", "1.2"},
+		{"min_market_cap", "0"},
+		{"min_expected_profit_pct", "0"},
+		{"active_preset_id", "0"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -367,7 +376,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'hard_disparity_m5_min','hard_disparity_m5_max',`+
 			`'hard_high_price_diff_max','hard_high_price_diff_min',`+
 			`'hard_prev_vol_ratio_max','hard_strength_min','hard_rsi_max','hard_open_price_diff_max',`+
-			`'vwap_diff_min','vwap_diff_max','rsi_buy_min','rsi_buy_max','bid_ask_ratio_min'`+
+			`'vwap_diff_min','vwap_diff_max','rsi_buy_min','rsi_buy_max','bid_ask_ratio_min',`+
+		`'min_market_cap','min_expected_profit_pct'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -599,6 +609,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		RSIBuyMin:                  rsiBuyMin,
 		RSIBuyMax:                  rsiBuyMax,
 		BidAskRatioMin:             bidAskRatioMin,
+		MinMarketCap:               f64("min_market_cap"),
+		MinExpectedProfitPct:       f64("min_expected_profit_pct"),
 	}, nil
 }
 
@@ -867,5 +879,13 @@ func (db *DB) GetSettingsPreset(ctx context.Context, id int64) (*SettingsPreset,
 // DeleteSettingsPreset removes a preset by id.
 func (db *DB) DeleteSettingsPreset(ctx context.Context, id int64) error {
 	_, err := db.ExecContext(ctx, `DELETE FROM settings_presets WHERE id = ?`, id)
+	return err
+}
+
+// UpdateSettingsPreset overwrites an existing preset's settings_json snapshot.
+func (db *DB) UpdateSettingsPreset(ctx context.Context, id int64, settingsJSON string) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE settings_presets SET settings_json=?, updated_at=datetime('now') WHERE id=?`,
+		settingsJSON, id)
 	return err
 }

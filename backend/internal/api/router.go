@@ -41,6 +41,7 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 			monitorGroup.GET("/positions", h.GetMonitorPositions)
 			monitorGroup.DELETE("/positions/:code", h.RemoveMonitorPosition)
 			monitorGroup.POST("/positions/:code/sell", h.ForceSellMonitorPosition)
+			monitorGroup.POST("/liquidate-all", h.LiquidateAll)
 		}
 
 		market := api.Group("/market")
@@ -55,6 +56,7 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 			ranking.GET("/volume", h.GetVolumeRank)
 			ranking.GET("/strength", h.GetStrengthRank)
 			ranking.GET("/fluctuation", h.GetFluctuationRank)
+			ranking.GET("/vi-status", h.GetVIStatus)
 		}
 
 		ws := api.Group("/ws")

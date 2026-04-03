@@ -73,15 +73,17 @@ func main() {
 		// approval_key is fetched just before market open; start with empty key.
 	}
 
+	// --- MST (종목 마스터) 초기화 — monitor보다 먼저 생성.
+	mstStore := mst.NewStore(db.DB)
+
 	// --- Position monitor ---
-	mon := monitor.New(db, kisClient, wsClient)
+	mon := monitor.New(db, kisClient, wsClient, mstStore)
 	if err := mon.LoadFromDB(ctx); err != nil {
 		logger.Warn("failed to restore monitored positions from DB",
 			map[string]any{"error": err.Error()})
 	}
 
-	// --- MST (종목 마스터) 초기화 ---
-	mstStore := mst.NewStore(db.DB)
+	// --- MST (종목 마스터) 초기 데이터 다운로드 ---
 	if cnt, err := mstStore.Count(ctx); err == nil && cnt == 0 {
 		logger.Info("stock_masters empty — downloading MST now", nil)
 		go func() {

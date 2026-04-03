@@ -31,8 +31,8 @@ func (s *Store) Upsert(ctx context.Context, records []*StockMaster) error {
 
 	stmt, err := tx.PrepareContext(ctx,
 		`INSERT INTO stock_masters
-			(stock_code, stock_name, isin, market_type, group_code, is_etf, is_domestic_equity_etf, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			(stock_code, stock_name, isin, market_type, group_code, is_etf, is_domestic_equity_etf, listed_shares, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(stock_code) DO UPDATE SET
 			stock_name           = excluded.stock_name,
 			isin                 = excluded.isin,
@@ -40,6 +40,7 @@ func (s *Store) Upsert(ctx context.Context, records []*StockMaster) error {
 			group_code           = excluded.group_code,
 			is_etf               = excluded.is_etf,
 			is_domestic_equity_etf = excluded.is_domestic_equity_etf,
+			listed_shares        = excluded.listed_shares,
 			updated_at           = excluded.updated_at`)
 	if err != nil {
 		return fmt.Errorf("prepare stmt: %w", err)
@@ -50,7 +51,7 @@ func (s *Store) Upsert(ctx context.Context, records []*StockMaster) error {
 	for _, r := range records {
 		if _, err := stmt.ExecContext(ctx,
 			r.StockCode, r.StockName, r.ISIN, r.MarketType, r.GroupCode,
-			boolToInt(r.IsETF), boolToInt(r.IsDomesticEquityETF), now,
+			boolToInt(r.IsETF), boolToInt(r.IsDomesticEquityETF), r.ListedShares, now,
 		); err != nil {
 			return fmt.Errorf("upsert %s: %w", r.StockCode, err)
 		}
@@ -68,11 +69,11 @@ func (s *Store) Count(ctx context.Context) (int, error) {
 // GetByCode returns a StockMaster by stock code, or nil if not found.
 func (s *Store) GetByCode(ctx context.Context, stockCode string) (*StockMaster, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT stock_code, stock_name, isin, market_type, group_code, is_etf, is_domestic_equity_etf
+		`SELECT stock_code, stock_name, isin, market_type, group_code, is_etf, is_domestic_equity_etf, listed_shares
 		 FROM stock_masters WHERE stock_code = ?`, stockCode)
 	m := &StockMaster{}
 	var isETF, isDomestic int
-	err := row.Scan(&m.StockCode, &m.StockName, &m.ISIN, &m.MarketType, &m.GroupCode, &isETF, &isDomestic)
+	err := row.Scan(&m.StockCode, &m.StockName, &m.ISIN, &m.MarketType, &m.GroupCode, &isETF, &isDomestic, &m.ListedShares)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

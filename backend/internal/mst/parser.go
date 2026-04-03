@@ -32,7 +32,8 @@ type StockMaster struct {
 	MarketType          string // "KOSPI" | "KOSDAQ"
 	GroupCode           string // "ST"=주식, "EF"=ETF, "BC"=뮤추얼펀드, "FS"=외국주식, "MF"=매매정지, "RT"=리츠
 	IsETF               bool
-	IsDomesticEquityETF bool // true=비과세(국내주식형 ETF)
+	IsDomesticEquityETF bool  // true=비과세(국내주식형 ETF)
+	ListedShares        int64 // 상장주식수 (0=미파싱). 시가총액 = ListedShares × 현재가
 	UpdatedAt           time.Time
 }
 

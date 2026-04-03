@@ -60,7 +60,7 @@ const hintText = 'text-xs text-th-on-subtle'
 const divider = 'pt-3 border-t border-black/5 dark:border-white/5'
 
 function PresetPanel({
-  market, presets, nameVal, descVal, setName, setDesc,
+  market, presets, activePresetId, nameVal, descVal, setName, setDesc,
   presetSaving, presetApplying, presetMsg,
   handleSavePreset, handleApplyPreset, handleDeletePreset,
 }) {
@@ -86,9 +86,12 @@ function PresetPanel({
       {filteredPresets.length > 0 ? (
         <div className="space-y-2">
           {filteredPresets.map((p) => (
-            <div key={p.id} className="flex items-center gap-2 bg-th-surface-high rounded-lg px-3 py-2">
+            <div key={p.id} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${p.id === activePresetId ? 'bg-orange-500/10 ring-1 ring-orange-500/30' : 'bg-th-surface-high'}`}>
               <div className="flex-1 min-w-0">
                 <span className="text-sm font-medium text-th-on-surface">{p.name}</span>
+                {p.id === activePresetId && (
+                  <span className="text-[10px] text-orange-400 ml-2 font-medium uppercase tracking-wider">적용 중</span>
+                )}
                 {p.description && (
                   <span className="text-xs text-th-on-muted ml-2">{p.description}</span>
                 )}
@@ -148,6 +151,7 @@ function PresetPanel({
 PresetPanel.propTypes = {
   market: PropTypes.string,
   presets: PropTypes.array,
+  activePresetId: PropTypes.number,
   nameVal: PropTypes.string,
   descVal: PropTypes.string,
   setName: PropTypes.func,
@@ -165,6 +169,7 @@ export default function Settings() {
 
   // ── 프리셋 ──
   const [presets, setPresets] = useState([])
+  const [activePresetId, setActivePresetId] = useState(0)
   const [krPresetName, setKrPresetName] = useState('')
   const [krPresetDesc, setKrPresetDesc] = useState('')
   const [usPresetName, setUsPresetName] = useState('')
@@ -309,6 +314,8 @@ export default function Settings() {
   const [rsiBuyMin, setRsiBuyMin] = useState('40.0')
   const [rsiBuyMax, setRsiBuyMax] = useState('60.0')
   const [bidAskRatioMin, setBidAskRatioMin] = useState('1.2')
+  const [minMarketCap, setMinMarketCap] = useState('0')
+  const [minExpectedProfitPct, setMinExpectedProfitPct] = useState('0')
 
   // ── AI 설정 ──
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
@@ -386,6 +393,9 @@ export default function Settings() {
     if (data.rsi_buy_min != null) setRsiBuyMin(String(data.rsi_buy_min))
     if (data.rsi_buy_max != null) setRsiBuyMax(String(data.rsi_buy_max))
     if (data.bid_ask_ratio_min != null) setBidAskRatioMin(String(data.bid_ask_ratio_min))
+    if (data.min_market_cap != null) setMinMarketCap(String(data.min_market_cap))
+    if (data.min_expected_profit_pct != null) setMinExpectedProfitPct(String(data.min_expected_profit_pct))
+    if (data.active_preset_id != null) setActivePresetId(Number(data.active_preset_id) || 0)
 
     if (data.filter_rsi_max != null) setFilterRsiMax(String(data.filter_rsi_max))
     if (data.filter_disparity_m5_max != null) setFilterDisparityM5Max(String(data.filter_disparity_m5_max))
@@ -486,6 +496,8 @@ export default function Settings() {
       rsi_buy_min: parseFloat(rsiBuyMin),
       rsi_buy_max: parseFloat(rsiBuyMax),
       bid_ask_ratio_min: parseFloat(bidAskRatioMin),
+      min_market_cap: parseFloat(minMarketCap),
+      min_expected_profit_pct: parseFloat(minExpectedProfitPct),
     }
 
     try {
@@ -573,6 +585,7 @@ export default function Settings() {
           <PresetPanel
             market="KR"
             presets={presets}
+            activePresetId={activePresetId}
             nameVal={krPresetName} descVal={krPresetDesc}
             setName={setKrPresetName} setDesc={setKrPresetDesc}
             presetSaving={presetSaving} presetApplying={presetApplying} presetMsg={presetMsg}
@@ -807,6 +820,11 @@ export default function Settings() {
                     className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
                   <span className="text-sm text-th-on-surface font-medium">등락률 순위</span>
                 </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={rankingTypes.includes('vi_status')} onChange={() => toggleRankingType('vi_status')}
+                    className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
+                  <span className="text-sm text-th-on-surface font-medium">VI 발동현황 (해제 직후 반등)</span>
+                </div>
               </div>
             </div>
 
@@ -887,6 +905,14 @@ export default function Settings() {
                 <span className="text-xs text-[#3B82F6]">주식 손절 기준 (%)</span>
                 <input type="number" step="0.1" min="0.1" value={stockStopLossPct} onChange={(e) => setStockStopLossPct(e.target.value)} className={inputCls} />
               </label>
+            </div>
+
+            <div className={`space-y-1 ${divider}`}>
+              <label className="space-y-1 block">
+                <span className={labelText}>주식 세후 최소 기대수익 (%, 0=미사용)</span>
+                <input type="number" step="0.1" min="0" value={minExpectedProfitPct} onChange={(e) => setMinExpectedProfitPct(e.target.value)} className={inputCls} />
+              </label>
+              <p className={hintText}>주식 진입 시 거래세(0.2%) 차감 후 이 수익률 이상 기대 안 되면 Claude가 거절. 0=미사용. 권장: 0.8</p>
             </div>
 
             <div className={`space-y-2 ${divider}`}>
@@ -993,6 +1019,14 @@ export default function Settings() {
                 <input type="number" step="any" min="0" value={minTradingValue} onChange={(e) => setMinTradingValue(e.target.value)} className={inputCls} />
               </label>
               <p className={hintText}>예: 5000000000 = 50억원. 거래대금 미달 종목은 LLM 후보에서 제외됩니다.</p>
+            </div>
+
+            <div className={`space-y-1 ${divider}`}>
+              <label className="space-y-1 block">
+                <span className={labelText}>최소 시가총액 (억원, 0=필터없음)</span>
+                <input type="number" step="100" min="0" value={minMarketCap} onChange={(e) => setMinMarketCap(e.target.value)} className={inputCls} />
+              </label>
+              <p className={hintText}>잡주 1차 필터. MST 상장주식수 × 현재가 기준. 권장값: 500~1000억. MST 재다운로드 후 적용됩니다.</p>
             </div>
 
             <div className="grid md:grid-cols-2 gap-4">

@@ -64,6 +64,17 @@ export default function Monitor() {
     }
   }
 
+  async function handlePanicSell() {
+    if (!window.confirm('전체 보유 종목을 즉시 시장가 매도합니다. 계속하시겠습니까?')) return
+    if (!window.confirm('정말로 전량 매도하시겠습니까? 되돌릴 수 없습니다.')) return
+    try {
+      await fetch('/api/monitor/liquidate-all', { method: 'POST' })
+      setTimeout(() => refetch(), 1500) // 주문 완료 후 짧은 딜레이
+    } catch (err) {
+      alert(`전체 매도 오류: ${err.message}`)
+    }
+  }
+
   async function handleForceSell(code, name) {
     if (!confirm(`[강제매도] ${name || code}\n\n현재 보유 수량 전량을 시장가로 즉시 매도하고 모니터링에서 해제합니다.\n계속하시겠습니까?`)) return
     setSellingCodes((prev) => new Set(prev).add(code))
@@ -119,6 +130,15 @@ export default function Monitor() {
             <span className="material-symbols-outlined text-[16px]">refresh</span>
             새로고침
           </button>
+          {positions.length > 0 && (
+            <button
+              onClick={handlePanicSell}
+              className="flex items-center gap-1.5 text-xs px-3 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-colors"
+            >
+              <span className="material-symbols-outlined text-[16px]">warning</span>
+              전체 매도
+            </button>
+          )}
         </div>
       </div>
 

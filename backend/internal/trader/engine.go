@@ -370,9 +370,47 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		rankings[i].M5MA10 = info.M5MA10
 		rankings[i].PrevVolumeRatio = info.PrevVolumeRatio
 		rankings[i].BidAskRatio = info.BidAskRatio
+		rankings[i].TradingValue = info.TradingValue
 		// MST 기반 자산 타입 태깅
-		rankings[i].AssetType = e.resolveAssetType(ctx, r.StockCode)
+		assetType := e.resolveAssetType(ctx, r.StockCode)
+		rankings[i].AssetType = assetType
+		// 세금보정: ETF_DOMESTIC/ETF는 비과세, STOCK은 거래세 적용
+		stockTaxRate := settings.StockTaxRate
+		if stockTaxRate <= 0 {
+			stockTaxRate = 0.002
+		}
+		switch assetType {
+		case "ETF_DOMESTIC", "ETF":
+			rankings[i].ApplicableTaxRate = 0.0
+		default:
+			rankings[i].ApplicableTaxRate = stockTaxRate
+		}
 	}
+	// 시가총액 필터 (MST 상장주식수 × 현재가)
+	if settings.MinMarketCap > 0 {
+		var passed []RankItem
+		for _, item := range rankings {
+			sm, _ := e.mstStore.GetByCode(ctx, item.StockCode)
+			if sm == nil || sm.ListedShares <= 0 {
+				// MST 미등록이거나 ListedShares 미파싱 → 필터 통과 (보수적)
+				passed = append(passed, item)
+				continue
+			}
+			price, _ := strconv.ParseFloat(item.CurrentPrice, 64)
+			marketCapEok := float64(sm.ListedShares) * price / 1e8
+			if marketCapEok >= settings.MinMarketCap {
+				passed = append(passed, item)
+			} else {
+				allFilteredOut = append(allFilteredOut, filteredStockEntry{
+					StockCode:    item.StockCode,
+					StockName:    item.StockName,
+					FilterReason: fmt.Sprintf("시가총액 미달 (%.0f억 < %.0f억)", marketCapEok, settings.MinMarketCap),
+				})
+			}
+		}
+		rankings = passed
+	}
+
 	// 거래대금 하한선 필터
 	if settings.MinTradingValue > 0 {
 		var passed []RankItem
@@ -566,6 +604,11 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	}
 	rules.BidAskRatioMin = settings.BidAskRatioMin
 	rules.MarketIndexDrop = marketIndexDrop
+	rules.MinExpectedProfitPct = settings.MinExpectedProfitPct
+	rules.StockTaxRate = settings.StockTaxRate
+	if rules.StockTaxRate <= 0 {
+		rules.StockTaxRate = 0.002
+	}
 
 	// Ask Claude to rank all viable candidates (single API call).
 	// excludedCodes are already filtered server-side above; pass nil here.
@@ -1027,6 +1070,32 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 					DataRank: item.DataRank, StockCode: item.StockCode,
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
 					Volume: item.Volume, VolIncrRate: item.ChangeRate,
+				}
+				count++
+				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
+					break
+				}
+			}
+
+		case "vi_status":
+			kst, _ := time.LoadLocation("Asia/Seoul")
+			dateStr := time.Now().In(kst).Format("20060102")
+			viItems, err := agent.GetVIStatus(ctx, e.kisClient, dateStr)
+			if err != nil {
+				logger.Warn("engine: GetVIStatus failed", map[string]any{"error": err.Error()})
+				continue
+			}
+			count := 0
+			for _, item := range viItems {
+				if item.ViCnclHour == "" {
+					continue // 미해제 건 제외 — 해제 직후 반등 전략
+				}
+				if !withinPriceRange(item.CurrentPrice) {
+					continue
+				}
+				byType[rt][item.StockCode] = RankItem{
+					StockCode: item.StockCode, StockName: item.StockName,
+					CurrentPrice: item.CurrentPrice, RankingType: "vi_status",
 				}
 				count++
 				if settings.RankingTopN > 0 && count >= settings.RankingTopN {
