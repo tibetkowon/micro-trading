@@ -48,6 +48,8 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 			market.GET("/status", h.GetMarketStatus)
 		}
 
+		api.GET("/stocks", h.GetStocks)
+
 		ranking := api.Group("/ranking")
 		{
 			ranking.GET("/volume", h.GetVolumeRank)

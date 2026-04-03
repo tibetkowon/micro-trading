@@ -25,6 +25,9 @@ type TradingSettings struct {
 	StockTakeProfitPct float64 // 주식 익절 기준 %
 	StockStopLossPct   float64 // 주식 손절 기준 %
 	StockTaxRate       float64 // 주식·과세ETF 세율 (0=미사용)
+	// 하드 감시 종목 (항상 순위에 포함)
+	HardWatchSymbols    []string // hard_watch 타입으로 강제 추가할 종목 코드 목록
+	RankLeaseDurationMin int     // 순위에서 사라진 종목 유지 시간(분). 0=비활성
 	RankingTypes              []string // 순위 유형 우선순위 (volume, strength, fluctuation)
 	RankingPriceMin           string   // 순위 조회 최소 주가
 	RankingPriceMax           string   // 순위 조회 최대 주가
@@ -272,6 +275,8 @@ func (db *DB) migrate() error {
 		{"stock_take_profit_pct", "1.5"},
 		{"stock_stop_loss_pct", "1.0"},
 		{"stock_tax_rate", "0.002"},
+		{"hard_watch_symbols", "[]"},
+		{"rank_lease_duration_min", "5"},
 		{"ranking_types", `["volume","strength"]`},
 		{"ranking_price_min", "5000"},
 		{"ranking_price_max", "100000"},
@@ -341,6 +346,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		`SELECT key, value FROM settings WHERE key IN (`+
 			`'take_profit_pct','stop_loss_pct',`+
 			`'etf_take_profit_pct','etf_stop_loss_pct','stock_take_profit_pct','stock_stop_loss_pct','stock_tax_rate',`+
+			`'hard_watch_symbols','rank_lease_duration_min',`+
 			`'ranking_types',`+
 			`'ranking_price_min','ranking_price_max','max_positions',`+
 			`'order_amount_pct','sell_conditions','indicator_check_interval_min',`+
@@ -545,6 +551,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		StockTakeProfitPct:         f64("stock_take_profit_pct"),
 		StockStopLossPct:           f64("stock_stop_loss_pct"),
 		StockTaxRate:               f64("stock_tax_rate"),
+		HardWatchSymbols:           strSlice("hard_watch_symbols"),
+		RankLeaseDurationMin:       i64("rank_lease_duration_min"),
 		RankingTypes:               rankingTypes,
 		RankingPriceMin:            vals["ranking_price_min"],
 		RankingPriceMax:            vals["ranking_price_max"],

@@ -57,6 +57,9 @@ type Engine struct {
 	haltReason string      // 마지막 사이클 중지 사유 (성공 시 초기화)
 	soldCh     chan string // receives stock_code when monitor executes a sell
 	stopCh     chan struct{}
+
+	leaseMu     sync.Mutex
+	leaseExpiry map[string]time.Time // stockCode → lease 만료 시각 (순위에서 사라져도 유지)
 }
 
 // NewEngine creates a new Engine with all required dependencies.
@@ -71,15 +74,16 @@ func NewEngine(
 	mstStore *mst.Store,
 ) *Engine {
 	return &Engine{
-		db:        db,
-		kisClient: kisClient,
-		wsClient:  wsClient,
-		mon:       mon,
-		claude:    claude,
-		mstStore:  mstStore,
-		state:     StateIdle,
-		soldCh:    make(chan string, 16),
-		stopCh:    make(chan struct{}),
+		db:          db,
+		kisClient:   kisClient,
+		wsClient:    wsClient,
+		mon:         mon,
+		claude:      claude,
+		mstStore:    mstStore,
+		state:       StateIdle,
+		soldCh:      make(chan string, 16),
+		stopCh:      make(chan struct{}),
+		leaseExpiry: make(map[string]time.Time),
 	}
 }
 
@@ -1114,6 +1118,52 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				}
 		}
 			result = append(result, merged)
+		}
+	}
+
+	// Lease TTL: 순위에서 사라진 종목도 lease 만료 전이면 유지
+	if settings.RankLeaseDurationMin > 0 {
+		now := time.Now()
+		leaseDur := time.Duration(settings.RankLeaseDurationMin) * time.Minute
+
+		// 현재 결과에 있는 종목은 lease 갱신
+		e.leaseMu.Lock()
+		for _, item := range result {
+			e.leaseExpiry[item.StockCode] = now.Add(leaseDur)
+		}
+		// lease 만료 안 된 종목 중 현재 결과에 없는 것 추가
+		resultCodes := make(map[string]bool)
+		for _, item := range result {
+			resultCodes[item.StockCode] = true
+		}
+		for code, exp := range e.leaseExpiry {
+			if !now.Before(exp) {
+				delete(e.leaseExpiry, code) // 만료된 lease 정리
+				continue
+			}
+			if !resultCodes[code] {
+				result = append(result, RankItem{
+					StockCode:   code,
+					RankingType: "lease",
+				})
+			}
+		}
+		e.leaseMu.Unlock()
+	}
+
+	// Hard Watch Symbols: 순위와 무관하게 항상 후보에 포함
+	if len(settings.HardWatchSymbols) > 0 {
+		resultCodes := make(map[string]bool)
+		for _, item := range result {
+			resultCodes[item.StockCode] = true
+		}
+		for _, code := range settings.HardWatchSymbols {
+			if !resultCodes[code] {
+				result = append(result, RankItem{
+					StockCode:   code,
+					RankingType: "hard_watch",
+				})
+			}
 		}
 	}
 

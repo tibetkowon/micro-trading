@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-04-03 — 트레이딩 시스템 고도화 (Phase 1~6 완료)
+
+### Phase 1 — US 마켓 코드 제거 / ExecCount·Disparity 순위 제거
+- **`monitor/monitor.go`**: `SubscribeOverseasPrice`, `exchCodeToEXCD` 등 US 잔존 코드 제거
+- **`kis/client.go`**: `ExecCountRankItem`, `DisparityRankItem` 구조체 및 `Get*Rank` 함수 제거
+- **`agent/ranking.go`**, **`trader/engine.go`**, **`api/handlers.go`**, **`api/router.go`**: 관련 핸들러·라우트·분기 제거
+
+### Phase 2 — MST 종목 마스터 파싱 & stock_masters 테이블
+- **`backend/internal/mst/`** 신규 패키지 (parser.go, downloader.go, store.go)
+  - KOSPI(288B)/KOSDAQ(282B) 고정폭 바이너리 파싱, EUC-KR→UTF-8 변환
+  - 국내주식형 ETF 키워드 분류 (`classifyDomesticEquityETF`)
+  - KOSPI/KOSDAQ ZIP 다운로드 + SQLite UPSERT
+- **`database/db.go`**: `stock_masters` 테이블 마이그레이션 추가
+- **`cmd/server/main.go`**: 서버 시작 시 stock_masters 자동 다운로드, 08:40 KST 일일 갱신 cron
+
+### Phase 3 — 자산 타입 태깅 + ETF/주식별 수익/손절 분리
+- **`trader/engine.go`**: `resolveAssetType()`, `resolveProfitLoss()` 헬퍼 추가; 종목 선정 후 MST 조회로 AssetType 태깅
+- **`database/db.go`**: `ETFTakeProfitPct`, `ETFStopLossPct`, `StockTakeProfitPct`, `StockStopLossPct`, `StockTaxRate` 설정 키 추가
+- **`monitor/monitor.go`**: `MonitoredEntry`에 `AssetType` 필드 추가
+
+### Phase 4 — GetFluctuationRank 추가
+- **`kis/client.go`**: `FluctuationRankItem` + `GetFluctuationRank()` (FHPST01700000)
+- **`agent/ranking.go`**, **`trader/engine.go`**: `fluctuation` 분기 추가
+- **`api/handlers.go`**, **`api/router.go`**: `/api/ranking/fluctuation` 핸들러·라우트 추가
+
+### Phase 5 — Hard Watch Symbols + Lease TTL + /api/stocks 엔드포인트
+- **`database/db.go`**: `HardWatchSymbols`, `RankLeaseDurationMin` 설정 키 추가
+- **`trader/engine.go`**: 순위 lease TTL 로직 + Hard Watch 종목 강제 삽입
+- **`api/handlers.go`**: `GetStocks()` 핸들러 추가 (stock_masters 검색, hard_watch 여부 포함)
+- **`api/router.go`**: `GET /api/stocks` 라우트 등록; handler에 `SetMSTStore()` 연결
+
+### Phase 6 — 프론트엔드 업데이트
+- **`Settings.jsx`**: 미장 탭 제거; exec_count/disparity 체크박스 제거, fluctuation 추가; ETF/주식 전용 수익/손절 UI; 하드 감시 종목 추가/삭제 UI; rank_lease_duration_min 설정
+- **`StockList.jsx`** (신규): 종목 마스터 검색/필터(ETF·거래소), 하드 감시 등록/해제
+- **`App.jsx`**: `/stock-list` 라우트 및 사이드바 메뉴 추가
+
 ## 2026-03-26 — 순위 조회 개선: 가격 필터 클라이언트 이전, 거래소 분리, BLNG_CLS 다중 조회
 
 - **`kis/client.go`**: `GetVolumeRank`에 `inputIscd` 파라미터 추가 (`FID_INPUT_ISCD` 하드코딩 제거)

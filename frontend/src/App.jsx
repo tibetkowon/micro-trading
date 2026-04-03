@@ -8,6 +8,7 @@ import Monitor from './pages/Monitor'
 import ErrorLogs from './pages/ErrorLogs'
 import StockLogs from './pages/StockLogs'
 import Settings from './pages/Settings'
+import StockList from './pages/StockList'
 
 const navItems = [
   { to: '/', label: '대시보드', end: true, icon: 'dashboard' },
@@ -15,6 +16,7 @@ const navItems = [
   { to: '/orders', label: '주문 내역', icon: 'receipt_long' },
   { to: '/logs', label: '에러 로그', icon: 'report' },
   { to: '/stock-logs', label: '종목 로그', icon: 'candlestick_chart' },
+  { to: '/stock-list', label: '종목 목록', icon: 'format_list_bulleted' },
   { to: '/settings', label: '설정', icon: 'settings' },
 ]
 
@@ -167,6 +169,7 @@ function AppInner() {
             <Route path="/orders" element={<Orders />} />
             <Route path="/logs" element={<ErrorLogs />} />
             <Route path="/stock-logs" element={<StockLogs />} />
+            <Route path="/stock-list" element={<StockList />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </div>

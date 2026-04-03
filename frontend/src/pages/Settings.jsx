@@ -242,15 +242,12 @@ export default function Settings() {
 
   // ── 종목 선정 (순위 조회) ──
   const [exclBits, setExclBits] = useState(Array(10).fill(true))
-  const [rankingTypes, setRankingTypes] = useState(['volume', 'strength', 'exec_count', 'disparity'])
+  const [rankingTypes, setRankingTypes] = useState(['volume', 'strength'])
   const [rankingPriceMin, setRankingPriceMin] = useState('5000')
   const [rankingPriceMax, setRankingPriceMax] = useState('100000')
   const [rankingTopN, setRankingTopN] = useState('20')
   const [volumeMinIncrRate, setVolumeMinIncrRate] = useState('0')
   const [strengthMin, setStrengthMin] = useState('100')
-  const [execCountNetBuyOnly, setExecCountNetBuyOnly] = useState(true)
-  const [disparityD20Min, setDisparityD20Min] = useState('0')
-  const [disparityD20Max, setDisparityD20Max] = useState('0')
   const [rankingCondition, setRankingCondition] = useState('AND')
   const [rankingExchanges, setRankingExchanges] = useState(['0001', '1001'])
   const [rankingVolumeBlngClsCodes, setRankingVolumeBlngClsCodes] = useState(['0', '1', '2', '3', '4'])
@@ -262,6 +259,10 @@ export default function Settings() {
   // ── 매도 설정 ──
   const [takeProfitPct, setTakeProfitPct] = useState('3.0')
   const [stopLossPct, setStopLossPct] = useState('2.0')
+  const [etfTakeProfitPct, setEtfTakeProfitPct] = useState('0.5')
+  const [etfStopLossPct, setEtfStopLossPct] = useState('0.4')
+  const [stockTakeProfitPct, setStockTakeProfitPct] = useState('1.5')
+  const [stockStopLossPct, setStockStopLossPct] = useState('1.0')
   const [sellConditions, setSellConditions] = useState(['target_pct', 'stop_pct'])
   const [indicatorIntervalMin, setIndicatorIntervalMin] = useState('5')
   const [rsiThreshold, setRsiThreshold] = useState('70')
@@ -312,32 +313,10 @@ export default function Settings() {
   // ── AI 설정 ──
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
 
-  // ── 미장 설정 ──
-  const [usTradingEnabled, setUsTradingEnabled] = useState(false)
-  const [usDstEnabled, setUsDstEnabled] = useState(true)
-  const [usTradingStartTime, setUsTradingStartTime] = useState('22:30')
-  const [usTradingEndTime, setUsTradingEndTime] = useState('05:00')
-  const [usRankingTypes, setUsRankingTypes] = useState(['volume'])
-  const [usRankingExchanges, setUsRankingExchanges] = useState(['NAS'])
-  const [usRankingPriceMin, setUsRankingPriceMin] = useState('10')
-  const [usRankingPriceMax, setUsRankingPriceMax] = useState('500')
-  const [usRankingVolRang, setUsRankingVolRang] = useState('0')
-  const [usRankingTopN, setUsRankingTopN] = useState('20')
-  const [usDailyMaxLossPct, setUsDailyMaxLossPct] = useState('0')
-  const [usMinTradingValue, setUsMinTradingValue] = useState('0')
-  // ── 미장 전용 매매 기준 ──
-  const [usTakeProfitPct, setUsTakeProfitPct] = useState('3.0')
-  const [usStopLossPct, setUsStopLossPct] = useState('2.0')
-  const [usOrderAmountPct, setUsOrderAmountPct] = useState('95')
-  const [usMaxPositions, setUsMaxPositions] = useState('1')
-  // ── 미장 전용 소프트 필터 ──
-  const [usFilterRsiMax, setUsFilterRsiMax] = useState('80')
-  const [usFilterDisparityM5Max, setUsFilterDisparityM5Max] = useState('3.0')
-  const [usFilterHighPriceDiffMin, setUsFilterHighPriceDiffMin] = useState('-5.0')
-  const [usFilterOpenPriceDiffMax, setUsFilterOpenPriceDiffMax] = useState('20.0')
-  // ── 미장 전용 하드 리젝션 ──
-  const [usHardDisparityM5Max, setUsHardDisparityM5Max] = useState('3.0')
-  const [usHardOpenPriceDiffMax, setUsHardOpenPriceDiffMax] = useState('15.0')
+  // ── 하드 감시 종목 ──
+  const [hardWatchSymbols, setHardWatchSymbols] = useState([])
+  const [rankLeaseDurationMin, setRankLeaseDurationMin] = useState('5')
+  const [hardWatchInput, setHardWatchInput] = useState('')
 
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
@@ -359,9 +338,6 @@ export default function Settings() {
     if (data.ranking_top_n != null) setRankingTopN(String(data.ranking_top_n))
     if (data.ranking_volume_min_incrrate != null) setVolumeMinIncrRate(String(data.ranking_volume_min_incrrate))
     if (data.ranking_strength_min != null) setStrengthMin(String(data.ranking_strength_min))
-    if (data.ranking_execcount_net_buy_only != null) setExecCountNetBuyOnly(data.ranking_execcount_net_buy_only)
-    if (data.ranking_disparity_d20_min != null) setDisparityD20Min(String(data.ranking_disparity_d20_min))
-    if (data.ranking_disparity_d20_max != null) setDisparityD20Max(String(data.ranking_disparity_d20_max))
     if (data.ranking_condition === 'AND' || data.ranking_condition === 'OR') setRankingCondition(data.ranking_condition)
     if (Array.isArray(data.ranking_exchanges)) setRankingExchanges(data.ranking_exchanges)
     if (Array.isArray(data.ranking_volume_blng_cls_codes)) setRankingVolumeBlngClsCodes(data.ranking_volume_blng_cls_codes)
@@ -371,6 +347,10 @@ export default function Settings() {
 
     if (data.take_profit_pct != null) setTakeProfitPct(String(data.take_profit_pct))
     if (data.stop_loss_pct != null) setStopLossPct(String(data.stop_loss_pct))
+    if (data.etf_take_profit_pct != null) setEtfTakeProfitPct(String(data.etf_take_profit_pct))
+    if (data.etf_stop_loss_pct != null) setEtfStopLossPct(String(data.etf_stop_loss_pct))
+    if (data.stock_take_profit_pct != null) setStockTakeProfitPct(String(data.stock_take_profit_pct))
+    if (data.stock_stop_loss_pct != null) setStockStopLossPct(String(data.stock_stop_loss_pct))
     if (Array.isArray(data.sell_conditions)) setSellConditions(data.sell_conditions)
     if (data.indicator_check_interval_min != null) setIndicatorIntervalMin(String(data.indicator_check_interval_min))
     if (data.indicator_rsi_sell_threshold != null) setRsiThreshold(String(data.indicator_rsi_sell_threshold))
@@ -387,6 +367,9 @@ export default function Settings() {
     if (Array.isArray(data.index_codes)) setIndexCodes(data.index_codes)
 
     if (data.claude_model) setClaudeModel(data.claude_model)
+
+    if (Array.isArray(data.hard_watch_symbols)) setHardWatchSymbols(data.hard_watch_symbols)
+    if (data.rank_lease_duration_min != null) setRankLeaseDurationMin(String(data.rank_lease_duration_min))
 
     if (Array.isArray(data.trading_days)) setTradingDays(data.trading_days)
 
@@ -410,28 +393,6 @@ export default function Settings() {
     if (data.filter_open_price_diff_max != null) setFilterOpenPriceDiffMax(String(data.filter_open_price_diff_max))
     if (data.index_drop_threshold_pct != null) setIndexDropThresholdPct(String(data.index_drop_threshold_pct))
 
-    if (data.us_trading_enabled != null) setUsTradingEnabled(data.us_trading_enabled)
-    if (data.us_dst_enabled != null) setUsDstEnabled(data.us_dst_enabled)
-    if (data.us_trading_start_time) setUsTradingStartTime(data.us_trading_start_time)
-    if (data.us_trading_end_time) setUsTradingEndTime(data.us_trading_end_time)
-    if (Array.isArray(data.us_ranking_types)) setUsRankingTypes(data.us_ranking_types)
-    if (Array.isArray(data.us_ranking_exchanges)) setUsRankingExchanges(data.us_ranking_exchanges)
-    if (data.us_ranking_price_min) setUsRankingPriceMin(data.us_ranking_price_min)
-    if (data.us_ranking_price_max) setUsRankingPriceMax(data.us_ranking_price_max)
-    if (data.us_ranking_vol_rang != null) setUsRankingVolRang(String(data.us_ranking_vol_rang))
-    if (data.us_ranking_top_n != null) setUsRankingTopN(String(data.us_ranking_top_n))
-    if (data.us_daily_max_loss_pct != null) setUsDailyMaxLossPct(String(data.us_daily_max_loss_pct))
-    if (data.us_min_trading_value != null) setUsMinTradingValue(String(data.us_min_trading_value))
-    if (data.us_take_profit_pct != null) setUsTakeProfitPct(String(data.us_take_profit_pct))
-    if (data.us_stop_loss_pct != null) setUsStopLossPct(String(data.us_stop_loss_pct))
-    if (data.us_order_amount_pct != null) setUsOrderAmountPct(String(data.us_order_amount_pct))
-    if (data.us_max_positions != null) setUsMaxPositions(String(data.us_max_positions))
-    if (data.us_filter_rsi_max != null) setUsFilterRsiMax(String(data.us_filter_rsi_max))
-    if (data.us_filter_disparity_m5_max != null) setUsFilterDisparityM5Max(String(data.us_filter_disparity_m5_max))
-    if (data.us_filter_high_price_diff_min != null) setUsFilterHighPriceDiffMin(String(data.us_filter_high_price_diff_min))
-    if (data.us_filter_open_price_diff_max != null) setUsFilterOpenPriceDiffMax(String(data.us_filter_open_price_diff_max))
-    if (data.us_hard_disparity_m5_max != null) setUsHardDisparityM5Max(String(data.us_hard_disparity_m5_max))
-    if (data.us_hard_open_price_diff_max != null) setUsHardOpenPriceDiffMax(String(data.us_hard_open_price_diff_max))
   }, [data])
 
   function toggleBit(i) {
@@ -479,9 +440,6 @@ export default function Settings() {
       ranking_top_n: parseInt(rankingTopN) || 20,
       ranking_volume_min_incrrate: parseFloat(volumeMinIncrRate) || 0,
       ranking_strength_min: parseFloat(strengthMin) || 0,
-      ranking_execcount_net_buy_only: execCountNetBuyOnly,
-      ranking_disparity_d20_min: parseFloat(disparityD20Min) || 0,
-      ranking_disparity_d20_max: parseFloat(disparityD20Max) || 0,
       ranking_condition: rankingCondition,
       ranking_exchanges: rankingExchanges,
       ranking_volume_blng_cls_codes: rankingVolumeBlngClsCodes,
@@ -489,6 +447,10 @@ export default function Settings() {
       order_amount_pct: parseFloat(orderAmountPct) || 95,
       take_profit_pct: parseFloat(takeProfitPct) || 3.0,
       stop_loss_pct: parseFloat(stopLossPct) || 2.0,
+      etf_take_profit_pct: parseFloat(etfTakeProfitPct) || 0.5,
+      etf_stop_loss_pct: parseFloat(etfStopLossPct) || 0.4,
+      stock_take_profit_pct: parseFloat(stockTakeProfitPct) || 1.5,
+      stock_stop_loss_pct: parseFloat(stockStopLossPct) || 1.0,
       sell_conditions: sellConditions,
       indicator_check_interval_min: parseInt(indicatorIntervalMin) || 5,
       indicator_rsi_sell_threshold: parseFloat(rsiThreshold) || 70,
@@ -503,28 +465,8 @@ export default function Settings() {
       daily_max_loss_pct: parseFloat(dailyMaxLossPct) || 0,
       index_codes: indexCodes,
       claude_model: claudeModel,
-      us_trading_enabled: usTradingEnabled,
-      us_dst_enabled: usDstEnabled,
-      us_trading_start_time: usTradingStartTime,
-      us_trading_end_time: usTradingEndTime,
-      us_ranking_types: usRankingTypes,
-      us_ranking_exchanges: usRankingExchanges,
-      us_ranking_price_min: usRankingPriceMin,
-      us_ranking_price_max: usRankingPriceMax,
-      us_ranking_vol_rang: usRankingVolRang,
-      us_ranking_top_n: parseInt(usRankingTopN) || 20,
-      us_daily_max_loss_pct: parseFloat(usDailyMaxLossPct) || 0,
-      us_min_trading_value: parseFloat(usMinTradingValue) || 0,
-      us_take_profit_pct: parseFloat(usTakeProfitPct) || 3.0,
-      us_stop_loss_pct: parseFloat(usStopLossPct) || 2.0,
-      us_order_amount_pct: parseFloat(usOrderAmountPct) || 95,
-      us_max_positions: parseInt(usMaxPositions) || 1,
-      us_filter_rsi_max: parseFloat(usFilterRsiMax) || 80,
-      us_filter_disparity_m5_max: parseFloat(usFilterDisparityM5Max) || 3.0,
-      us_filter_high_price_diff_min: parseFloat(usFilterHighPriceDiffMin) || -5.0,
-      us_filter_open_price_diff_max: parseFloat(usFilterOpenPriceDiffMax) || 20.0,
-      us_hard_disparity_m5_max: parseFloat(usHardDisparityM5Max) || 3.0,
-      us_hard_open_price_diff_max: parseFloat(usHardOpenPriceDiffMax) || 15.0,
+      hard_watch_symbols: hardWatchSymbols,
+      rank_lease_duration_min: parseInt(rankLeaseDurationMin) || 5,
       filter_rsi_max: parseFloat(filterRsiMax) || 80,
       filter_disparity_m5_max: parseFloat(filterDisparityM5Max) || 3.0,
       filter_high_price_diff_min: parseFloat(filterHighPriceDiffMin) || -5.0,
@@ -600,7 +542,6 @@ export default function Settings() {
       <div className="flex bg-th-surface rounded-xl p-1 gap-1">
         {[
           { id: 'KR', label: '국장', badge: '국내', badgeCls: 'bg-blue-500/10 text-blue-400' },
-          { id: 'US', label: '미장', badge: '해외', badgeCls: 'bg-orange-500/10 text-orange-400' },
           { id: 'INFO', label: 'AI / 서버', badge: null, badgeCls: '' },
         ].map((tab) => (
           <button
@@ -859,45 +800,13 @@ export default function Settings() {
                   </div>
                 )}
               </div>
-              {/* 대량체결 순위 */}
+              {/* 등락률 순위 */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <input type="checkbox" checked={rankingTypes.includes('exec_count')} onChange={() => toggleRankingType('exec_count')}
+                  <input type="checkbox" checked={rankingTypes.includes('fluctuation')} onChange={() => toggleRankingType('fluctuation')}
                     className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
-                  <span className="text-sm text-th-on-surface font-medium">대량체결 순위</span>
+                  <span className="text-sm text-th-on-surface font-medium">등락률 순위</span>
                 </div>
-                {rankingTypes.includes('exec_count') && (
-                  <div className="ml-6">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={execCountNetBuyOnly} onChange={(e) => setExecCountNetBuyOnly(e.target.checked)}
-                        className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
-                      <span className="text-sm text-th-on-surface">순매수 우세 종목만 (순매수체결량 &gt; 0)</span>
-                    </label>
-                  </div>
-                )}
-              </div>
-              {/* 이격도 순위 */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <input type="checkbox" checked={rankingTypes.includes('disparity')} onChange={() => toggleRankingType('disparity')}
-                    className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
-                  <span className="text-sm text-th-on-surface font-medium">이격도 순위</span>
-                </div>
-                {rankingTypes.includes('disparity') && (
-                  <div className="ml-6 flex items-center gap-3">
-                    <label className="space-y-1">
-                      <span className={labelText}>20일 이격도 최솟값 (0=필터없음)</span>
-                      <input type="number" step="1" min="0" value={disparityD20Min} onChange={(e) => setDisparityD20Min(e.target.value)}
-                        className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
-                    </label>
-                    <span className="text-th-on-muted mt-4">~</span>
-                    <label className="space-y-1">
-                      <span className={labelText}>최댓값 (0=필터없음)</span>
-                      <input type="number" step="1" min="0" value={disparityD20Max} onChange={(e) => setDisparityD20Max(e.target.value)}
-                        className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
-                    </label>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -938,14 +847,45 @@ export default function Settings() {
           <div className={sectionCls}>
             <p className={sectionTitle}>매도 설정</p>
 
+            <p className={hintText}>기본값: 종목 유형 구분 없이 적용됩니다. ETF/주식 전용 값을 설정하면 해당 값이 우선 적용됩니다.</p>
             <div className="grid grid-cols-2 gap-4">
               <label className="space-y-1">
-                <span className="text-xs text-red-400">익절 기준 (%)</span>
+                <span className="text-xs text-red-400">익절 기준 — 기본값 (%)</span>
                 <input type="number" step="0.1" min="0.1" value={takeProfitPct} onChange={(e) => setTakeProfitPct(e.target.value)} className={inputCls} />
               </label>
               <label className="space-y-1">
-                <span className="text-xs text-[#3B82F6]">손절 기준 (%)</span>
+                <span className="text-xs text-[#3B82F6]">손절 기준 — 기본값 (%)</span>
                 <input type="number" step="0.1" min="0.1" value={stopLossPct} onChange={(e) => setStopLossPct(e.target.value)} className={inputCls} />
+              </label>
+            </div>
+
+            <div className={`space-y-1 ${divider}`}>
+              <p className="text-xs font-semibold text-th-on-muted uppercase tracking-widest">ETF 전용 수익/손절</p>
+              <p className={hintText}>국내주식형 ETF 및 일반 ETF에 적용 (비과세/저세율 감안하여 낮게 설정 권장)</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <label className="space-y-1">
+                <span className="text-xs text-red-400">ETF 익절 기준 (%)</span>
+                <input type="number" step="0.1" min="0.1" value={etfTakeProfitPct} onChange={(e) => setEtfTakeProfitPct(e.target.value)} className={inputCls} />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-[#3B82F6]">ETF 손절 기준 (%)</span>
+                <input type="number" step="0.1" min="0.1" value={etfStopLossPct} onChange={(e) => setEtfStopLossPct(e.target.value)} className={inputCls} />
+              </label>
+            </div>
+
+            <div className={`space-y-1 ${divider}`}>
+              <p className="text-xs font-semibold text-th-on-muted uppercase tracking-widest">주식 전용 수익/손절</p>
+              <p className={hintText}>일반 주식에 적용 (거래세 0.2% 감안하여 ETF보다 높게 설정 권장)</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <label className="space-y-1">
+                <span className="text-xs text-red-400">주식 익절 기준 (%)</span>
+                <input type="number" step="0.1" min="0.1" value={stockTakeProfitPct} onChange={(e) => setStockTakeProfitPct(e.target.value)} className={inputCls} />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-[#3B82F6]">주식 손절 기준 (%)</span>
+                <input type="number" step="0.1" min="0.1" value={stockStopLossPct} onChange={(e) => setStockStopLossPct(e.target.value)} className={inputCls} />
               </label>
             </div>
 
@@ -1162,213 +1102,71 @@ export default function Settings() {
             </div>
           </div>
 
-        </div>{/* ── end KR 탭 ── */}
-
-        {/* ════════════════ US 탭 ════════════════ */}
-        <div className={activeTab !== 'US' ? 'hidden' : 'space-y-5'}>
-
-          <PresetPanel
-            market="US"
-            presets={presets}
-            nameVal={usPresetName} descVal={usPresetDesc}
-            setName={setUsPresetName} setDesc={setUsPresetDesc}
-            presetSaving={presetSaving} presetApplying={presetApplying} presetMsg={presetMsg}
-            handleSavePreset={handleSavePreset} handleApplyPreset={handleApplyPreset}
-            handleDeletePreset={handleDeletePreset}
-          />
-
-          {/* ── 섹션 6: 미장 자동매매 ── */}
+          {/* ── 하드 감시 종목 ── */}
           <div className={sectionCls}>
-            <p className={sectionTitle}>미장 (미국주식) 자동매매</p>
+            <p className={sectionTitle}>하드 감시 종목</p>
+            <p className={hintText}>순위 API 결과와 무관하게 항상 선정 후보에 포함할 종목입니다. 종목 코드 6자리를 직접 입력하거나 종목 목록 페이지에서 등록할 수 있습니다.</p>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-th-on-surface">미장 자동매매</p>
-                <p className="text-xs text-th-on-muted mt-0.5">미국 주식 시장 자동 거래 활성화</p>
-              </div>
-              <button type="button" onClick={() => setUsTradingEnabled(v => !v)}
-                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${usTradingEnabled ? 'bg-emerald-500' : 'bg-th-surface-high'}`}>
-                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${usTradingEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
+            <div className={`space-y-2 ${divider}`}>
+              <label className="space-y-1">
+                <span className={labelText}>순위 유지 시간 (분)</span>
+                <input type="number" step="1" min="1" max="60" value={rankLeaseDurationMin} onChange={(e) => setRankLeaseDurationMin(e.target.value)}
+                  className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
+              </label>
+              <p className={hintText}>순위에서 사라진 종목도 이 시간(분) 동안 후보로 유지합니다.</p>
             </div>
 
-            {usTradingEnabled && (
-              <div className="space-y-4">
-                <div className={`flex items-center justify-between pt-2 border-t border-black/10 dark:border-white/10`}>
-                  <div>
-                    <p className="text-sm text-th-on-surface">서머타임 (DST)</p>
-                    <p className="text-xs text-th-on-muted mt-0.5">ON: 22:30~05:00 / OFF: 23:30~06:00</p>
-                  </div>
-                  <button type="button" onClick={() => setUsDstEnabled(v => !v)}
-                    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${usDstEnabled ? 'bg-zinc-600' : 'bg-th-surface-high'}`}>
-                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${usDstEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-black/10 dark:border-white/10">
-                  <label className="space-y-1">
-                    <span className={labelText}>미장 시작 시간 (KST)</span>
-                    <input type="time" step="60" value={usTradingStartTime} onChange={e => setUsTradingStartTime(e.target.value)} className={inputCls} />
-                  </label>
-                  <label className="space-y-1">
-                    <span className={labelText}>미장 종료 시간 (KST)</span>
-                    <input type="time" step="60" value={usTradingEndTime} onChange={e => setUsTradingEndTime(e.target.value)} className={inputCls} />
-                  </label>
-                </div>
-
-                <div className="pt-2 border-t border-black/10 dark:border-white/10">
-                  <p className={`${labelText} mb-2`}>거래소 <span className="text-th-on-subtle">(복수 선택 가능)</span></p>
-                  <div className="flex gap-2">
-                    {['NAS', 'NYS', 'AMS'].map(exch => (
-                      <button key={exch} type="button"
-                        onClick={() => setUsRankingExchanges(prev =>
-                          prev.includes(exch) ? (prev.length > 1 ? prev.filter(e => e !== exch) : prev) : [...prev, exch]
-                        )}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
-                          usRankingExchanges.includes(exch)
-                            ? 'bg-th-surface-high text-th-on-surface border-black/10 dark:border-white/10 ring-1 ring-zinc-600'
-                            : 'bg-transparent text-th-on-muted border-black/10 dark:border-white/10 hover:text-th-on-surface'
-                        }`}>
-                        {exch === 'NAS' ? 'NASDAQ' : exch === 'NYS' ? 'NYSE' : 'AMEX'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-black/10 dark:border-white/10">
-                  <label className="space-y-1">
-                    <span className={labelText}>최소 주가 (USD)</span>
-                    <input type="number" step="1" min="0" value={usRankingPriceMin} onChange={e => setUsRankingPriceMin(e.target.value)} className={inputCls} />
-                  </label>
-                  <label className="space-y-1">
-                    <span className={labelText}>최대 주가 (USD)</span>
-                    <input type="number" step="1" min="0" value={usRankingPriceMax} onChange={e => setUsRankingPriceMax(e.target.value)} className={inputCls} />
-                  </label>
-                </div>
-
-                <div className="space-y-2 pt-2 border-t border-black/10 dark:border-white/10">
-                  <p className={labelText}>순위 조회 유형</p>
-                  {[{ value: 'volume', label: '거래량 순위' }].map(({ value, label }) => (
-                    <label key={value} className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={usRankingTypes.includes(value)}
-                        onChange={() => setUsRankingTypes(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value])}
-                        className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
-                      <span className="text-sm text-th-on-surface">{label}</span>
-                    </label>
+            <div className={`space-y-2 ${divider}`}>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="종목코드 (예: 005930)"
+                  value={hardWatchInput}
+                  onChange={(e) => setHardWatchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      const code = hardWatchInput.trim().replace(/\D/g, '').slice(0, 6)
+                      if (code.length === 6 && !hardWatchSymbols.includes(code)) {
+                        setHardWatchSymbols(prev => [...prev, code])
+                      }
+                      setHardWatchInput('')
+                    }
+                  }}
+                  className="flex-1 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const code = hardWatchInput.trim().replace(/\D/g, '').slice(0, 6)
+                    if (code.length === 6 && !hardWatchSymbols.includes(code)) {
+                      setHardWatchSymbols(prev => [...prev, code])
+                    }
+                    setHardWatchInput('')
+                  }}
+                  className="px-3 py-1.5 bg-orange-500/15 text-orange-400 hover:bg-orange-500/25 rounded-lg text-sm font-medium transition-colors"
+                >추가</button>
+              </div>
+              {hardWatchSymbols.length === 0 ? (
+                <p className="text-xs text-th-on-subtle">등록된 하드 감시 종목이 없습니다.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {hardWatchSymbols.map((code) => (
+                    <span key={code} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-th-surface-high rounded-lg text-sm font-data text-th-on-surface">
+                      {code}
+                      <button
+                        type="button"
+                        onClick={() => setHardWatchSymbols(prev => prev.filter(c => c !== code))}
+                        className="text-th-on-subtle hover:text-red-400 transition-colors"
+                      >×</button>
+                    </span>
                   ))}
                 </div>
-
-                <div className="pt-2 border-t border-black/10 dark:border-white/10">
-                  <p className={`${labelText} mb-2`}>거래량 필터</p>
-                  <div className="flex gap-2 flex-wrap">
-                    {[{ value: '0', label: '전체' }, { value: '1', label: '100주↑' }, { value: '2', label: '1000주↑' }, { value: '3', label: '10000주↑' }].map(({ value, label }) => (
-                      <button key={value} type="button" onClick={() => setUsRankingVolRang(value)}
-                        className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors border ${
-                          usRankingVolRang === value
-                            ? 'bg-th-surface-high text-th-on-surface border-black/10 dark:border-white/10 ring-1 ring-zinc-600'
-                            : 'bg-transparent text-th-on-muted border-black/10 dark:border-white/10 hover:text-th-on-surface'
-                        }`}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <label className="space-y-1 pt-2 border-t border-black/10 dark:border-white/10 block">
-                  <span className={labelText}>상위 종목 수</span>
-                  <input type="number" step="1" min="1" max="50" value={usRankingTopN} onChange={e => setUsRankingTopN(e.target.value)}
-                    className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
-                </label>
-
-                <div className="space-y-3 pt-2 border-t border-black/10 dark:border-white/10">
-                  <label className="space-y-1 block">
-                    <span className={labelText}>미장 일일 최대 손실 한도 (%)</span>
-                    <input type="number" step="0.1" min="0" value={usDailyMaxLossPct} onChange={e => setUsDailyMaxLossPct(e.target.value)}
-                      className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
-                    <p className={hintText}>가용 USD 대비 최대 손실 기준. 0 = 제한 없음.</p>
-                  </label>
-                  <label className="space-y-1 block">
-                    <span className={labelText}>미장 최소 거래대금 (USD)</span>
-                    <input type="number" step="1" min="0" value={usMinTradingValue} onChange={e => setUsMinTradingValue(e.target.value)}
-                      className="w-28 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
-                    <p className={hintText}>0 = 필터 없음.</p>
-                  </label>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* ── 섹션: 미장 매매 기준 ── */}
-          {usTradingEnabled && (
-            <div className={sectionCls}>
-              <p className={sectionTitle}>미장 매매 기준</p>
-              <p className={hintText}>국장과 독립적으로 미장 전용 매매 기준을 설정합니다.</p>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="space-y-1">
-                  <span className={labelText}>목표가 (%)</span>
-                  <input type="number" step="0.1" min="0.1" value={usTakeProfitPct} onChange={e => setUsTakeProfitPct(e.target.value)} className={inputCls} />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelText}>손절 (%)</span>
-                  <input type="number" step="0.1" min="0.1" value={usStopLossPct} onChange={e => setUsStopLossPct(e.target.value)} className={inputCls} />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelText}>주문 금액 비율 (%)</span>
-                  <input type="number" step="1" min="1" max="100" value={usOrderAmountPct} onChange={e => setUsOrderAmountPct(e.target.value)} className={inputCls} />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelText}>최대 동시 보유 종목</span>
-                  <input type="number" step="1" min="1" max="10" value={usMaxPositions} onChange={e => setUsMaxPositions(e.target.value)} className={inputCls} />
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* ── 섹션: 미장 소프트 필터 ── */}
-          {usTradingEnabled && (
-            <div className={sectionCls}>
-              <p className={sectionTitle}>미장 소프트 필터</p>
-              <p className={hintText}>LLM에 전달하기 전 부적격 종목을 제거합니다 (국장 필터와 독립).</p>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="space-y-1">
-                  <span className={labelText}>RSI 최대</span>
-                  <input type="number" step="1" min="0" max="100" value={usFilterRsiMax} onChange={e => setUsFilterRsiMax(e.target.value)} className={inputCls} />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelText}>5분봉 이격도 최대</span>
-                  <input type="number" step="0.1" value={usFilterDisparityM5Max} onChange={e => setUsFilterDisparityM5Max(e.target.value)} className={inputCls} />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelText}>고가 대비 최소 (%)</span>
-                  <input type="number" step="0.1" value={usFilterHighPriceDiffMin} onChange={e => setUsFilterHighPriceDiffMin(e.target.value)} className={inputCls} />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelText}>시가 대비 최대 (%)</span>
-                  <input type="number" step="0.1" value={usFilterOpenPriceDiffMax} onChange={e => setUsFilterOpenPriceDiffMax(e.target.value)} className={inputCls} />
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* ── 섹션: 미장 하드 리젝션 ── */}
-          {usTradingEnabled && (
-            <div className={sectionCls}>
-              <p className={sectionTitle}>미장 하드 리젝션 룰</p>
-              <p className={hintText}>LLM 종목 선정 기준 (국장 hard_ 값과 독립).</p>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="space-y-1">
-                  <span className={labelText}>이격도 상한 (과열 스킵)</span>
-                  <input type="number" step="0.1" value={usHardDisparityM5Max} onChange={e => setUsHardDisparityM5Max(e.target.value)} className={inputCls} />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelText}>시가대비 상승률 상한 (%)</span>
-                  <input type="number" step="0.1" value={usHardOpenPriceDiffMax} onChange={e => setUsHardOpenPriceDiffMax(e.target.value)} className={inputCls} />
-                </label>
-              </div>
-            </div>
-          )}
-
-        </div>{/* ── end US 탭 ── */}
+        </div>{/* ── end KR 탭 ── */}
 
       </form>
 

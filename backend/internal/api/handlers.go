@@ -14,6 +14,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
+	"github.com/micro-trading-for-agent/backend/internal/mst"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
 
@@ -26,6 +27,7 @@ type Handler struct {
 	monitor      *monitor.Monitor
 	wsClient     *kis.WebSocketClient
 	engine       *trader.Engine
+	mstStore     *mst.Store
 }
 
 // NewHandler creates a new Handler with the given dependencies.
@@ -39,6 +41,11 @@ func NewHandler(db *database.DB, client *kis.Client, tokenManager *kis.TokenMana
 		monitor:      mon,
 		wsClient:     wsClient,
 	}
+}
+
+// SetMSTStore injects the MST store for stock master lookups.
+func (h *Handler) SetMSTStore(s *mst.Store) {
+	h.mstStore = s
 }
 
 // SetEngine injects the trading engine (called after engine is created in main).
@@ -1324,4 +1331,80 @@ func (h *Handler) DeletePreset(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "프리셋이 삭제되었습니다."})
+}
+
+// GET /api/stocks?q=&etf_only=&market= — 종목 마스터 검색
+// q: 종목명/코드 검색어 (부분 일치)
+// etf_only: "true" 이면 ETF만 반환
+// market: "KOSPI" 또는 "KOSDAQ" (빈값이면 전체)
+func (h *Handler) GetStocks(c *gin.Context) {
+	ctx := c.Request.Context()
+	if h.mstStore == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "종목 마스터가 초기화되지 않았습니다."})
+		return
+	}
+
+	q := c.Query("q")
+	etfOnly := c.Query("etf_only") == "true"
+	market := c.Query("market")
+
+	// Hard Watch Symbols 목록 조회 (hard_watch 여부 표시용)
+	settings, _ := h.db.GetTradingSettings(ctx)
+	hardSet := make(map[string]bool, len(settings.HardWatchSymbols))
+	for _, code := range settings.HardWatchSymbols {
+		hardSet[code] = true
+	}
+
+	type StockItem struct {
+		StockCode           string `json:"stock_code"`
+		StockName           string `json:"stock_name"`
+		MarketType          string `json:"market_type"`
+		IsETF               bool   `json:"is_etf"`
+		IsDomesticEquityETF bool   `json:"is_domestic_equity_etf"`
+		IsHardWatch         bool   `json:"is_hard_watch"`
+	}
+
+	// 동적 쿼리 조립
+	query := `SELECT stock_code, stock_name, market_type, is_etf, is_domestic_equity_etf
+	          FROM stock_masters WHERE 1=1`
+	args := []any{}
+
+	if q != "" {
+		query += ` AND (stock_code LIKE ? OR stock_name LIKE ?)`
+		like := "%" + q + "%"
+		args = append(args, like, like)
+	}
+	if etfOnly {
+		query += ` AND is_etf = 1`
+	}
+	if market != "" {
+		query += ` AND market_type = ?`
+		args = append(args, market)
+	}
+	query += ` ORDER BY stock_code LIMIT 200`
+
+	rows, err := h.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	items := make([]StockItem, 0, 64)
+	for rows.Next() {
+		var item StockItem
+		var isETF, isDomestic int
+		if err := rows.Scan(&item.StockCode, &item.StockName, &item.MarketType, &isETF, &isDomestic); err != nil {
+			continue
+		}
+		item.IsETF = isETF == 1
+		item.IsDomesticEquityETF = isDomestic == 1
+		item.IsHardWatch = hardSet[item.StockCode]
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
 }
