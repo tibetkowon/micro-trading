@@ -1066,6 +1066,16 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				if !withinPriceRange(item.CurrentPrice) {
 					continue
 				}
+				// 등락률 범위 필터
+				if settings.RankingFluctuationMinRate > 0 || settings.RankingFluctuationMaxRate > 0 {
+					rate, _ := strconv.ParseFloat(item.ChangeRate, 64)
+					if settings.RankingFluctuationMinRate > 0 && rate < settings.RankingFluctuationMinRate {
+						continue
+					}
+					if settings.RankingFluctuationMaxRate > 0 && rate > settings.RankingFluctuationMaxRate {
+						continue
+					}
+				}
 				byType[rt][item.StockCode] = RankItem{
 					DataRank: item.DataRank, StockCode: item.StockCode,
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
@@ -1089,6 +1099,10 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 			for _, item := range viItems {
 				if item.ViCnclHour == "" {
 					continue // 미해제 건 제외 — 해제 직후 반등 전략
+				}
+				// VI 종류 필터: "1"=정적, "2"=동적, ""=전체
+				if settings.RankingVIKindCode != "" && item.ViKindCode != settings.RankingVIKindCode {
+					continue
 				}
 				if !withinPriceRange(item.CurrentPrice) {
 					continue

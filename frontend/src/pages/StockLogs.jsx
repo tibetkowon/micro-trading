@@ -274,12 +274,6 @@ function RankingCard({ log, selLog }) {
         onClick={() => setOpen((v) => !v)}
       >
         <div className="flex items-center gap-2 flex-wrap min-w-0">
-          {log.market === 'US' ? (
-            <span className="badge bg-[#7C3AED]/10 text-[#7C3AED] border-[#7C3AED]/20 dark:bg-[#7C3AED]/15 dark:text-[#A78BFA] dark:border-[#7C3AED]/30 shrink-0">미장</span>
-          ) : (
-            <span className="badge bg-th-surface-high text-th-on-muted border-black/10 dark:border-white/10 shrink-0">국장</span>
-          )}
-
           {hasError ? (
             <span className="badge bg-th-loss/10 text-red-400 border-th-loss/20 shrink-0">오류</span>
           ) : noMatch ? (
@@ -402,18 +396,10 @@ const REFRESH_OPTIONS = [
   { value: 300, label: '5분' },
 ]
 
-/* ── 메인 페이지 ── */
-const MARKET_OPTIONS = [
-  { key: 'ALL', label: '전체' },
-  { key: 'KR', label: '국장' },
-  { key: 'US', label: '미장' },
-]
-
 export default function StockLogs() {
   const { data: rankingData, loading: rankingLoading, error: rankingError, refetch } = useApi('/api/logs/ranking?limit=100')
   const { data: selectionData } = useApi('/api/logs/selection?limit=200')
 
-  const [market, setMarket] = useState('ALL')
   const [refreshInterval, setRefreshInterval] = useState(0)
   const intervalRef = useRef(null)
 
@@ -438,10 +424,8 @@ export default function StockLogs() {
   }, [selectionData])
 
   const filtered = useMemo(() => {
-    const rankingLogs = rankingData?.logs || []
-    if (market === 'ALL') return rankingLogs
-    return rankingLogs.filter((l) => l.market === market)
-  }, [rankingData, market])
+    return rankingData?.logs || []
+  }, [rankingData])
 
   return (
     <div className="space-y-5">
@@ -452,22 +436,6 @@ export default function StockLogs() {
           <p className="text-xs text-th-on-muted mt-0.5">순위 조회 → 하드 필터 → LLM 선정 3단계 흐름</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* 시장 필터 */}
-          <div className="flex items-center gap-1 bg-th-surface border border-black/10 dark:border-white/10 rounded-lg p-1">
-            {MARKET_OPTIONS.map((opt) => (
-              <button
-                key={opt.key}
-                onClick={() => setMarket(opt.key)}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  market === opt.key
-                    ? 'bg-th-surface-high text-th-on-surface font-medium'
-                    : 'text-th-on-muted hover:text-th-on-surface'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
           <select
             value={refreshInterval}
             onChange={(e) => setRefreshInterval(Number(e.target.value))}

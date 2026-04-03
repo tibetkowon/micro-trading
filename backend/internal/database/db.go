@@ -41,6 +41,9 @@ type TradingSettings struct {
 	// 순위별 필터
 	RankingVolumeMinIncrRate  float64  // 거래량 증가율 최솟값 (0=필터없음)
 	RankingStrengthMin        float64  // 체결강도 최솟값 (0=필터없음)
+	RankingFluctuationMinRate float64  // 등락률 최솟값 % (0=필터없음)
+	RankingFluctuationMaxRate float64  // 등락률 최댓값 % (0=제한없음)
+	RankingVIKindCode         string   // VI 종류 필터: ""=전체, "1"=정적만, "2"=동적만
 	RankingTopN               int      // 각 순위별 상위 N개만 교집합 대상 (0=전체)
 	RankingExchanges          []string // 국장 순위 조회 거래소 코드 (0001=KOSPI, 1001=KOSDAQ, 2001=KOSPI200)
 	RankingVolumeBlngClsCodes []string // 거래량순위 FID_BLNG_CLS_CODE 목록 (0=평균거래량, 1=거래량증가율, 2=거래회전율, 3=거래대금순, 4=평균거래대금)
@@ -295,6 +298,9 @@ func (db *DB) migrate() error {
 		{"claude_model", "claude-sonnet-4-6"},
 		{"ranking_volume_min_incrrate", "0"},
 		{"ranking_strength_min", "100"},
+		{"ranking_fluctuation_min_rate", "0"},
+		{"ranking_fluctuation_max_rate", "0"},
+		{"ranking_vi_kind_code", ""},
 		{"ranking_top_n", "20"},
 		{"ranking_exchanges", `["0001","1001"]`},
 		{"ranking_volume_blng_cls_codes", `["0","1","2","3","4"]`},
@@ -361,6 +367,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'order_amount_pct','sell_conditions','indicator_check_interval_min',`+
 			`'indicator_rsi_sell_threshold','indicator_macd_bearish_sell','claude_model',`+
 			`'ranking_volume_min_incrrate','ranking_strength_min',`+
+			`'ranking_fluctuation_min_rate','ranking_fluctuation_max_rate','ranking_vi_kind_code',`+
 			`'ranking_top_n','ranking_exchanges','ranking_volume_blng_cls_codes',`+
 			`'trading_start_time','trading_end_time',`+
 			`'stagnation_threshold_pct','stagnation_duration_min',`+
@@ -575,6 +582,9 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		ClaudeModel:               claudeModel,
 		RankingVolumeMinIncrRate:  f64("ranking_volume_min_incrrate"),
 		RankingStrengthMin:        f64("ranking_strength_min"),
+		RankingFluctuationMinRate: f64("ranking_fluctuation_min_rate"),
+		RankingFluctuationMaxRate: f64("ranking_fluctuation_max_rate"),
+		RankingVIKindCode:         vals["ranking_vi_kind_code"],
 		RankingTopN:               i64("ranking_top_n"),
 		RankingExchanges:          rankingExchanges,
 		RankingVolumeBlngClsCodes: rankingVolumeBlngClsCodes,

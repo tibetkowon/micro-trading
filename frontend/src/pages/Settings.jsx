@@ -253,6 +253,9 @@ export default function Settings() {
   const [rankingTopN, setRankingTopN] = useState('20')
   const [volumeMinIncrRate, setVolumeMinIncrRate] = useState('0')
   const [strengthMin, setStrengthMin] = useState('100')
+  const [fluctuationMinRate, setFluctuationMinRate] = useState('0')
+  const [fluctuationMaxRate, setFluctuationMaxRate] = useState('0')
+  const [viKindCode, setViKindCode] = useState('')
   const [rankingCondition, setRankingCondition] = useState('AND')
   const [rankingExchanges, setRankingExchanges] = useState(['0001', '1001'])
   const [rankingVolumeBlngClsCodes, setRankingVolumeBlngClsCodes] = useState(['0', '1', '2', '3', '4'])
@@ -345,6 +348,9 @@ export default function Settings() {
     if (data.ranking_top_n != null) setRankingTopN(String(data.ranking_top_n))
     if (data.ranking_volume_min_incrrate != null) setVolumeMinIncrRate(String(data.ranking_volume_min_incrrate))
     if (data.ranking_strength_min != null) setStrengthMin(String(data.ranking_strength_min))
+    if (data.ranking_fluctuation_min_rate != null) setFluctuationMinRate(String(data.ranking_fluctuation_min_rate))
+    if (data.ranking_fluctuation_max_rate != null) setFluctuationMaxRate(String(data.ranking_fluctuation_max_rate))
+    if (data.ranking_vi_kind_code != null) setViKindCode(String(data.ranking_vi_kind_code))
     if (data.ranking_condition === 'AND' || data.ranking_condition === 'OR') setRankingCondition(data.ranking_condition)
     if (Array.isArray(data.ranking_exchanges)) setRankingExchanges(data.ranking_exchanges)
     if (Array.isArray(data.ranking_volume_blng_cls_codes)) setRankingVolumeBlngClsCodes(data.ranking_volume_blng_cls_codes)
@@ -450,6 +456,9 @@ export default function Settings() {
       ranking_top_n: parseInt(rankingTopN) || 20,
       ranking_volume_min_incrrate: parseFloat(volumeMinIncrRate) || 0,
       ranking_strength_min: parseFloat(strengthMin) || 0,
+      ranking_fluctuation_min_rate: parseFloat(fluctuationMinRate) || 0,
+      ranking_fluctuation_max_rate: parseFloat(fluctuationMaxRate) || 0,
+      ranking_vi_kind_code: viKindCode,
       ranking_condition: rankingCondition,
       ranking_exchanges: rankingExchanges,
       ranking_volume_blng_cls_codes: rankingVolumeBlngClsCodes,
@@ -820,11 +829,45 @@ export default function Settings() {
                     className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
                   <span className="text-sm text-th-on-surface font-medium">등락률 순위</span>
                 </div>
+                {rankingTypes.includes('fluctuation') && (
+                  <div className="ml-6 flex flex-wrap gap-4">
+                    <label className="space-y-1">
+                      <span className={labelText}>최소 등락률 (%, 0=필터없음)</span>
+                      <input type="number" step="0.5" min="0" value={fluctuationMinRate} onChange={(e) => setFluctuationMinRate(e.target.value)}
+                        className="w-32 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
+                    </label>
+                    <label className="space-y-1">
+                      <span className={labelText}>최대 등락률 (%, 0=제한없음)</span>
+                      <input type="number" step="0.5" min="0" value={fluctuationMaxRate} onChange={(e) => setFluctuationMaxRate(e.target.value)}
+                        className="w-32 px-3 py-1.5 bg-th-surface-high rounded-lg text-sm text-th-on-surface focus:outline-none focus:ring-1 focus:ring-orange-500/50" />
+                    </label>
+                  </div>
+                )}
+              </div>
+              {/* VI 발동현황 */}
+              <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <input type="checkbox" checked={rankingTypes.includes('vi_status')} onChange={() => toggleRankingType('vi_status')}
                     className="w-4 h-4 rounded bg-th-surface-high accent-orange-500" />
                   <span className="text-sm text-th-on-surface font-medium">VI 발동현황 (해제 직후 반등)</span>
                 </div>
+                {rankingTypes.includes('vi_status') && (
+                  <div className="ml-6">
+                    <div className="flex gap-1.5">
+                      {[{ value: '', label: '전체' }, { value: '1', label: '정적 VI만' }, { value: '2', label: '동적 VI만' }].map(({ value, label }) => (
+                        <button key={value} type="button" onClick={() => setViKindCode(value)}
+                          className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors border ${
+                            viKindCode === value
+                              ? 'bg-th-surface-high text-th-on-surface border-black/10 dark:border-white/10 ring-1 ring-zinc-600'
+                              : 'bg-transparent text-th-on-muted border-black/10 dark:border-white/10 hover:text-th-on-surface'
+                          }`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className={`mt-1 ${hintText}`}>정적 VI: 가격 급등락 발동 / 동적 VI: 단시간 속도 급변 발동</p>
+                  </div>
+                )}
               </div>
             </div>
 

@@ -552,6 +552,9 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"claude_model":                  ts.ClaudeModel,
 		"ranking_volume_min_incrrate":   ts.RankingVolumeMinIncrRate,
 		"ranking_strength_min":          ts.RankingStrengthMin,
+		"ranking_fluctuation_min_rate":  ts.RankingFluctuationMinRate,
+		"ranking_fluctuation_max_rate":  ts.RankingFluctuationMaxRate,
+		"ranking_vi_kind_code":          ts.RankingVIKindCode,
 		"ranking_top_n":                 ts.RankingTopN,
 		"trading_start_time":            ts.TradingStartTime,
 		"trading_end_time":              ts.TradingEndTime,
@@ -627,6 +630,9 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		ClaudeModel               string   `json:"claude_model"`
 		RankingVolumeMinIncrRate  *float64 `json:"ranking_volume_min_incrrate"`
 		RankingStrengthMin        *float64 `json:"ranking_strength_min"`
+		RankingFluctuationMinRate *float64 `json:"ranking_fluctuation_min_rate"`
+		RankingFluctuationMaxRate *float64 `json:"ranking_fluctuation_max_rate"`
+		RankingVIKindCode         *string  `json:"ranking_vi_kind_code"`
 		RankingTopN               *int     `json:"ranking_top_n"`
 		TradingStartTime          string   `json:"trading_start_time"`
 		TradingEndTime            string   `json:"trading_end_time"`
@@ -809,6 +815,21 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.RankingStrengthMin != nil {
 		if !save("ranking_strength_min", strconv.FormatFloat(*req.RankingStrengthMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RankingFluctuationMinRate != nil {
+		if !save("ranking_fluctuation_min_rate", strconv.FormatFloat(*req.RankingFluctuationMinRate, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RankingFluctuationMaxRate != nil {
+		if !save("ranking_fluctuation_max_rate", strconv.FormatFloat(*req.RankingFluctuationMaxRate, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RankingVIKindCode != nil {
+		if !save("ranking_vi_kind_code", *req.RankingVIKindCode) {
 			return
 		}
 	}
