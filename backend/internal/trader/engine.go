@@ -1185,7 +1185,7 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				if other.Strength != "" {
 					merged.Strength = other.Strength
 				}
-		}
+			}
 			result = append(result, merged)
 		}
 	}

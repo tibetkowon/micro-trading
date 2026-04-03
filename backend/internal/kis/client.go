@@ -115,17 +115,16 @@ type StrengthRankItem struct {
 	SellQty      string `json:"seln_cnqn_smtn"` // 매도체결량합계
 }
 
-
 // FluctuationRankItem holds one entry from the price change rate ranking (FHPST01700000).
 type FluctuationRankItem struct {
-	DataRank     string `json:"data_rank"`          // 순위
-	StockCode    string `json:"stck_shrn_iscd"`     // 종목코드
-	StockName    string `json:"hts_kor_isnm"`       // 종목명
-	CurrentPrice string `json:"stck_prpr"`          // 현재가
-	ChangeRate   string `json:"prdy_ctrt"`          // 등락률 (%)
-	Volume       string `json:"acml_vol"`           // 누적거래량
-	DayHigh      string `json:"stck_hgpr"`          // 당일 고가
-	DayLow       string `json:"stck_lwpr"`          // 당일 저가
+	DataRank     string `json:"data_rank"`           // 순위
+	StockCode    string `json:"stck_shrn_iscd"`      // 종목코드
+	StockName    string `json:"hts_kor_isnm"`        // 종목명
+	CurrentPrice string `json:"stck_prpr"`           // 현재가
+	ChangeRate   string `json:"prdy_ctrt"`           // 등락률 (%)
+	Volume       string `json:"acml_vol"`            // 누적거래량
+	DayHigh      string `json:"stck_hgpr"`           // 당일 고가
+	DayLow       string `json:"stck_lwpr"`           // 당일 저가
 	HighVsPrPct  string `json:"hgpr_vrss_prpr_rate"` // 고가대비현재가비율
 }
 
@@ -133,12 +132,12 @@ type FluctuationRankItem struct {
 type VIStatusItem struct {
 	StockCode    string `json:"mksc_shrn_iscd"` // 단축종목코드
 	StockName    string `json:"hts_kor_isnm"`   // 종목명
-	CurrentPrice string `json:"stck_prpr"`       // 현재가
-	VIClsCode    string `json:"vi_cls_code"`     // VI발동상태 (01=정적, 02=동적, 03=정적+동적)
+	CurrentPrice string `json:"stck_prpr"`      // 현재가
+	VIClsCode    string `json:"vi_cls_code"`    // VI발동상태 (01=정적, 02=동적, 03=정적+동적)
 	ViCnclHour   string `json:"vi_cncl_hour"`   // VI해제시간 (빈값=미해제)
 	ViKindCode   string `json:"vi_kind_code"`   // VI종류코드 (1=정적, 2=동적)
-	ViPrc        string `json:"vi_prc"`          // VI발동가격
-	ViCount      string `json:"vi_count"`        // VI발동횟수
+	ViPrc        string `json:"vi_prc"`         // VI발동가격
+	ViCount      string `json:"vi_count"`       // VI발동횟수
 }
 
 // HolidayInfo holds market open/close status for a given date (CTCA0903R).
@@ -460,7 +459,6 @@ func (c *Client) GetStrengthRank(ctx context.Context, market, priceMin, priceMax
 	return result.Output, nil
 }
 
-
 // GetFluctuationRank fetches the price change rate ranking (등락률순위 FHPST01700000). Max 30 results.
 // market (fid_input_iscd): "0000"=전체(default), "0001"=거래소(KOSPI), "1001"=코스닥.
 // priceMin/priceMax: 가격 범위 필터 (빈값="" 이면 전체 가격 조회).
@@ -674,6 +672,7 @@ func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string)
 
 	return result.Output1, nil
 }
+
 // --- Internal helpers ---
 
 func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([]byte, error) {

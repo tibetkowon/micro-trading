@@ -49,4 +49,3 @@ func GetFluctuationRank(ctx context.Context, client *kis.Client, market, priceMi
 func GetVIStatus(ctx context.Context, client *kis.Client, date string) ([]kis.VIStatusItem, error) {
 	return client.GetVIStatus(ctx, date)
 }
-

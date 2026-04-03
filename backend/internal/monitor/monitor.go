@@ -598,7 +598,6 @@ func (m *Monitor) ResubscribeAll() {
 	}
 }
 
-
 // LoadFromDB restores monitored positions from the database after a server restart.
 func (m *Monitor) LoadFromDB(ctx context.Context) error {
 	rows, err := m.db.QueryContext(ctx,

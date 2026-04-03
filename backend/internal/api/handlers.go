@@ -532,34 +532,34 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"trading_enabled":      tradingEnabled,
 		"ranking_excl_cls":     rankingExclCls,
 		// Autonomous trading settings
-		"take_profit_pct":                ts.TakeProfitPct,
-		"stop_loss_pct":                  ts.StopLossPct,
+		"take_profit_pct": ts.TakeProfitPct,
+		"stop_loss_pct":   ts.StopLossPct,
 		// ETF/주식 분리 수익·손절
-		"etf_take_profit_pct":   ts.ETFTakeProfitPct,
-		"etf_stop_loss_pct":     ts.ETFStopLossPct,
-		"stock_take_profit_pct": ts.StockTakeProfitPct,
-		"stock_stop_loss_pct":   ts.StockStopLossPct,
-		"stock_tax_rate":        ts.StockTaxRate,
-		"ranking_types":                  ts.RankingTypes,
-		"ranking_price_min":              ts.RankingPriceMin,
-		"ranking_price_max":              ts.RankingPriceMax,
-		"max_positions":                  ts.MaxPositions,
-		"order_amount_pct":               ts.OrderAmountPct,
-		"sell_conditions":                ts.SellConditions,
-		"indicator_check_interval_min":   ts.IndicatorCheckIntervalMin,
-		"indicator_rsi_sell_threshold":   ts.IndicatorRSISellThreshold,
-		"indicator_macd_bearish_sell":    ts.IndicatorMACDBearishSell,
-		"claude_model":                   ts.ClaudeModel,
-		"ranking_volume_min_incrrate": ts.RankingVolumeMinIncrRate,
-		"ranking_strength_min":        ts.RankingStrengthMin,
-		"ranking_top_n":               ts.RankingTopN,
-		"trading_start_time":             ts.TradingStartTime,
-		"trading_end_time":               ts.TradingEndTime,
-		"stagnation_threshold_pct":       ts.StagnationThresholdPct,
-		"stagnation_duration_min":        ts.StagnationDurationMin,
-		"ranking_condition":              ts.RankingCondition,
-		"ranking_exchanges":              ts.RankingExchanges,
-		"ranking_volume_blng_cls_codes":  ts.RankingVolumeBlngClsCodes,
+		"etf_take_profit_pct":           ts.ETFTakeProfitPct,
+		"etf_stop_loss_pct":             ts.ETFStopLossPct,
+		"stock_take_profit_pct":         ts.StockTakeProfitPct,
+		"stock_stop_loss_pct":           ts.StockStopLossPct,
+		"stock_tax_rate":                ts.StockTaxRate,
+		"ranking_types":                 ts.RankingTypes,
+		"ranking_price_min":             ts.RankingPriceMin,
+		"ranking_price_max":             ts.RankingPriceMax,
+		"max_positions":                 ts.MaxPositions,
+		"order_amount_pct":              ts.OrderAmountPct,
+		"sell_conditions":               ts.SellConditions,
+		"indicator_check_interval_min":  ts.IndicatorCheckIntervalMin,
+		"indicator_rsi_sell_threshold":  ts.IndicatorRSISellThreshold,
+		"indicator_macd_bearish_sell":   ts.IndicatorMACDBearishSell,
+		"claude_model":                  ts.ClaudeModel,
+		"ranking_volume_min_incrrate":   ts.RankingVolumeMinIncrRate,
+		"ranking_strength_min":          ts.RankingStrengthMin,
+		"ranking_top_n":                 ts.RankingTopN,
+		"trading_start_time":            ts.TradingStartTime,
+		"trading_end_time":              ts.TradingEndTime,
+		"stagnation_threshold_pct":      ts.StagnationThresholdPct,
+		"stagnation_duration_min":       ts.StagnationDurationMin,
+		"ranking_condition":             ts.RankingCondition,
+		"ranking_exchanges":             ts.RankingExchanges,
+		"ranking_volume_blng_cls_codes": ts.RankingVolumeBlngClsCodes,
 		// 거래대금 하한선
 		"min_trading_value": ts.MinTradingValue,
 		// 매수 중단 시간대
@@ -591,10 +591,10 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"hard_rsi_max":             ts.HardRSIMax,
 		"hard_open_price_diff_max": ts.HardOpenPriceDiffMax,
 		// AI 매매 기준값 — 랭킹 기준
-		"vwap_diff_min":     ts.VWAPDiffMin,
-		"vwap_diff_max":     ts.VWAPDiffMax,
-		"rsi_buy_min":       ts.RSIBuyMin,
-		"rsi_buy_max":       ts.RSIBuyMax,
+		"vwap_diff_min":           ts.VWAPDiffMin,
+		"vwap_diff_max":           ts.VWAPDiffMax,
+		"rsi_buy_min":             ts.RSIBuyMin,
+		"rsi_buy_max":             ts.RSIBuyMax,
 		"bid_ask_ratio_min":       ts.BidAskRatioMin,
 		"min_market_cap":          ts.MinMarketCap,
 		"min_expected_profit_pct": ts.MinExpectedProfitPct,
@@ -608,33 +608,33 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		TradingEnabled *bool  `json:"trading_enabled"`
 		RankingExclCls string `json:"ranking_excl_cls"`
 		// Autonomous trading settings (all optional)
-		TakeProfitPct              *float64 `json:"take_profit_pct"`
-		StopLossPct                *float64 `json:"stop_loss_pct"`
-		ETFTakeProfitPct           *float64 `json:"etf_take_profit_pct"`
-		ETFStopLossPct             *float64 `json:"etf_stop_loss_pct"`
-		StockTakeProfitPct         *float64 `json:"stock_take_profit_pct"`
-		StockStopLossPct           *float64 `json:"stock_stop_loss_pct"`
-		StockTaxRate               *float64 `json:"stock_tax_rate"`
-		RankingTypes               []string `json:"ranking_types"`
-		RankingPriceMin            string   `json:"ranking_price_min"`
-		RankingPriceMax            string   `json:"ranking_price_max"`
-		MaxPositions               *int     `json:"max_positions"`
-		OrderAmountPct             *float64 `json:"order_amount_pct"`
-		SellConditions             []string `json:"sell_conditions"`
-		IndicatorCheckIntervalMin  *int     `json:"indicator_check_interval_min"`
-		IndicatorRSISellThreshold  *float64 `json:"indicator_rsi_sell_threshold"`
-		IndicatorMACDBearishSell   *bool    `json:"indicator_macd_bearish_sell"`
-		ClaudeModel                string   `json:"claude_model"`
-		RankingVolumeMinIncrRate *float64 `json:"ranking_volume_min_incrrate"`
-		RankingStrengthMin       *float64 `json:"ranking_strength_min"`
-		RankingTopN              *int     `json:"ranking_top_n"`
-		TradingStartTime           string   `json:"trading_start_time"`
-		TradingEndTime             string   `json:"trading_end_time"`
-		StagnationThresholdPct     *float64 `json:"stagnation_threshold_pct"`
-		StagnationDurationMin      *int     `json:"stagnation_duration_min"`
-		RankingCondition           string   `json:"ranking_condition"`
-		RankingExchanges           []string `json:"ranking_exchanges"`
-		RankingVolumeBlngClsCodes  []string `json:"ranking_volume_blng_cls_codes"`
+		TakeProfitPct             *float64 `json:"take_profit_pct"`
+		StopLossPct               *float64 `json:"stop_loss_pct"`
+		ETFTakeProfitPct          *float64 `json:"etf_take_profit_pct"`
+		ETFStopLossPct            *float64 `json:"etf_stop_loss_pct"`
+		StockTakeProfitPct        *float64 `json:"stock_take_profit_pct"`
+		StockStopLossPct          *float64 `json:"stock_stop_loss_pct"`
+		StockTaxRate              *float64 `json:"stock_tax_rate"`
+		RankingTypes              []string `json:"ranking_types"`
+		RankingPriceMin           string   `json:"ranking_price_min"`
+		RankingPriceMax           string   `json:"ranking_price_max"`
+		MaxPositions              *int     `json:"max_positions"`
+		OrderAmountPct            *float64 `json:"order_amount_pct"`
+		SellConditions            []string `json:"sell_conditions"`
+		IndicatorCheckIntervalMin *int     `json:"indicator_check_interval_min"`
+		IndicatorRSISellThreshold *float64 `json:"indicator_rsi_sell_threshold"`
+		IndicatorMACDBearishSell  *bool    `json:"indicator_macd_bearish_sell"`
+		ClaudeModel               string   `json:"claude_model"`
+		RankingVolumeMinIncrRate  *float64 `json:"ranking_volume_min_incrrate"`
+		RankingStrengthMin        *float64 `json:"ranking_strength_min"`
+		RankingTopN               *int     `json:"ranking_top_n"`
+		TradingStartTime          string   `json:"trading_start_time"`
+		TradingEndTime            string   `json:"trading_end_time"`
+		StagnationThresholdPct    *float64 `json:"stagnation_threshold_pct"`
+		StagnationDurationMin     *int     `json:"stagnation_duration_min"`
+		RankingCondition          string   `json:"ranking_condition"`
+		RankingExchanges          []string `json:"ranking_exchanges"`
+		RankingVolumeBlngClsCodes []string `json:"ranking_volume_blng_cls_codes"`
 		// 거래대금 하한선
 		MinTradingValue *float64 `json:"min_trading_value"`
 		// 매수 중단 시간대
@@ -666,10 +666,10 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		HardRSIMax           *float64 `json:"hard_rsi_max"`
 		HardOpenPriceDiffMax *float64 `json:"hard_open_price_diff_max"`
 		// AI 매매 기준값 — 랭킹 기준
-		VWAPDiffMin    *float64 `json:"vwap_diff_min"`
-		VWAPDiffMax    *float64 `json:"vwap_diff_max"`
-		RSIBuyMin      *float64 `json:"rsi_buy_min"`
-		RSIBuyMax      *float64 `json:"rsi_buy_max"`
+		VWAPDiffMin          *float64 `json:"vwap_diff_min"`
+		VWAPDiffMax          *float64 `json:"vwap_diff_max"`
+		RSIBuyMin            *float64 `json:"rsi_buy_min"`
+		RSIBuyMax            *float64 `json:"rsi_buy_max"`
 		BidAskRatioMin       *float64 `json:"bid_ask_ratio_min"`
 		MinMarketCap         *float64 `json:"min_market_cap"`
 		MinExpectedProfitPct *float64 `json:"min_expected_profit_pct"`
@@ -1159,7 +1159,6 @@ func (h *Handler) GetStrengthRank(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"ranking": items})
 }
-
 
 // GET /api/ranking/fluctuation?market=0000 — 등락률 상위 (FHPST01700000, max 30)
 // market: 0000=전체(default), 0001=거래소(KOSPI), 1001=코스닥

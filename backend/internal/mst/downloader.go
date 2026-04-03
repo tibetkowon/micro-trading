@@ -16,8 +16,8 @@ const (
 	kospiURL  = "https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip"
 	kosdaqURL = "https://new.real.download.dws.co.kr/common/master/kosdaq_code.mst.zip"
 
-	maxRetries     = 3
-	retryInterval  = 5 * time.Minute
+	maxRetries      = 3
+	retryInterval   = 5 * time.Minute
 	downloadTimeout = 60 * time.Second
 )
 
