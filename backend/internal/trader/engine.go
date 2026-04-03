@@ -553,55 +553,20 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 
 	// Build TradingRules from settings and pass to Claude prompt.
 	rules := DefaultTradingRules()
+	// db.go already applies defaults when key is absent; trust the settings values as-is.
 	rules.IndexDropThreshold = settings.IndexDropThresholdPct
-	if rules.IndexDropThreshold == 0 {
-		rules.IndexDropThreshold = -1.0
-	}
 	rules.HardDisparityM5Min = settings.HardDisparityM5Min
-	if rules.HardDisparityM5Min == 0 {
-		rules.HardDisparityM5Min = -1.5
-	}
 	rules.HardDisparityM5Max = settings.HardDisparityM5Max
-	if rules.HardDisparityM5Max == 0 {
-		rules.HardDisparityM5Max = 3.0
-	}
 	rules.HardHighPriceDiffMax = settings.HardHighPriceDiffMax
-	if rules.HardHighPriceDiffMax == 0 {
-		rules.HardHighPriceDiffMax = -0.5
-	}
 	rules.HardHighPriceDiffMin = settings.HardHighPriceDiffMin
-	if rules.HardHighPriceDiffMin == 0 {
-		rules.HardHighPriceDiffMin = -5.0
-	}
 	rules.HardPrevVolRatioMax = settings.HardPrevVolRatioMax
-	if rules.HardPrevVolRatioMax == 0 {
-		rules.HardPrevVolRatioMax = 1.2
-	}
 	rules.HardStrengthMin = settings.HardStrengthMin
-	if rules.HardStrengthMin == 0 {
-		rules.HardStrengthMin = 100.0
-	}
 	rules.HardRSIMax = settings.HardRSIMax
-	if rules.HardRSIMax == 0 {
-		rules.HardRSIMax = 70.0
-	}
 	rules.HardOpenPriceDiffMax = settings.HardOpenPriceDiffMax
-	if rules.HardOpenPriceDiffMax == 0 {
-		rules.HardOpenPriceDiffMax = 15.0
-	}
 	rules.VWAPDiffMin = settings.VWAPDiffMin
 	rules.VWAPDiffMax = settings.VWAPDiffMax
-	if rules.VWAPDiffMax == 0 {
-		rules.VWAPDiffMax = 1.5
-	}
 	rules.RSIBuyMin = settings.RSIBuyMin
-	if rules.RSIBuyMin == 0 {
-		rules.RSIBuyMin = 40.0
-	}
 	rules.RSIBuyMax = settings.RSIBuyMax
-	if rules.RSIBuyMax == 0 {
-		rules.RSIBuyMax = 60.0
-	}
 	rules.BidAskRatioMin = settings.BidAskRatioMin
 	rules.MarketIndexDrop = marketIndexDrop
 	rules.MinExpectedProfitPct = settings.MinExpectedProfitPct

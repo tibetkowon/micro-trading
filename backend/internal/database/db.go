@@ -407,6 +407,31 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		v, _ := strconv.Atoi(vals[k])
 		return v
 	}
+	// f64Default returns the stored float64 value, or def only when the key is absent/blank.
+	// This prevents treating a user-saved 0 as "not set".
+	f64Default := func(k string, def float64) float64 {
+		v, ok := vals[k]
+		if !ok || v == "" {
+			return def
+		}
+		parsed, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return def
+		}
+		return parsed
+	}
+	// i64Default is the integer equivalent of f64Default.
+	i64Default := func(k string, def int) int {
+		v, ok := vals[k]
+		if !ok || v == "" {
+			return def
+		}
+		parsed, err := strconv.Atoi(v)
+		if err != nil {
+			return def
+		}
+		return parsed
+	}
 	strSlice := func(k string) []string {
 		var s []string
 		if v := vals[k]; v != "" {
@@ -415,30 +440,12 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		return s
 	}
 
-	takeProfitPct := f64("take_profit_pct")
-	if takeProfitPct == 0 {
-		takeProfitPct = 3.0
-	}
-	stopLossPct := f64("stop_loss_pct")
-	if stopLossPct == 0 {
-		stopLossPct = 2.0
-	}
-	maxPositions := i64("max_positions")
-	if maxPositions == 0 {
-		maxPositions = 1
-	}
-	orderAmountPct := f64("order_amount_pct")
-	if orderAmountPct == 0 {
-		orderAmountPct = 95
-	}
-	indicatorCheckInterval := i64("indicator_check_interval_min")
-	if indicatorCheckInterval == 0 {
-		indicatorCheckInterval = 5
-	}
-	rsiThreshold := f64("indicator_rsi_sell_threshold")
-	if rsiThreshold == 0 {
-		rsiThreshold = 70
-	}
+	takeProfitPct := f64Default("take_profit_pct", 3.0)
+	stopLossPct := f64Default("stop_loss_pct", 2.0)
+	maxPositions := i64Default("max_positions", 1)
+	orderAmountPct := f64Default("order_amount_pct", 95)
+	indicatorCheckInterval := i64Default("indicator_check_interval_min", 5)
+	rsiThreshold := f64Default("indicator_rsi_sell_threshold", 70)
 	claudeModel := vals["claude_model"]
 	if claudeModel == "" {
 		claudeModel = "claude-sonnet-4-6"
@@ -461,14 +468,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	if tradingEndTime == "" {
 		tradingEndTime = "15:15"
 	}
-	stagnationThresholdPct := f64("stagnation_threshold_pct")
-	if stagnationThresholdPct == 0 {
-		stagnationThresholdPct = 1.0
-	}
-	stagnationDurationMin := i64("stagnation_duration_min")
-	if stagnationDurationMin == 0 {
-		stagnationDurationMin = 30
-	}
+	stagnationThresholdPct := f64Default("stagnation_threshold_pct", 1.0)
+	stagnationDurationMin := i64Default("stagnation_duration_min", 30)
 	rankingCondition := vals["ranking_condition"]
 	if rankingCondition != "AND" && rankingCondition != "OR" {
 		rankingCondition = "AND"
@@ -482,26 +483,11 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		rankingVolumeBlngClsCodes = []string{"0", "1", "2", "3", "4"}
 	}
 
-	filterRsiMax := f64("filter_rsi_max")
-	if filterRsiMax == 0 {
-		filterRsiMax = 80
-	}
-	filterDisparityM5Max := f64("filter_disparity_m5_max")
-	if filterDisparityM5Max == 0 {
-		filterDisparityM5Max = 3.0
-	}
-	filterHighPriceDiffMin := f64("filter_high_price_diff_min")
-	if filterHighPriceDiffMin == 0 {
-		filterHighPriceDiffMin = -5.0
-	}
-	filterOpenPriceDiffMax := f64("filter_open_price_diff_max")
-	if filterOpenPriceDiffMax == 0 {
-		filterOpenPriceDiffMax = 20.0
-	}
-	indexDropThresholdPct := f64("index_drop_threshold_pct")
-	if indexDropThresholdPct == 0 {
-		indexDropThresholdPct = -1.0
-	}
+	filterRsiMax := f64Default("filter_rsi_max", 80)
+	filterDisparityM5Max := f64Default("filter_disparity_m5_max", 3.0)
+	filterHighPriceDiffMin := f64Default("filter_high_price_diff_min", -5.0)
+	filterOpenPriceDiffMax := f64Default("filter_open_price_diff_max", 20.0)
+	indexDropThresholdPct := f64Default("index_drop_threshold_pct", -1.0)
 
 	var tradingDays []int
 	if v, ok := vals["trading_days"]; ok && v != "" {
@@ -510,55 +496,19 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		}
 	}
 
-	hardDisparityM5Min := f64("hard_disparity_m5_min")
-	if hardDisparityM5Min == 0 {
-		hardDisparityM5Min = -1.5
-	}
-	hardDisparityM5Max := f64("hard_disparity_m5_max")
-	if hardDisparityM5Max == 0 {
-		hardDisparityM5Max = 3.0
-	}
-	hardHighPriceDiffMax := f64("hard_high_price_diff_max")
-	if hardHighPriceDiffMax == 0 {
-		hardHighPriceDiffMax = -0.5
-	}
-	hardHighPriceDiffMin := f64("hard_high_price_diff_min")
-	if hardHighPriceDiffMin == 0 {
-		hardHighPriceDiffMin = -5.0
-	}
-	hardPrevVolRatioMax := f64("hard_prev_vol_ratio_max")
-	if hardPrevVolRatioMax == 0 {
-		hardPrevVolRatioMax = 1.2
-	}
-	hardStrengthMin := f64("hard_strength_min")
-	if hardStrengthMin == 0 {
-		hardStrengthMin = 100.0
-	}
-	hardRSIMax := f64("hard_rsi_max")
-	if hardRSIMax == 0 {
-		hardRSIMax = 70.0
-	}
-	hardOpenPriceDiffMax := f64("hard_open_price_diff_max")
-	if hardOpenPriceDiffMax == 0 {
-		hardOpenPriceDiffMax = 15.0
-	}
+	hardDisparityM5Min := f64Default("hard_disparity_m5_min", -1.5)
+	hardDisparityM5Max := f64Default("hard_disparity_m5_max", 3.0)
+	hardHighPriceDiffMax := f64Default("hard_high_price_diff_max", -0.5)
+	hardHighPriceDiffMin := f64Default("hard_high_price_diff_min", -5.0)
+	hardPrevVolRatioMax := f64Default("hard_prev_vol_ratio_max", 1.2)
+	hardStrengthMin := f64Default("hard_strength_min", 100.0)
+	hardRSIMax := f64Default("hard_rsi_max", 70.0)
+	hardOpenPriceDiffMax := f64Default("hard_open_price_diff_max", 15.0)
 
-	vwapDiffMax := f64("vwap_diff_max")
-	if vwapDiffMax == 0 {
-		vwapDiffMax = 1.5
-	}
-	rsiBuyMin := f64("rsi_buy_min")
-	if rsiBuyMin == 0 {
-		rsiBuyMin = 40.0
-	}
-	rsiBuyMax := f64("rsi_buy_max")
-	if rsiBuyMax == 0 {
-		rsiBuyMax = 60.0
-	}
-	bidAskRatioMin := f64("bid_ask_ratio_min")
-	if bidAskRatioMin == 0 {
-		bidAskRatioMin = 1.2
-	}
+	vwapDiffMax := f64Default("vwap_diff_max", 1.5)
+	rsiBuyMin := f64Default("rsi_buy_min", 40.0)
+	rsiBuyMax := f64Default("rsi_buy_max", 60.0)
+	bidAskRatioMin := f64Default("bid_ask_ratio_min", 1.2)
 
 	return TradingSettings{
 		TakeProfitPct:             takeProfitPct,

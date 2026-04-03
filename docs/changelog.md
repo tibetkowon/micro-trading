@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-04-04 — 설정화면 0값 저장 버그 수정 및 하드감시 PATCH 누락 필드 추가
+
+### 버그 수정: 설정값 0 입력 시 기본값으로 대체되는 문제
+- **`frontend/src/pages/Settings.jsx`**: `parseFloat(x) || nonZeroDefault` 패턴을 `parseFloat(x)`로 변경 (20개 필드). 0은 JS에서 falsy라 기본값으로 대체되던 문제 해결
+- **`backend/internal/database/db.go`**: `f64Default(key, default)` / `i64Default(key, default)` 헬퍼 추가. 기존 `if value == 0 { value = default }` 패턴을 "키가 없거나 빈 문자열일 때만 기본값 적용"으로 교체 (25개 필드)
+- **`backend/internal/trader/engine.go`**: db.go에서 이미 기본값이 적용되므로 엔진 레벨의 이중 `== 0` 폴백 제거 (14개 필드)
+
+### 버그 수정: 종목 목록 하드감시 등록/해제 항상 실패하는 문제
+- **`backend/internal/api/handlers.go`**: `UpdateSettings` 핸들러 struct에 `hard_watch_symbols []string` 및 `rank_lease_duration_min *int` 필드 누락으로 PATCH 요청이 무시되던 문제 수정. 저장 로직 추가
+
 ## 2026-04-03 — 순위 세부옵션 추가 및 미장 필터 제거
 
 ### 등락률·VI 세부 필터 추가

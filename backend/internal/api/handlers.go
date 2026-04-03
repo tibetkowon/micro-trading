@@ -679,6 +679,9 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		BidAskRatioMin       *float64 `json:"bid_ask_ratio_min"`
 		MinMarketCap         *float64 `json:"min_market_cap"`
 		MinExpectedProfitPct *float64 `json:"min_expected_profit_pct"`
+		// 하드 감시 종목 목록
+		HardWatchSymbols     []string `json:"hard_watch_symbols"`
+		RankLeaseDurationMin *int     `json:"rank_lease_duration_min"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1080,6 +1083,17 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.MinExpectedProfitPct != nil {
 		if !save("min_expected_profit_pct", strconv.FormatFloat(*req.MinExpectedProfitPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardWatchSymbols != nil {
+		b, _ := json.Marshal(req.HardWatchSymbols)
+		if !save("hard_watch_symbols", string(b)) {
+			return
+		}
+	}
+	if req.RankLeaseDurationMin != nil {
+		if !save("rank_lease_duration_min", strconv.Itoa(*req.RankLeaseDurationMin)) {
 			return
 		}
 	}
