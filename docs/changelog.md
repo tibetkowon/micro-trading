@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-04-03 — 순위 세부옵션 추가 및 미장 필터 제거
+
+### 등락률·VI 세부 필터 추가
+- **`database/db.go`**: `ranking_fluctuation_min_rate`, `ranking_fluctuation_max_rate`, `ranking_vi_kind_code` 설정 키 추가
+- **`trader/engine.go`**: fluctuation 케이스에 등락률 범위 필터, vi_status 케이스에 정적/동적 종류 필터 추가
+- **`api/handlers.go`**: GetSettings/UpdateSettings에 신규 필드 3개 반영
+- **`Settings.jsx`**: 등락률 체크 시 최소/최대 등락률 입력 표시, VI 체크 시 전체/정적/동적 토글 버튼 표시
+- **`StockLogs.jsx`**: 국장/미장 탭 및 카드 배지 제거 (미장 미운용)
+
 ## 2026-04-03 — 트레이딩 시스템 고도화 2차 (Phase A~G)
 
 ### Phase A — RecoverFromHoldings() AssetType 버그 수정
