@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-04-06 — hard_watch 종목 현금 필터 silent drop 버그 수정
+
+- **`trader/engine.go`**: GetStockInfo 보강 루프에서 `CurrentPrice` 갱신 추가
+  - hard_watch 종목은 `getRankings()`에서 `CurrentPrice=""`로 추가됨
+  - 보강 루프에서 `CurrentPrice`가 복사되지 않아 현금 필터 `price > 0` 조건 실패 → silent drop
+  - `info.CurrentPrice != ""`이면 `rankings[i].CurrentPrice` 갱신하도록 수정 → 하드필터/LLM 정상 전달
+
 ## 2026-04-06 — 지수 필터 개선 및 종목로그 버그 수정
 
 ### 기능 개선

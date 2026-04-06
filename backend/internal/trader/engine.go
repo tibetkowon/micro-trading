@@ -414,6 +414,10 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		rankings[i].PrevVolumeRatio = info.PrevVolumeRatio
 		rankings[i].BidAskRatio = info.BidAskRatio
 		rankings[i].TradingValue = info.TradingValue
+		// CurrentPrice 갱신 — hard_watch 종목처럼 초기값이 빈 경우 보정
+		if info.CurrentPrice != "" {
+			rankings[i].CurrentPrice = info.CurrentPrice
+		}
 		// MST 기반 자산 타입 태깅
 		assetType := e.resolveAssetType(ctx, r.StockCode)
 		rankings[i].AssetType = assetType
