@@ -662,6 +662,9 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		IndexDropThresholdPct *float64 `json:"index_drop_threshold_pct"`
 		// 요일 스케줄
 		TradingDays []int `json:"trading_days"`
+		// 하드 감시 종목 / 순위 유지 시간
+		HardWatchSymbols     []string `json:"hard_watch_symbols"`
+		RankLeaseDurationMin *int     `json:"rank_lease_duration_min"`
 		// AI 매매 기준값 — 하드 리젝션 룰
 		HardDisparityM5Min   *float64 `json:"hard_disparity_m5_min"`
 		HardDisparityM5Max   *float64 `json:"hard_disparity_m5_max"`
@@ -1093,6 +1096,23 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 	if req.RankLeaseDurationMin != nil {
+		if !save("rank_lease_duration_min", strconv.Itoa(*req.RankLeaseDurationMin)) {
+			return
+		}
+	}
+
+	if req.HardWatchSymbols != nil {
+		b, _ := json.Marshal(req.HardWatchSymbols)
+		if !save("hard_watch_symbols", string(b)) {
+			return
+		}
+	}
+
+	if req.RankLeaseDurationMin != nil {
+		if *req.RankLeaseDurationMin < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "rank_lease_duration_min은 0 이상이어야 합니다"})
+			return
+		}
 		if !save("rank_lease_duration_min", strconv.Itoa(*req.RankLeaseDurationMin)) {
 			return
 		}

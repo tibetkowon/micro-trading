@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-04-06 — 지수 필터 개선 및 종목로그 버그 수정
+
+### 기능 개선
+- **`trader/engine.go`**: 지수 필터 동작 방식 변경
+  - 이전: 설정 지수 중 하나라도 임계값 이하 하락 시 **전체 매수 중단**
+  - 이후: 하락한 지수에 대응하는 **거래소만 순위 조회에서 제외**, 나머지 거래소는 정상 조회
+    - 예) KOSPI 하락 → KOSPI 거래소 제외, KOSDAQ만 순위 조회
+    - 예) 모든 지수 하락 → 기존과 동일하게 매수 중단
+  - `force=true` 강제 실행 시 지수 필터 완전 무시 — 기존 동작 유지
+  - 거래소 제외 발생 시 INFO 로그 기록 (제외 거래소, 활성 거래소, 임계값)
+
+### 버그 수정
+- **`trader/engine.go`**: `lease`·`hard_watch` 타입 종목 추가 시 `StockName` 미설정 수정 — MST store에서 종목명 조회 후 설정 (`lookupStockName` 헬퍼 추가)
+  - 증상: 종목로그에서 lease/하드감시 종목이 코드만 표시되고 종목명 없음
+- **`trader/engine.go`**: `GetInquireBalance` 실패·가용현금 없음·일일손실 초과·현금부족 등 early return 시 selection log 없이 종료되던 문제 수정
+  - `insertFailedSelectionLog` 헬퍼 추가 — 조기 종료 사유를 selection log의 `fail_reason`에 기록하고 `filtered_stocks`도 함께 갱신
+  - 증상: 종목로그에서 "하드필터 전체통과"인데 "LLM 선정 단계 미실행 — 순위/필터 단계에서 후보 없음"으로 표시되어 실제 실패 원인 파악 불가
+
 ## 2026-04-04 — 설정화면 0값 저장 버그 수정 및 하드감시 PATCH 누락 필드 추가
 
 ### 버그 수정: 설정값 0 입력 시 기본값으로 대체되는 문제

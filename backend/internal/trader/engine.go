@@ -274,26 +274,55 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		}
 	}
 
-	// 지수 필터: 지수가 시가 대비 설정값 이상 하락 시 매수 중단 (강제 실행 시 건너뜀)
+	// 지수 필터: 하락 지수의 거래소를 순위 조회에서 제외 (강제 실행 시 건너뜀)
+	// 지수 코드 = 거래소 코드 (0001=KOSPI, 1001=KOSDAQ)
 	indexDropThreshold := settings.IndexDropThresholdPct
 	if indexDropThreshold == 0 {
 		indexDropThreshold = -1.0
 	}
 	var marketIndexDrop float64
-	for _, code := range settings.IndexCodes {
-		if idx, idxErr := e.kisClient.GetIndexPrice(ctx, code); idxErr == nil {
-			open, _ := strconv.ParseFloat(idx.DayOpen, 64)
-			cur, _ := strconv.ParseFloat(idx.CurrentPrice, 64)
-			if open > 0 && cur > 0 {
-				drop := (cur - open) / open * 100
-				if drop < marketIndexDrop {
-					marketIndexDrop = drop // 가장 많이 하락한 지수 기준
-				}
-				if !force && drop <= indexDropThreshold {
-					e.setState(StateMonitoring)
-					return fmt.Errorf("지수 %.1f%% 이상 하락 (지수:%s %.2f%%↓), 매수 일시 중단", indexDropThreshold, code, drop)
+	if len(settings.IndexCodes) > 0 {
+		// 기본 거래소 목록: 비어 있으면 getRankings 기본값과 동일하게 초기화
+		activeExchanges := settings.RankingExchanges
+		if len(activeExchanges) == 0 {
+			activeExchanges = []string{"0001", "1001"}
+		}
+		droppedExchanges := make(map[string]bool)
+		var droppedInfo []string
+		for _, code := range settings.IndexCodes {
+			if idx, idxErr := e.kisClient.GetIndexPrice(ctx, code); idxErr == nil {
+				open, _ := strconv.ParseFloat(idx.DayOpen, 64)
+				cur, _ := strconv.ParseFloat(idx.CurrentPrice, 64)
+				if open > 0 && cur > 0 {
+					drop := (cur - open) / open * 100
+					if drop < marketIndexDrop {
+						marketIndexDrop = drop // 가장 많이 하락한 지수 기준
+					}
+					if !force && drop <= indexDropThreshold {
+						droppedExchanges[code] = true
+						droppedInfo = append(droppedInfo, fmt.Sprintf("%s(%.2f%%)", code, drop))
+					}
 				}
 			}
+		}
+		if len(droppedExchanges) > 0 {
+			var remaining []string
+			for _, exch := range activeExchanges {
+				if !droppedExchanges[exch] {
+					remaining = append(remaining, exch)
+				}
+			}
+			if len(remaining) == 0 {
+				e.setState(StateMonitoring)
+				return fmt.Errorf("모든 지수 하락으로 순위 조회 중단 (%s)", strings.Join(droppedInfo, ", "))
+			}
+			logger.Info("engine: index drop — excluding exchanges from ranking",
+				map[string]any{
+					"dropped":          droppedInfo,
+					"active_exchanges": remaining,
+					"threshold_pct":    indexDropThreshold,
+				})
+			settings.RankingExchanges = remaining
 		}
 	}
 
@@ -313,6 +342,19 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 
 	// allFilteredOut 누적: 모든 필터 단계에서 제거된 종목을 기록 (ranked_stocks → filtered_stocks DB 기록용)
 	var allFilteredOut []filteredStockEntry
+
+	// insertFailedSelectionLog: 후보 없이 종료될 때 selection log에 실패 원인 기록
+	insertFailedSelectionLog := func(reason string) {
+		if rankingLogID > 0 {
+			if len(allFilteredOut) > 0 {
+				filteredJSON, _ := json.Marshal(allFilteredOut)
+				e.db.ExecContext(ctx, `UPDATE trader_ranking_logs SET filtered_stocks=? WHERE id=?`, string(filteredJSON), rankingLogID) //nolint:errcheck
+			}
+			e.db.ExecContext(ctx, //nolint:errcheck
+				`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, fail_reason, market, ranking_log_id) VALUES (?,?,?,?,?,?)`,
+				0, "[]", "", reason, "KR", rankingLogID)
+		}
+	}
 
 	// Filter out already-traded stocks server-side before indicator fetch and Claude call.
 	if len(excludedCodes) > 0 {
@@ -342,6 +384,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		rankings = filtered
 	}
 	if len(rankings) == 0 {
+		insertFailedSelectionLog("오늘 거래된 종목 제외 후 후보 없음")
 		e.setState(StateMonitoring)
 		return fmt.Errorf("no ranking results after excluding already-traded stocks")
 	}
@@ -432,11 +475,14 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	// Get available cash.
 	summary, err := e.kisClient.GetInquireBalance(ctx)
 	if err != nil {
+		msg := fmt.Sprintf("잔고 조회 실패: %v", err)
+		insertFailedSelectionLog(msg)
 		e.setState(StateMonitoring)
 		return fmt.Errorf("GetInquireBalance: %w", err)
 	}
 	availableCash, _ := strconv.ParseFloat(summary.DepositAmt, 64)
 	if availableCash <= 0 {
+		insertFailedSelectionLog("가용 현금 없음")
 		e.setState(StateMonitoring)
 		return fmt.Errorf("no available cash")
 	}
@@ -453,6 +499,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			if -pnl >= lossLimit {
 				e.setState(StateMonitoring)
 				msg := fmt.Sprintf("일일 최대 손실 한도 도달 (%.0f원 손실 >= 한도 %.0f원)", -pnl, lossLimit)
+				insertFailedSelectionLog(msg)
 				e.db.InsertServiceLog(ctx, "TRADER", "ERROR", msg, "")
 				return fmt.Errorf("%s", msg)
 			}
@@ -477,6 +524,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		rankings = passed
 	}
 	if len(rankings) == 0 {
+		insertFailedSelectionLog(fmt.Sprintf("주가 > 가용현금(%.0f원)인 종목 전부 제거됨", availableCash))
 		e.setState(StateMonitoring)
 		return fmt.Errorf("no affordable stocks after price filter (cash: %.0f)", availableCash)
 	}
@@ -532,9 +580,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	}
 	if len(rankings) == 0 {
 		const failMsg = "no stocks passed hard filter (RSI/disparity/high-price/open-price)"
-		e.db.ExecContext(ctx, //nolint:errcheck
-			`INSERT INTO trader_selection_logs (sent_count, candidates, llm_result, fail_reason, market, ranking_log_id) VALUES (?,?,?,?,?,?)`,
-			0, "[]", "", failMsg, "KR", rankingLogID)
+		insertFailedSelectionLog(failMsg)
 		e.setState(StateMonitoring)
 		return fmt.Errorf("%s", failMsg)
 	}
@@ -1190,8 +1236,10 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				continue
 			}
 			if !resultCodes[code] {
+				stockName := e.lookupStockName(ctx, code)
 				result = append(result, RankItem{
 					StockCode:   code,
+					StockName:   stockName,
 					RankingType: "lease",
 				})
 			}
@@ -1207,8 +1255,10 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		}
 		for _, code := range settings.HardWatchSymbols {
 			if !resultCodes[code] {
+				stockName := e.lookupStockName(ctx, code)
 				result = append(result, RankItem{
 					StockCode:   code,
+					StockName:   stockName,
 					RankingType: "hard_watch",
 				})
 			}
@@ -1268,6 +1318,18 @@ func (e *Engine) resolveProfitLoss(assetType string, s database.TradingSettings)
 		stopPct = s.StopLossPct
 	}
 	return takePct, stopPct
+}
+
+// lookupStockName returns the Korean stock name from MST store, or "" if not found.
+func (e *Engine) lookupStockName(ctx context.Context, stockCode string) string {
+	if e.mstStore == nil {
+		return ""
+	}
+	m, err := e.mstStore.GetByCode(ctx, stockCode)
+	if err != nil || m == nil {
+		return ""
+	}
+	return m.StockName
 }
 
 // resolveAssetType looks up the stock in stock_masters and returns one of:
