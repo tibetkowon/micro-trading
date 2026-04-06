@@ -601,6 +601,9 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"bid_ask_ratio_min":       ts.BidAskRatioMin,
 		"min_market_cap":          ts.MinMarketCap,
 		"min_expected_profit_pct": ts.MinExpectedProfitPct,
+		// 하드 감시 종목 / 순위 유지 시간
+		"hard_watch_symbols":      ts.HardWatchSymbols,
+		"rank_lease_duration_min": ts.RankLeaseDurationMin,
 		"active_preset_id":        h.db.GetSetting(c.Request.Context(), "active_preset_id"),
 	})
 }
