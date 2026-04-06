@@ -453,6 +453,11 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		}
 		rankings = passed
 	}
+	if len(rankings) == 0 {
+		insertFailedSelectionLog("시가총액 필터 후 후보 없음")
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no stocks passed min_market_cap filter")
+	}
 
 	// 거래대금 하한선 필터
 	if settings.MinTradingValue > 0 {
@@ -470,6 +475,11 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			}
 		}
 		rankings = passed
+	}
+	if len(rankings) == 0 {
+		insertFailedSelectionLog("거래대금 필터 후 후보 없음")
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no stocks passed min_trading_value filter")
 	}
 
 	// Get available cash.

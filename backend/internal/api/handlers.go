@@ -421,7 +421,7 @@ func (h *Handler) GetServiceLogs(c *gin.Context) {
 // 30일 이상 된 로그는 자동 삭제됨
 func (h *Handler) GetSelectionLogs(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	if limit <= 0 || limit > 100 {
+	if limit <= 0 || limit > 500 {
 		limit = 20
 	}
 
