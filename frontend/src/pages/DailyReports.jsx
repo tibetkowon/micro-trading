@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import PropTypes from 'prop-types'
 import { useApi } from '../hooks/useApi'
 
 function fmt(val, digits = 0) {
@@ -14,6 +15,7 @@ function WinRateBadge({ winning, total }) {
   const color = pct >= 60 ? 'text-emerald-400' : pct >= 40 ? 'text-yellow-400' : 'text-red-400'
   return <span className={`font-semibold text-sm ${color}`}>{pct.toFixed(0)}%</span>
 }
+WinRateBadge.propTypes = { winning: PropTypes.number, total: PropTypes.number }
 
 function ProfitColor({ amount }) {
   const n = Number(amount)
@@ -21,6 +23,7 @@ function ProfitColor({ amount }) {
   const color = n > 0 ? 'text-emerald-400' : 'text-red-400'
   return <span className={`font-semibold text-sm ${color}`}>{n > 0 ? '+' : ''}{n.toLocaleString()}원</span>
 }
+ProfitColor.propTypes = { amount: PropTypes.number }
 
 function TradeSummaryTable({ json }) {
   const [open, setOpen] = useState(false)
@@ -72,6 +75,8 @@ function TradeSummaryTable({ json }) {
   )
 }
 
+TradeSummaryTable.propTypes = { json: PropTypes.string }
+
 function BestWorstCard({ label, json, color }) {
   if (!json || json === 'null') return null
   let t
@@ -88,6 +93,12 @@ function BestWorstCard({ label, json, color }) {
       {t.sell_reason && <p className="text-xs text-th-on-muted mt-1">{t.sell_reason}</p>}
     </div>
   )
+}
+
+BestWorstCard.propTypes = {
+  label: PropTypes.string,
+  json: PropTypes.string,
+  color: PropTypes.string,
 }
 
 export default function DailyReports() {
@@ -163,7 +174,7 @@ export default function DailyReports() {
       {loading ? (
         <p className="text-th-on-muted">로딩 중...</p>
       ) : reports.length === 0 ? (
-        <p className="text-th-on-muted">일별 리포트가 없습니다. 거래 후 "오늘 리포트 생성" 버튼을 눌러보세요.</p>
+        <p className="text-th-on-muted">일별 리포트가 없습니다. 거래 후 &ldquo;오늘 리포트 생성&rdquo; 버튼을 눌러보세요.</p>
       ) : (
         <div className="space-y-4">
           {reports.map((r) => (

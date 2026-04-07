@@ -130,7 +130,7 @@ type TraderRankingLog struct {
 // TradeReport records each trade lifecycle (buy → sell) with indicators and reasoning.
 type TradeReport struct {
 	ID             int64      `json:"id"`
-	Date           string     `json:"date"`             // YYYY-MM-DD
+	Date           string     `json:"date"` // YYYY-MM-DD
 	StockCode      string     `json:"stock_code"`
 	StockName      string     `json:"stock_name"`
 	BuyOrderID     int64      `json:"buy_order_id"`
@@ -139,13 +139,13 @@ type TradeReport struct {
 	BuyPrice       float64    `json:"buy_price"`
 	BuyQty         int        `json:"buy_qty"`
 	BuyAmount      float64    `json:"buy_amount"`
-	BuyReason      string     `json:"buy_reason"`       // Claude 선정 근거
-	BuyIndicators  string     `json:"buy_indicators"`   // JSON: RankItem snapshot
-	SellPrice      float64    `json:"sell_price"`       // 0 until sold
+	BuyReason      string     `json:"buy_reason"`     // Claude 선정 근거
+	BuyIndicators  string     `json:"buy_indicators"` // JSON: RankItem snapshot
+	SellPrice      float64    `json:"sell_price"`     // 0 until sold
 	SellQty        int        `json:"sell_qty"`
 	SellAmount     float64    `json:"sell_amount"`
 	SellReason     string     `json:"sell_reason"`
-	SellIndicators string     `json:"sell_indicators"`  // JSON: StockInfo at sell time
+	SellIndicators string     `json:"sell_indicators"` // JSON: StockInfo at sell time
 	ProfitAmount   float64    `json:"profit_amount"`
 	ProfitPct      float64    `json:"profit_pct"`
 	CreatedAt      time.Time  `json:"created_at"`

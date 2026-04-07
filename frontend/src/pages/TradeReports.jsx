@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import PropTypes from 'prop-types'
 import { useApi } from '../hooks/useApi'
 
 function fmt(val, digits = 0) {
@@ -19,6 +20,7 @@ function ProfitBadge({ pct }) {
   const color = n > 0 ? 'text-emerald-400' : n < 0 ? 'text-red-400' : 'text-th-on-muted'
   return <span className={`font-semibold text-xs ${color}`}>{n > 0 ? '+' : ''}{n.toFixed(2)}%</span>
 }
+ProfitBadge.propTypes = { pct: PropTypes.number }
 
 function IndicatorPopover({ json }) {
   const [open, setOpen] = useState(false)
@@ -63,6 +65,7 @@ function IndicatorPopover({ json }) {
     </div>
   )
 }
+IndicatorPopover.propTypes = { json: PropTypes.string }
 
 export default function TradeReports() {
   const [date, setDate] = useState('')
