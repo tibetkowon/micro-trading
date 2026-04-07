@@ -9,11 +9,15 @@ import ErrorLogs from './pages/ErrorLogs'
 import StockLogs from './pages/StockLogs'
 import Settings from './pages/Settings'
 import StockList from './pages/StockList'
+import TradeReports from './pages/TradeReports'
+import DailyReports from './pages/DailyReports'
 
 const navItems = [
   { to: '/', label: '대시보드', end: true, icon: 'dashboard' },
   { to: '/monitor', label: '모니터', icon: 'monitor_heart' },
   { to: '/orders', label: '주문 내역', icon: 'receipt_long' },
+  { to: '/reports/trades', label: '거래 리포트', icon: 'analytics' },
+  { to: '/reports/daily', label: '일별 리포트', icon: 'bar_chart' },
   { to: '/logs', label: '에러 로그', icon: 'report' },
   { to: '/stock-logs', label: '종목 로그', icon: 'candlestick_chart' },
   { to: '/stock-list', label: '종목 목록', icon: 'format_list_bulleted' },
@@ -167,6 +171,8 @@ function AppInner() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/monitor" element={<Monitor />} />
             <Route path="/orders" element={<Orders />} />
+            <Route path="/reports/trades" element={<TradeReports />} />
+            <Route path="/reports/daily" element={<DailyReports />} />
             <Route path="/logs" element={<ErrorLogs />} />
             <Route path="/stock-logs" element={<StockLogs />} />
             <Route path="/stock-list" element={<StockList />} />

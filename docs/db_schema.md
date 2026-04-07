@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-03-18 (rev 15 — service_logs 테이블 추가, settings us_daily_max_loss_pct/us_min_trading_value 키 추가)
+> Last updated: 2026-04-07 (rev 16 — trade_reports, daily_reports 테이블 추가)
 
 ---
 
@@ -289,6 +289,56 @@
 | `rsi_buy_min` | `40.0` | 이상적 RSI 매수 구간 하한 |
 | `rsi_buy_max` | `60.0` | 이상적 RSI 매수 구간 상한 |
 | `bid_ask_ratio_min` | `1.2` | 최소 매수호가 우세 비율 |
+
+---
+
+## Table: `trade_reports`
+
+**Purpose:** 매수 → 매도 거래 라이프사이클 기록. 매수 시 기술 지표 스냅샷과 Claude 선정 근거를 저장하고, 매도 후 매도 시점 지표 및 손익을 업데이트.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | INTEGER | PK AUTOINCREMENT | 자동증가 |
+| `date` | TEXT | NOT NULL | 거래 날짜 (YYYY-MM-DD) |
+| `stock_code` | TEXT | NOT NULL | 종목 코드 |
+| `stock_name` | TEXT | NOT NULL, DEFAULT '' | 종목명 |
+| `buy_order_id` | INTEGER | NOT NULL, DEFAULT 0 | orders.id (매수 주문) |
+| `sell_order_id` | INTEGER | NOT NULL, DEFAULT 0 | orders.id (매도 주문, 0 until sold) |
+| `selection_log_id` | INTEGER | NOT NULL, DEFAULT 0 | trader_selection_logs.id (0 if not from trader) |
+| `buy_price` | REAL | NOT NULL, DEFAULT 0 | 매수 체결가 |
+| `buy_qty` | INTEGER | NOT NULL, DEFAULT 0 | 매수 수량 |
+| `buy_amount` | REAL | NOT NULL, DEFAULT 0 | buy_price × buy_qty |
+| `buy_reason` | TEXT | NOT NULL, DEFAULT '' | Claude 선정 근거 |
+| `buy_indicators` | TEXT | NOT NULL, DEFAULT '' | JSON: 매수 시 RankItem 스냅샷 |
+| `sell_price` | REAL | NOT NULL, DEFAULT 0 | 매도 체결가 (0 until sold) |
+| `sell_qty` | INTEGER | NOT NULL, DEFAULT 0 | 매도 수량 |
+| `sell_amount` | REAL | NOT NULL, DEFAULT 0 | sell_price × sell_qty |
+| `sell_reason` | TEXT | NOT NULL, DEFAULT '' | 매도 사유 |
+| `sell_indicators` | TEXT | NOT NULL, DEFAULT '' | JSON: 매도 시점 StockInfo |
+| `profit_amount` | REAL | NOT NULL, DEFAULT 0 | sell_amount - buy_amount |
+| `profit_pct` | REAL | NOT NULL, DEFAULT 0 | (sell_price - buy_price) / buy_price × 100 |
+| `created_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 매수 시각 |
+| `sold_at` | DATETIME | NULL | 매도 시각 (NULL until sold) |
+
+---
+
+## Table: `daily_reports`
+
+**Purpose:** 하루 종료 후 당일 완료 거래를 집계한 일별 요약. 매일 15:20 자동 생성 또는 UI에서 수동 트리거.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | INTEGER | PK AUTOINCREMENT | 자동증가 |
+| `date` | TEXT | NOT NULL UNIQUE | 날짜 (YYYY-MM-DD) |
+| `total_trades` | INTEGER | NOT NULL, DEFAULT 0 | 완료 거래 총 수 |
+| `winning_trades` | INTEGER | NOT NULL, DEFAULT 0 | 수익 거래 수 |
+| `losing_trades` | INTEGER | NOT NULL, DEFAULT 0 | 손실 거래 수 |
+| `total_profit_amount` | REAL | NOT NULL, DEFAULT 0 | 총 손익 합계 (원) |
+| `avg_profit_pct` | REAL | NOT NULL, DEFAULT 0 | 평균 수익률 (%) |
+| `best_trade` | TEXT | NOT NULL, DEFAULT '' | JSON: 최고 수익 거래 요약 |
+| `worst_trade` | TEXT | NOT NULL, DEFAULT '' | JSON: 최대 손실 거래 요약 |
+| `trade_summary` | TEXT | NOT NULL, DEFAULT '' | JSON array: 전체 완료 거래 요약 |
+| `created_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | 리포트 생성/갱신 시각 |
 
 ---
 

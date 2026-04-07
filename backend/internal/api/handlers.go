@@ -15,6 +15,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/models"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
 	"github.com/micro-trading-for-agent/backend/internal/mst"
+	"github.com/micro-trading-for-agent/backend/internal/report"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
 
@@ -1516,4 +1517,53 @@ func (h *Handler) GetStocks(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
+}
+
+// GET /api/reports/trades?date=YYYY-MM-DD&stock_code=XXXXXX&page=1&limit=20
+func (h *Handler) GetTradeReports(c *gin.Context) {
+	date := c.Query("date")
+	stockCode := c.Query("stock_code")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	reports, err := h.db.GetTradeReports(c.Request.Context(), date, stockCode, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"reports": reports})
+}
+
+// GET /api/reports/daily?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=30
+func (h *Handler) GetDailyReports(c *gin.Context) {
+	from := c.Query("from")
+	to := c.Query("to")
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "30"))
+	if limit < 1 || limit > 365 {
+		limit = 30
+	}
+
+	reports, err := h.db.GetDailyReports(c.Request.Context(), from, to, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"reports": reports})
+}
+
+// POST /api/reports/daily/generate?date=YYYY-MM-DD
+func (h *Handler) GenerateDailyReport(c *gin.Context) {
+	date := c.Query("date")
+	if err := report.GenerateDailyReport(c.Request.Context(), h.db, date); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

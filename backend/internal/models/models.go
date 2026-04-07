@@ -127,6 +127,46 @@ type TraderRankingLog struct {
 	Market            string    `json:"market"` // "KR" | "US"
 }
 
+// TradeReport records each trade lifecycle (buy → sell) with indicators and reasoning.
+type TradeReport struct {
+	ID             int64      `json:"id"`
+	Date           string     `json:"date"`             // YYYY-MM-DD
+	StockCode      string     `json:"stock_code"`
+	StockName      string     `json:"stock_name"`
+	BuyOrderID     int64      `json:"buy_order_id"`
+	SellOrderID    int64      `json:"sell_order_id"`    // 0 until sold
+	SelectionLogID int64      `json:"selection_log_id"` // 0 if not from trader
+	BuyPrice       float64    `json:"buy_price"`
+	BuyQty         int        `json:"buy_qty"`
+	BuyAmount      float64    `json:"buy_amount"`
+	BuyReason      string     `json:"buy_reason"`       // Claude 선정 근거
+	BuyIndicators  string     `json:"buy_indicators"`   // JSON: RankItem snapshot
+	SellPrice      float64    `json:"sell_price"`       // 0 until sold
+	SellQty        int        `json:"sell_qty"`
+	SellAmount     float64    `json:"sell_amount"`
+	SellReason     string     `json:"sell_reason"`
+	SellIndicators string     `json:"sell_indicators"`  // JSON: StockInfo at sell time
+	ProfitAmount   float64    `json:"profit_amount"`
+	ProfitPct      float64    `json:"profit_pct"`
+	CreatedAt      time.Time  `json:"created_at"`
+	SoldAt         *time.Time `json:"sold_at"` // nil until sold
+}
+
+// DailyReport summarizes all completed trades for a single trading day.
+type DailyReport struct {
+	ID                int64     `json:"id"`
+	Date              string    `json:"date"` // YYYY-MM-DD, UNIQUE
+	TotalTrades       int       `json:"total_trades"`
+	WinningTrades     int       `json:"winning_trades"`
+	LosingTrades      int       `json:"losing_trades"`
+	TotalProfitAmount float64   `json:"total_profit_amount"`
+	AvgProfitPct      float64   `json:"avg_profit_pct"`
+	BestTrade         string    `json:"best_trade"`    // JSON: TradeReport 요약
+	WorstTrade        string    `json:"worst_trade"`   // JSON: TradeReport 요약
+	TradeSummary      string    `json:"trade_summary"` // JSON: 전체 완료 거래 배열
+	CreatedAt         time.Time `json:"created_at"`
+}
+
 // Token stores the KIS OAuth access token and its validity window.
 type Token struct {
 	ID          int64     `json:"id"`

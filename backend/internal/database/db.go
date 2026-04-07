@@ -242,6 +242,44 @@ func (db *DB) migrate() error {
 			listed_shares          INTEGER  NOT NULL DEFAULT 0,
 			updated_at             DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS trade_reports (
+			id               INTEGER  PRIMARY KEY AUTOINCREMENT,
+			date             TEXT     NOT NULL,
+			stock_code       TEXT     NOT NULL,
+			stock_name       TEXT     NOT NULL DEFAULT '',
+			buy_order_id     INTEGER  NOT NULL DEFAULT 0,
+			sell_order_id    INTEGER  NOT NULL DEFAULT 0,
+			selection_log_id INTEGER  NOT NULL DEFAULT 0,
+			buy_price        REAL     NOT NULL DEFAULT 0,
+			buy_qty          INTEGER  NOT NULL DEFAULT 0,
+			buy_amount       REAL     NOT NULL DEFAULT 0,
+			buy_reason       TEXT     NOT NULL DEFAULT '',
+			buy_indicators   TEXT     NOT NULL DEFAULT '',
+			sell_price       REAL     NOT NULL DEFAULT 0,
+			sell_qty         INTEGER  NOT NULL DEFAULT 0,
+			sell_amount      REAL     NOT NULL DEFAULT 0,
+			sell_reason      TEXT     NOT NULL DEFAULT '',
+			sell_indicators  TEXT     NOT NULL DEFAULT '',
+			profit_amount    REAL     NOT NULL DEFAULT 0,
+			profit_pct       REAL     NOT NULL DEFAULT 0,
+			created_at       DATETIME NOT NULL DEFAULT (datetime('now')),
+			sold_at          DATETIME
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS daily_reports (
+			id                  INTEGER  PRIMARY KEY AUTOINCREMENT,
+			date                TEXT     NOT NULL UNIQUE,
+			total_trades        INTEGER  NOT NULL DEFAULT 0,
+			winning_trades      INTEGER  NOT NULL DEFAULT 0,
+			losing_trades       INTEGER  NOT NULL DEFAULT 0,
+			total_profit_amount REAL     NOT NULL DEFAULT 0,
+			avg_profit_pct      REAL     NOT NULL DEFAULT 0,
+			best_trade          TEXT     NOT NULL DEFAULT '',
+			worst_trade         TEXT     NOT NULL DEFAULT '',
+			trade_summary       TEXT     NOT NULL DEFAULT '',
+			created_at          DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
 	}
 
 	for _, s := range stmts {
@@ -848,4 +886,167 @@ func (db *DB) UpdateSettingsPreset(ctx context.Context, id int64, settingsJSON s
 		`UPDATE settings_presets SET settings_json=?, updated_at=datetime('now') WHERE id=?`,
 		settingsJSON, id)
 	return err
+}
+
+// ────────────────────────────────────────────────────────
+// Trade Reports
+// ────────────────────────────────────────────────────────
+
+// InsertTradeReport inserts a new trade report record for a buy event.
+func (db *DB) InsertTradeReport(ctx context.Context, r models.TradeReport) (int64, error) {
+	res, err := db.ExecContext(ctx,
+		`INSERT INTO trade_reports
+		 (date, stock_code, stock_name, buy_order_id, selection_log_id,
+		  buy_price, buy_qty, buy_amount, buy_reason, buy_indicators, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		r.Date, r.StockCode, r.StockName, r.BuyOrderID, r.SelectionLogID,
+		r.BuyPrice, r.BuyQty, r.BuyAmount, r.BuyReason, r.BuyIndicators)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// UpdateTradeReportOnSell updates a trade_report when the position is sold.
+// Matches by buy_order_id. Calculates profit_amount and profit_pct.
+func (db *DB) UpdateTradeReportOnSell(ctx context.Context, buyOrderID, sellOrderID int64, sellPrice float64, sellQty int, sellReason, sellIndicators string) error {
+	var buyPrice float64
+	var buyQty int
+	_ = db.QueryRowContext(ctx,
+		`SELECT buy_price, buy_qty FROM trade_reports WHERE buy_order_id = ? AND sold_at IS NULL`,
+		buyOrderID).Scan(&buyPrice, &buyQty)
+
+	sellAmount := sellPrice * float64(sellQty)
+	profitAmount := sellAmount - (buyPrice * float64(buyQty))
+	profitPct := 0.0
+	if buyPrice > 0 {
+		profitPct = (sellPrice - buyPrice) / buyPrice * 100
+	}
+
+	_, err := db.ExecContext(ctx,
+		`UPDATE trade_reports
+		 SET sell_order_id=?, sell_price=?, sell_qty=?, sell_amount=?,
+		     sell_reason=?, sell_indicators=?,
+		     profit_amount=?, profit_pct=?, sold_at=datetime('now')
+		 WHERE buy_order_id=? AND sold_at IS NULL`,
+		sellOrderID, sellPrice, sellQty, sellAmount,
+		sellReason, sellIndicators,
+		profitAmount, profitPct, buyOrderID)
+	return err
+}
+
+// GetTradeReports queries trade_reports with optional filters. Results sorted by id DESC.
+func (db *DB) GetTradeReports(ctx context.Context, date, stockCode string, limit, offset int) ([]models.TradeReport, error) {
+	where := "WHERE 1=1"
+	args := []any{}
+	if date != "" {
+		where += " AND date = ?"
+		args = append(args, date)
+	}
+	if stockCode != "" {
+		where += " AND stock_code = ?"
+		args = append(args, stockCode)
+	}
+	args = append(args, limit, offset)
+
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, date, stock_code, stock_name,
+		        buy_order_id, sell_order_id, selection_log_id,
+		        buy_price, buy_qty, buy_amount, buy_reason, buy_indicators,
+		        sell_price, sell_qty, sell_amount, sell_reason, sell_indicators,
+		        profit_amount, profit_pct, created_at, sold_at
+		 FROM trade_reports `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reports []models.TradeReport
+	for rows.Next() {
+		var r models.TradeReport
+		if err := rows.Scan(
+			&r.ID, &r.Date, &r.StockCode, &r.StockName,
+			&r.BuyOrderID, &r.SellOrderID, &r.SelectionLogID,
+			&r.BuyPrice, &r.BuyQty, &r.BuyAmount, &r.BuyReason, &r.BuyIndicators,
+			&r.SellPrice, &r.SellQty, &r.SellAmount, &r.SellReason, &r.SellIndicators,
+			&r.ProfitAmount, &r.ProfitPct, &r.CreatedAt, &r.SoldAt,
+		); err != nil {
+			return nil, err
+		}
+		reports = append(reports, r)
+	}
+	if reports == nil {
+		reports = []models.TradeReport{}
+	}
+	return reports, nil
+}
+
+// ────────────────────────────────────────────────────────
+// Daily Reports
+// ────────────────────────────────────────────────────────
+
+// InsertOrUpdateDailyReport upserts a daily_report record.
+func (db *DB) InsertOrUpdateDailyReport(ctx context.Context, r models.DailyReport) error {
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO daily_reports
+		 (date, total_trades, winning_trades, losing_trades,
+		  total_profit_amount, avg_profit_pct,
+		  best_trade, worst_trade, trade_summary, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+		 ON CONFLICT(date) DO UPDATE SET
+		   total_trades=excluded.total_trades,
+		   winning_trades=excluded.winning_trades,
+		   losing_trades=excluded.losing_trades,
+		   total_profit_amount=excluded.total_profit_amount,
+		   avg_profit_pct=excluded.avg_profit_pct,
+		   best_trade=excluded.best_trade,
+		   worst_trade=excluded.worst_trade,
+		   trade_summary=excluded.trade_summary,
+		   created_at=excluded.created_at`,
+		r.Date, r.TotalTrades, r.WinningTrades, r.LosingTrades,
+		r.TotalProfitAmount, r.AvgProfitPct,
+		r.BestTrade, r.WorstTrade, r.TradeSummary)
+	return err
+}
+
+// GetDailyReports returns daily_reports sorted by date DESC.
+func (db *DB) GetDailyReports(ctx context.Context, from, to string, limit int) ([]models.DailyReport, error) {
+	where := "WHERE 1=1"
+	args := []any{}
+	if from != "" {
+		where += " AND date >= ?"
+		args = append(args, from)
+	}
+	if to != "" {
+		where += " AND date <= ?"
+		args = append(args, to)
+	}
+	args = append(args, limit)
+
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, date, total_trades, winning_trades, losing_trades,
+		        total_profit_amount, avg_profit_pct,
+		        best_trade, worst_trade, trade_summary, created_at
+		 FROM daily_reports `+where+` ORDER BY date DESC LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reports []models.DailyReport
+	for rows.Next() {
+		var r models.DailyReport
+		if err := rows.Scan(
+			&r.ID, &r.Date, &r.TotalTrades, &r.WinningTrades, &r.LosingTrades,
+			&r.TotalProfitAmount, &r.AvgProfitPct,
+			&r.BestTrade, &r.WorstTrade, &r.TradeSummary, &r.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		reports = append(reports, r)
+	}
+	if reports == nil {
+		reports = []models.DailyReport{}
+	}
+	return reports, nil
 }

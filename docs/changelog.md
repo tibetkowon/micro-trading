@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-04-07 — 거래 학습 리포트 기능 추가
+
+### DB 스키마
+- **`trade_reports`** 테이블 신규: 매수 시 RankItem 스냅샷·Claude 선정 근거·체결가/수량 저장, 매도 후 지표 재수집 및 손익 자동 계산
+- **`daily_reports`** 테이블 신규: 하루 종료 후 승률·총손익·평균수익률·최고/최하 거래 집계
+
+### 백엔드
+- **`models/models.go`**: `TradeReport`, `DailyReport` 구조체 추가
+- **`database/db.go`**: 테이블 마이그레이션 + `InsertTradeReport`, `UpdateTradeReportOnSell`, `GetTradeReports`, `InsertOrUpdateDailyReport`, `GetDailyReports` CRUD 메서드 추가
+- **`trader/engine.go`**: 매수 체결 성공 후 `InsertTradeReport` goroutine 비동기 호출
+- **`monitor/monitor.go`**: `executeSell` / `LiquidateAll` 매도 후 `agent.GetStockInfo` 재호출로 매도 시점 지표 수집 + `UpdateTradeReportOnSell` 호출
+- **`report/report.go`** 신규: `GenerateDailyReport` — 당일 완료 거래 집계 → `daily_reports` UPSERT
+- **`cmd/server/main.go`**: 15:20 스케줄에 `GenerateDailyReport` 자동 호출 추가
+- **`api/handlers.go`**: `GET /api/reports/trades`, `GET /api/reports/daily`, `POST /api/reports/daily/generate` 핸들러 추가
+- **`api/router.go`**: `/api/reports/*` 라우트 등록
+
+### 프론트엔드
+- **`TradeReports.jsx`** 신규: 거래별 리포트 — 매수/매도 지표 팝오버, 손익 색상, 날짜·종목 필터, 페이지네이션
+- **`DailyReports.jsx`** 신규: 일별 요약 카드 — 승률·총손익·최고/최하 거래·거래 목록 토글
+- **`App.jsx`**: "거래 리포트", "일별 리포트" 네비게이션 탭 추가
+
 ## 2026-04-06 — hard_watch 종목 현금 필터 silent drop 버그 수정
 
 - **`trader/engine.go`**: GetStockInfo 보강 루프에서 `CurrentPrice` 갱신 추가

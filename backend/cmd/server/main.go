@@ -18,6 +18,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
 	"github.com/micro-trading-for-agent/backend/internal/mst"
+	"github.com/micro-trading-for-agent/backend/internal/report"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
 
@@ -212,6 +213,7 @@ func runMarketScheduler(ctx context.Context,
 	var engineRunning bool
 	var tradingReady bool
 	var mstDownloaded bool
+	var reportGenerated bool
 	var stopEngine func()
 	var stopIndicator context.CancelFunc
 
@@ -351,12 +353,25 @@ func runMarketScheduler(ctx context.Context,
 				logger.Info("market scheduler: end-time liquidation triggered", map[string]any{"hhmm": hhmm, "end": endHHMM})
 				mon.LiquidateAll(ctx, "KR")
 
+			case !reportGenerated && hhmm >= 1520 && hhmm < 1600:
+				// 15:20 — generate daily trade report
+				reportGenerated = true
+				go func() {
+					if err := report.GenerateDailyReport(ctx, db, ""); err != nil {
+						logger.Error("market scheduler: daily report generation failed",
+							map[string]any{"error": err.Error()})
+					} else {
+						logger.Info("market scheduler: daily report generated", nil)
+					}
+				}()
+
 			case hhmm == 1600 && wsRunning:
 				// 16:00 — disconnect
 				wsClient.Disconnect()
 				wsRunning = false
 				tradingReady = false
 				engineRunning = false
+				reportGenerated = false
 				logger.Info("market scheduler: WebSocket disconnected at 16:00", nil)
 			}
 		}

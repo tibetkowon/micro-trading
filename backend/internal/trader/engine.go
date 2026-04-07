@@ -753,15 +753,16 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			"filled_qty":   filledQty,
 		})
 
+	// Extract chosen reason for selection log update and trade report.
+	chosenReason := ""
+	for _, cand := range candidates {
+		if cand.StockCode == stockCode {
+			chosenReason = cand.Reason
+			break
+		}
+	}
 	// Update selection log with the winning candidate's code and reason.
 	if selectionLogID > 0 {
-		chosenReason := ""
-		for _, cand := range candidates {
-			if cand.StockCode == stockCode {
-				chosenReason = cand.Reason
-				break
-			}
-		}
 		e.db.ExecContext(ctx, //nolint:errcheck
 			`UPDATE trader_selection_logs SET selected_code=?, selected_reason=? WHERE id=?`,
 			stockCode, chosenReason, selectionLogID)
@@ -780,6 +781,38 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	e.db.ExecContext(ctx, //nolint:errcheck
 		`UPDATE orders SET filled_price = ?, status = ?, stock_name = CASE WHEN stock_name = '' THEN ? ELSE stock_name END WHERE id = ?`,
 		filledPrice, string(models.OrderStatusFilled), stockName, result.OrderID)
+
+	// Save trade report for learning (non-blocking).
+	{
+		var winningItem RankItem
+		for _, r := range rankings {
+			if r.StockCode == stockCode {
+				winningItem = r
+				break
+			}
+		}
+		go func(item RankItem, reason string, orderID int64, price float64, qty int, logID int64) {
+			buyJSON, _ := json.Marshal(item)
+			kst, _ := time.LoadLocation("Asia/Seoul")
+			today := time.Now().In(kst).Format("2006-01-02")
+			tr := models.TradeReport{
+				Date:           today,
+				StockCode:      item.StockCode,
+				StockName:      item.StockName,
+				BuyOrderID:     orderID,
+				SelectionLogID: logID,
+				BuyPrice:       price,
+				BuyQty:         qty,
+				BuyAmount:      price * float64(qty),
+				BuyReason:      reason,
+				BuyIndicators:  string(buyJSON),
+			}
+			if _, err := e.db.InsertTradeReport(context.Background(), tr); err != nil {
+				logger.Error("engine: InsertTradeReport failed",
+					map[string]any{"stock_code": item.StockCode, "error": err.Error()})
+			}
+		}(winningItem, chosenReason, result.OrderID, filledPrice, filledQty, selectionLogID)
+	}
 
 	// Resolve take-profit and stop-loss based on asset type.
 	assetType := e.resolveAssetType(ctx, stockCode)

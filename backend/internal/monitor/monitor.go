@@ -2,11 +2,14 @@ package monitor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/micro-trading-for-agent/backend/internal/agent"
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
@@ -284,6 +287,31 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 		 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
 		stockCode, pos.StockName, qty, pos.FilledPrice, kisOrderID, reason, time.Now().UTC())
 
+	// Update trade report with sell data (non-blocking).
+	go func(buyOrderID int64, sellQty int, sellReason string) {
+		rCtx := context.Background()
+		// 방금 INSERT된 매도 주문 ID 조회
+		var sellOrderID int64
+		_ = m.db.QueryRowContext(rCtx,
+			`SELECT id FROM orders WHERE stock_code=? AND order_type='SELL' ORDER BY id DESC LIMIT 1`,
+			stockCode).Scan(&sellOrderID)
+		// 현재 주가 및 지표 조회 (매도 시점 데이터)
+		var sellPrice float64
+		var sellIndJSON string
+		info, infoErr := agent.GetStockInfo(rCtx, m.kisClient, stockCode)
+		if infoErr == nil {
+			if p, e := strconv.ParseFloat(info.CurrentPrice, 64); e == nil {
+				sellPrice = p
+			}
+			b, _ := json.Marshal(info)
+			sellIndJSON = string(b)
+		}
+		if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, sellQty, sellReason, sellIndJSON); err != nil {
+			logger.Error("monitor: UpdateTradeReportOnSell failed",
+				map[string]any{"stock_code": stockCode, "error": err.Error()})
+		}
+	}(pos.OrderID, qty, reason)
+
 	// Notify engine that this position was sold.
 	if pos.SoldCh != nil {
 		select {
@@ -385,6 +413,28 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 				`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
 				 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
 				code, pos.StockName, qty, pos.FilledPrice, kisOrderID, "일일 자동 청산", time.Now().UTC())
+			// Update trade report (non-blocking).
+			go func(codeSnap string, buyOrderID int64, sellQty int, sellPriceEst float64) {
+				rCtx := context.Background()
+				var sellOrderID int64
+				_ = m.db.QueryRowContext(rCtx,
+					`SELECT id FROM orders WHERE stock_code=? AND order_type='SELL' ORDER BY id DESC LIMIT 1`,
+					codeSnap).Scan(&sellOrderID)
+				var sellIndJSON string
+				info, infoErr := agent.GetStockInfo(rCtx, m.kisClient, codeSnap)
+				sellPrice := sellPriceEst
+				if infoErr == nil {
+					if p, e := strconv.ParseFloat(info.CurrentPrice, 64); e == nil && p > 0 {
+						sellPrice = p
+					}
+					b, _ := json.Marshal(info)
+					sellIndJSON = string(b)
+				}
+				if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, sellQty, "일일 자동 청산", sellIndJSON); err != nil {
+					logger.Error("monitor: UpdateTradeReportOnSell (liquidate) failed",
+						map[string]any{"stock_code": codeSnap, "error": err.Error()})
+				}
+			}(code, pos.OrderID, qty, currentPrice)
 		}
 
 		m.Remove(ctx, code)
