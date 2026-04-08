@@ -352,7 +352,7 @@ func (db *DB) migrate() error {
 		{"ranking_vi_kind_code", ""},
 		{"ranking_top_n", "20"},
 		{"ranking_exchanges", `["0001","1001"]`},
-		{"ranking_volume_blng_cls_codes", `["0","1","2","3","4"]`},
+		{"ranking_volume_blng_cls_codes", `["1","3"]`},
 		{"trading_start_time", "09:15"},
 		{"trading_end_time", "15:15"},
 		{"stagnation_threshold_pct", "1.0"},
@@ -532,7 +532,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	}
 	rankingVolumeBlngClsCodes := strSlice("ranking_volume_blng_cls_codes")
 	if len(rankingVolumeBlngClsCodes) == 0 {
-		rankingVolumeBlngClsCodes = []string{"0", "1", "2", "3", "4"}
+		rankingVolumeBlngClsCodes = []string{"1", "3"}
 	}
 
 	filterRsiMax := f64Default("filter_rsi_max", 80)
