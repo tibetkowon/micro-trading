@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-04-08 — lease 등록 시점 변경으로 GetStockInfo 과다 호출 해결
+
+- **`trader/engine.go`**: lease 등록을 `getRankings` 직후에서 **모든 서버 필터(시가총액/거래대금/현금/RSI/이격도) 통과 후**로 이동
+- 기존: 품질 미검증 ~40개가 lease에 쌓여 매 사이클 96개+ GetStockInfo 호출
+- 변경: 실제 후보 품질 종목(소수)만 lease에 등록 → 다음 사이클 lease 복원 종목 수 대폭 감소
+- lease 복원 로직은 `getRankings` 내에 그대로 유지
+
 ## 2026-04-08 — TPS 초과 및 Claude 토큰 부족 수정
 
 ### 문제 1: KIS API TPS 초과 (EGW00201)

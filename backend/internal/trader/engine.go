@@ -614,6 +614,17 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("%s", failMsg)
 	}
 
+	// Lease 등록: 모든 서버 필터를 통과한 종목만 leaseExpiry에 등록
+	// getRankings 단계가 아닌 여기서 등록해야 품질 검증된 종목만 다음 사이클에 복원됨
+	if settings.RankLeaseDurationMin > 0 {
+		leaseDur := time.Duration(settings.RankLeaseDurationMin) * time.Minute
+		e.leaseMu.Lock()
+		for _, item := range rankings {
+			e.leaseExpiry[item.StockCode] = time.Now().Add(leaseDur)
+		}
+		e.leaseMu.Unlock()
+	}
+
 	// Claude 전달 전 사전 점수화 → 상위 max_claude_candidates개만 전달.
 	// 점수 기준: Claude 랭킹 기준(MA배열, MACD, RSI구간, VWAPDiff구간, 거래량감소)과 동일.
 	{
@@ -1371,21 +1382,14 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 		}
 	}
 
-	// Lease TTL: 순위에서 사라진 종목도 lease 만료 전이면 유지
+	// Lease TTL: 만료 안 된 lease 종목을 현재 결과에 추가 (복원만 수행 — 등록은 서버 필터 통과 후 별도 수행)
 	if settings.RankLeaseDurationMin > 0 {
 		now := time.Now()
-		leaseDur := time.Duration(settings.RankLeaseDurationMin) * time.Minute
-
-		// 현재 결과에 있는 종목은 lease 갱신
-		e.leaseMu.Lock()
-		for _, item := range result {
-			e.leaseExpiry[item.StockCode] = now.Add(leaseDur)
-		}
-		// lease 만료 안 된 종목 중 현재 결과에 없는 것 추가
 		resultCodes := make(map[string]bool)
 		for _, item := range result {
 			resultCodes[item.StockCode] = true
 		}
+		e.leaseMu.Lock()
 		for code, exp := range e.leaseExpiry {
 			if !now.Before(exp) {
 				delete(e.leaseExpiry, code) // 만료된 lease 정리
