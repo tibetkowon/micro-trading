@@ -780,11 +780,8 @@ export default function Settings() {
                       <p className={labelText}>거래량 분류 코드 (복수 선택 시 합산)</p>
                       <div className="flex flex-wrap gap-3">
                         {[
-                          { code: '0', label: '평균거래량' },
                           { code: '1', label: '거래량증가율' },
-                          { code: '2', label: '평균거래회전율' },
                           { code: '3', label: '거래대금순' },
-                          { code: '4', label: '평균거래대금' },
                         ].map(({ code, label }) => (
                           <label key={code} className="flex items-center gap-2 cursor-pointer">
                             <input
