@@ -131,7 +131,7 @@ func main() {
 
 	// --- Market hours scheduler ---
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" && wsClient != nil {
-		go runMarketScheduler(ctx, db, kisClient, wsClient, mon, tokenManager, tradingEngine, mstStore)
+		go runMarketScheduler(ctx, db, kisClient, wsClient, mon, tokenManager, tradingEngine, claudeClient, mstStore)
 	}
 
 	// --- Price consumer ---
@@ -142,6 +142,7 @@ func main() {
 	handler := api.NewHandler(db, kisClient, tokenManager, cfg, mon, wsClient)
 	handler.SetEngine(tradingEngine)
 	handler.SetMSTStore(mstStore)
+	handler.SetClaudeClient(claudeClient)
 	router := api.SetupRouter(handler, cfg.FrontendDist)
 
 	srv := &http.Server{
@@ -198,11 +199,11 @@ func parseHHMM(s string, def int) int {
 //	09:00 → check trading_enabled + market open → set tradingReady
 //	09:15 → start trading engine + indicator checker (if tradingReady)
 //	15:15 → stop engine → liquidate all positions
-//	15:20 → generate daily report → save to DB
+//	15:20 → generate daily report → AI optimization analysis
 //	16:00 → disconnect
 func runMarketScheduler(ctx context.Context,
 	db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mon *monitor.Monitor,
-	tokenManager *kis.TokenManager, eng *trader.Engine, mstStore *mst.Store) {
+	tokenManager *kis.TokenManager, eng *trader.Engine, claude *trader.ClaudeClient, mstStore *mst.Store) {
 
 	kst, _ := time.LoadLocation("Asia/Seoul")
 
@@ -354,14 +355,21 @@ func runMarketScheduler(ctx context.Context,
 				mon.LiquidateAll(ctx, "KR")
 
 			case !reportGenerated && hhmm >= 1520 && hhmm < 1600:
-				// 15:20 — generate daily trade report
+				// 15:20 — generate daily trade report, then run AI optimization analysis
 				reportGenerated = true
 				go func() {
 					if err := report.GenerateDailyReport(ctx, db, ""); err != nil {
 						logger.Error("market scheduler: daily report generation failed",
 							map[string]any{"error": err.Error()})
+						return
+					}
+					logger.Info("market scheduler: daily report generated", nil)
+
+					if err := report.GenerateOptimizationSuggestions(ctx, db, claude, ""); err != nil {
+						logger.Error("market scheduler: optimization analysis failed",
+							map[string]any{"error": err.Error()})
 					} else {
-						logger.Info("market scheduler: daily report generated", nil)
+						logger.Info("market scheduler: optimization analysis complete", nil)
 					}
 				}()
 

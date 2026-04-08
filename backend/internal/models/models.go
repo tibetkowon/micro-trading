@@ -167,6 +167,29 @@ type DailyReport struct {
 	CreatedAt         time.Time `json:"created_at"`
 }
 
+// OptimizationSuggestion is a single AI-generated suggestion item.
+type OptimizationSuggestion struct {
+	ID             string `json:"id"`              // UUID
+	Category       string `json:"category"`        // "settings" | "feature"
+	Key            string `json:"key"`             // settings 키 (category=settings)
+	Name           string `json:"name,omitempty"`  // 기능명 (category=feature)
+	Type           string `json:"type,omitempty"`  // feature 타입 (indicator, field, etc.)
+	CurrentValue   string `json:"current_value"`   // 현재 값
+	SuggestedValue string `json:"suggested_value"` // 제안 값
+	Comment        string `json:"comment"`         // 제안 근거 설명
+	Status         string `json:"status"`          // PENDING | APPLIED | REJECTED
+}
+
+// OptimizationReport stores AI-generated improvement suggestions for a trading day.
+type OptimizationReport struct {
+	ID                int64     `json:"id"`
+	Date              string    `json:"date"`                // YYYY-MM-DD (daily_reports.date 참조)
+	OverallAssessment string    `json:"overall_assessment"`  // Claude 전체 평가 요약
+	Suggestions       string    `json:"suggestions"`         // JSON: []OptimizationSuggestion
+	ApplyModeSnapshot string    `json:"apply_mode_snapshot"` // 생성 시점의 optimization_apply_mode
+	CreatedAt         time.Time `json:"created_at"`
+}
+
 // Token stores the KIS OAuth access token and its validity window.
 type Token struct {
 	ID          int64     `json:"id"`

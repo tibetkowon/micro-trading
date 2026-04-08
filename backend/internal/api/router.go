@@ -80,6 +80,10 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 			reportsGroup.GET("/trades", h.GetTradeReports)
 			reportsGroup.GET("/daily", h.GetDailyReports)
 			reportsGroup.POST("/daily/generate", h.GenerateDailyReport)
+			reportsGroup.GET("/optimization", h.GetOptimizationReports)
+			reportsGroup.POST("/optimization/analyze", h.AnalyzeOptimization)
+			reportsGroup.POST("/optimization/:date/suggestions/:id/apply", h.ApplyOptimizationSuggestion)
+			reportsGroup.POST("/optimization/:date/suggestions/:id/reject", h.RejectOptimizationSuggestion)
 		}
 
 		presets := api.Group("/presets")

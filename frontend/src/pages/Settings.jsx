@@ -322,6 +322,7 @@ export default function Settings() {
 
   // ── AI 설정 ──
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
+  const [optimizationApplyMode, setOptimizationApplyMode] = useState('all_manual')
 
   // ── 하드 감시 종목 ──
   const [hardWatchSymbols, setHardWatchSymbols] = useState([])
@@ -380,6 +381,7 @@ export default function Settings() {
     if (Array.isArray(data.index_codes)) setIndexCodes(data.index_codes)
 
     if (data.claude_model) setClaudeModel(data.claude_model)
+    if (data.optimization_apply_mode) setOptimizationApplyMode(data.optimization_apply_mode)
 
     if (Array.isArray(data.hard_watch_symbols)) setHardWatchSymbols(data.hard_watch_symbols)
     if (data.rank_lease_duration_min != null) setRankLeaseDurationMin(String(data.rank_lease_duration_min))
@@ -484,6 +486,7 @@ export default function Settings() {
       daily_max_loss_pct: parseFloat(dailyMaxLossPct),
       index_codes: indexCodes,
       claude_model: claudeModel,
+      optimization_apply_mode: optimizationApplyMode,
       hard_watch_symbols: hardWatchSymbols,
       rank_lease_duration_min: parseInt(rankLeaseDurationMin),
       filter_rsi_max: parseFloat(filterRsiMax),
@@ -1264,6 +1267,18 @@ export default function Settings() {
               placeholder="claude-sonnet-4-6"
             />
           </label>
+          <div className={`pt-3 border-t border-black/5 dark:border-white/5 space-y-1`}>
+            <span className={labelText}>AI 개선 제안 자동 적용 모드</span>
+            <p className={hintText}>장 마감 후 생성된 AI 제안을 어떻게 처리할지 설정합니다. 기능 요청은 항상 수동 처리됩니다.</p>
+            <select
+              value={optimizationApplyMode}
+              onChange={(e) => setOptimizationApplyMode(e.target.value)}
+              className={inputCls}
+            >
+              <option value="all_manual">전체 수동 — 모든 제안을 검토 후 직접 적용</option>
+              <option value="all_auto">전체 자동 — 유효 범위 내 설정 제안 자동 적용</option>
+            </select>
+          </div>
           <button
             type="button"
             onClick={handleSave.bind(null, { preventDefault: () => {} })}

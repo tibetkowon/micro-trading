@@ -8,6 +8,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/micro-trading-for-agent/backend/internal/models"
 )
 
 // RankItem is a unified representation of a stock from any ranking API,
@@ -242,4 +243,145 @@ Best entry first:
 	}
 
 	return candidates, nil
+}
+
+// ─────────────────────────────────────────────────────────
+// Daily Report Analysis
+// ─────────────────────────────────────────────────────────
+
+// analysisResponse is the expected JSON structure from Claude for daily report analysis.
+type analysisResponse struct {
+	OverallAssessment string                          `json:"overall_assessment"`
+	Suggestions       []models.OptimizationSuggestion `json:"suggestions"`
+}
+
+// allowedSettingsKeys is the whitelist of settings keys Claude is allowed to suggest changes for.
+var allowedSettingsKeys = map[string]bool{
+	// 거래 설정
+	"take_profit_pct": true, "stop_loss_pct": true,
+	"etf_take_profit_pct": true, "etf_stop_loss_pct": true,
+	"stock_take_profit_pct": true, "stock_stop_loss_pct": true,
+	"order_amount_pct": true, "max_positions": true,
+	"indicator_check_interval_min": true, "indicator_rsi_sell_threshold": true,
+	"stagnation_threshold_pct": true, "stagnation_duration_min": true,
+	"trailing_trigger_pct": true, "trailing_stop_pct": true,
+	"daily_max_loss_pct": true, "buy_pause_start": true, "buy_pause_end": true,
+	// 프롬프트 파라미터 (TradingRules)
+	"hard_disparity_m5_min": true, "hard_disparity_m5_max": true,
+	"hard_high_price_diff_max": true, "hard_high_price_diff_min": true,
+	"hard_prev_vol_ratio_max": true, "hard_strength_min": true,
+	"hard_rsi_max": true, "hard_open_price_diff_max": true,
+	"vwap_diff_min": true, "vwap_diff_max": true,
+	"rsi_buy_min": true, "rsi_buy_max": true,
+	"bid_ask_ratio_min": true, "index_drop_threshold_pct": true,
+	"min_expected_profit_pct": true,
+}
+
+// AnalyzeDailyReport sends the daily report and current settings to Claude for optimization suggestions.
+// currentSettings should contain all relevant settings key-value pairs.
+func (c *ClaudeClient) AnalyzeDailyReport(
+	ctx context.Context,
+	dr models.DailyReport,
+	currentSettings map[string]string,
+) (*analysisResponse, error) {
+	settingsJSON, _ := json.MarshalIndent(currentSettings, "", "  ")
+
+	prompt := fmt.Sprintf(`You are an expert algorithmic trading analyst reviewing a Korean day-trading system's daily performance.
+Analyze the trading results and current parameter settings, then suggest specific improvements.
+
+## Today's Trading Report (%s)
+- Total Trades: %d
+- Winning: %d / Losing: %d
+- Total Profit/Loss: %.0f KRW
+- Average Return: %.2f%%
+- Best Trade: %s
+- Worst Trade: %s
+- All Trades Summary: %s
+
+## Current System Settings
+%s
+
+## Your Task
+Based on the trading results above, provide concrete optimization suggestions.
+
+Guidelines:
+- For "settings" category: suggest changes to specific settings keys from the Current System Settings above.
+  Only suggest keys that are in the provided settings. Be conservative — suggest at most 3 settings changes.
+- For "feature" category: suggest new indicators, filters, or system capabilities that could improve performance.
+  Limit to at most 2 feature requests.
+- Each suggestion MUST include a clear "comment" explaining the specific evidence from today's trades.
+- If the day was profitable with no clear issues, you may return fewer suggestions or none.
+
+Respond with ONLY valid JSON — no markdown, no explanation:
+{
+  "overall_assessment": "2-3 sentence summary of today's performance and key observations",
+  "suggestions": [
+    {
+      "id": "1",
+      "category": "settings",
+      "key": "settings_key_name",
+      "name": "",
+      "type": "",
+      "current_value": "current value string",
+      "suggested_value": "new value string",
+      "comment": "specific evidence from today's trades explaining this suggestion"
+    },
+    {
+      "id": "2",
+      "category": "feature",
+      "key": "",
+      "name": "Feature Name",
+      "type": "indicator",
+      "current_value": "",
+      "suggested_value": "",
+      "comment": "specific evidence from today's trades explaining why this feature would help"
+    }
+  ]
+}`,
+		dr.Date,
+		dr.TotalTrades, dr.WinningTrades, dr.LosingTrades,
+		dr.TotalProfitAmount, dr.AvgProfitPct,
+		dr.BestTrade, dr.WorstTrade, dr.TradeSummary,
+		string(settingsJSON),
+	)
+
+	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.Model(c.model),
+		MaxTokens: 2048,
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("claude AnalyzeDailyReport API error: %w", err)
+	}
+	if len(msg.Content) == 0 {
+		return nil, fmt.Errorf("claude returned empty response")
+	}
+
+	raw := strings.TrimSpace(msg.Content[0].AsText().Text)
+	// Extract JSON object
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start == -1 || end == -1 || end <= start {
+		return nil, fmt.Errorf("claude analysis response has no JSON object (raw: %s)", raw)
+	}
+	raw = raw[start : end+1]
+
+	var result analysisResponse
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return nil, fmt.Errorf("claude analysis response parse error: %w (raw: %s)", err, raw)
+	}
+
+	// Filter: remove settings suggestions with unknown keys
+	filtered := result.Suggestions[:0]
+	for _, s := range result.Suggestions {
+		if s.Category == "settings" && !allowedSettingsKeys[s.Key] {
+			continue
+		}
+		filtered = append(filtered, s)
+	}
+	result.Suggestions = filtered
+
+	return &result, nil
 }

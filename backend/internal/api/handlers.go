@@ -29,6 +29,7 @@ type Handler struct {
 	wsClient     *kis.WebSocketClient
 	engine       *trader.Engine
 	mstStore     *mst.Store
+	claude       *trader.ClaudeClient
 }
 
 // NewHandler creates a new Handler with the given dependencies.
@@ -52,6 +53,11 @@ func (h *Handler) SetMSTStore(s *mst.Store) {
 // SetEngine injects the trading engine (called after engine is created in main).
 func (h *Handler) SetEngine(e *trader.Engine) {
 	h.engine = e
+}
+
+// SetClaudeClient injects the Claude client for optimization analysis.
+func (h *Handler) SetClaudeClient(c *trader.ClaudeClient) {
+	h.claude = c
 }
 
 // GET /api/balance
@@ -606,6 +612,8 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"hard_watch_symbols":      ts.HardWatchSymbols,
 		"rank_lease_duration_min": ts.RankLeaseDurationMin,
 		"active_preset_id":        h.db.GetSetting(c.Request.Context(), "active_preset_id"),
+		// AI 개선 제안 자동 적용 모드
+		"optimization_apply_mode": h.db.GetSetting(c.Request.Context(), "optimization_apply_mode"),
 	})
 }
 
@@ -632,6 +640,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		IndicatorRSISellThreshold *float64 `json:"indicator_rsi_sell_threshold"`
 		IndicatorMACDBearishSell  *bool    `json:"indicator_macd_bearish_sell"`
 		ClaudeModel               string   `json:"claude_model"`
+		OptimizationApplyMode     string   `json:"optimization_apply_mode"`
 		RankingVolumeMinIncrRate  *float64 `json:"ranking_volume_min_incrrate"`
 		RankingStrengthMin        *float64 `json:"ranking_strength_min"`
 		RankingFluctuationMinRate *float64 `json:"ranking_fluctuation_min_rate"`
@@ -812,6 +821,16 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.ClaudeModel != "" {
 		if !save("claude_model", req.ClaudeModel) {
+			return
+		}
+	}
+	if req.OptimizationApplyMode != "" {
+		allowed := map[string]bool{"all_auto": true, "all_manual": true}
+		if !allowed[req.OptimizationApplyMode] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid optimization_apply_mode: must be all_auto or all_manual"})
+			return
+		}
+		if !save("optimization_apply_mode", req.OptimizationApplyMode) {
 			return
 		}
 	}
@@ -1566,4 +1585,59 @@ func (h *Handler) GenerateDailyReport(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// ────────────────────────────────────────────────────────
+// Optimization Reports
+// ────────────────────────────────────────────────────────
+
+// GET /api/reports/optimization?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=N
+func (h *Handler) GetOptimizationReports(c *gin.Context) {
+	from := c.Query("from")
+	to := c.Query("to")
+	limit := 20
+	if l, err := strconv.Atoi(c.Query("limit")); err == nil && l > 0 {
+		limit = l
+	}
+	reports, err := h.db.GetOptimizationReports(c.Request.Context(), from, to, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"reports": reports})
+}
+
+// POST /api/reports/optimization/analyze?date=YYYY-MM-DD
+// Manually trigger optimization analysis (generates daily report first if missing).
+func (h *Handler) AnalyzeOptimization(c *gin.Context) {
+	date := c.Query("date")
+	go func() {
+		ctx := context.Background()
+		if err := report.GenerateOptimizationSuggestions(ctx, h.db, h.claude, date); err != nil {
+			_ = err // logged inside GenerateOptimizationSuggestions
+		}
+	}()
+	c.JSON(http.StatusAccepted, gin.H{"status": "analysis started"})
+}
+
+// POST /api/reports/optimization/:date/suggestions/:id/apply
+func (h *Handler) ApplyOptimizationSuggestion(c *gin.Context) {
+	date := c.Param("date")
+	suggestionID := c.Param("id")
+	if err := report.ApplySuggestionByID(c.Request.Context(), h.db, date, suggestionID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "applied"})
+}
+
+// POST /api/reports/optimization/:date/suggestions/:id/reject
+func (h *Handler) RejectOptimizationSuggestion(c *gin.Context) {
+	date := c.Param("date")
+	suggestionID := c.Param("id")
+	if err := report.RejectSuggestionByID(c.Request.Context(), h.db, date, suggestionID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "rejected"})
 }

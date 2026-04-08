@@ -280,6 +280,15 @@ func (db *DB) migrate() error {
 			trade_summary       TEXT     NOT NULL DEFAULT '',
 			created_at          DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS optimization_reports (
+			id                   INTEGER  PRIMARY KEY AUTOINCREMENT,
+			date                 TEXT     NOT NULL UNIQUE,
+			overall_assessment   TEXT     NOT NULL DEFAULT '',
+			suggestions          TEXT     NOT NULL DEFAULT '[]',
+			apply_mode_snapshot  TEXT     NOT NULL DEFAULT '',
+			created_at           DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
 	}
 
 	for _, s := range stmts {
@@ -376,6 +385,7 @@ func (db *DB) migrate() error {
 		{"min_market_cap", "0"},
 		{"min_expected_profit_pct", "0"},
 		{"active_preset_id", "0"},
+		{"optimization_apply_mode", "all_manual"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -1049,4 +1059,71 @@ func (db *DB) GetDailyReports(ctx context.Context, from, to string, limit int) (
 		reports = []models.DailyReport{}
 	}
 	return reports, nil
+}
+
+// ────────────────────────────────────────────────────────
+// Optimization Reports
+// ────────────────────────────────────────────────────────
+
+// UpsertOptimizationReport inserts or replaces an optimization_report for the given date.
+func (db *DB) UpsertOptimizationReport(ctx context.Context, r models.OptimizationReport) error {
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO optimization_reports
+		 (date, overall_assessment, suggestions, apply_mode_snapshot, created_at)
+		 VALUES (?, ?, ?, ?, datetime('now'))
+		 ON CONFLICT(date) DO UPDATE SET
+		   overall_assessment=excluded.overall_assessment,
+		   suggestions=excluded.suggestions,
+		   apply_mode_snapshot=excluded.apply_mode_snapshot,
+		   created_at=excluded.created_at`,
+		r.Date, r.OverallAssessment, r.Suggestions, r.ApplyModeSnapshot)
+	return err
+}
+
+// GetOptimizationReports returns optimization_reports sorted by date DESC.
+func (db *DB) GetOptimizationReports(ctx context.Context, from, to string, limit int) ([]models.OptimizationReport, error) {
+	where := "WHERE 1=1"
+	args := []any{}
+	if from != "" {
+		where += " AND date >= ?"
+		args = append(args, from)
+	}
+	if to != "" {
+		where += " AND date <= ?"
+		args = append(args, to)
+	}
+	args = append(args, limit)
+
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, date, overall_assessment, suggestions, apply_mode_snapshot, created_at
+		 FROM optimization_reports `+where+` ORDER BY date DESC LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reports []models.OptimizationReport
+	for rows.Next() {
+		var r models.OptimizationReport
+		if err := rows.Scan(&r.ID, &r.Date, &r.OverallAssessment, &r.Suggestions, &r.ApplyModeSnapshot, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		reports = append(reports, r)
+	}
+	if reports == nil {
+		reports = []models.OptimizationReport{}
+	}
+	return reports, nil
+}
+
+// GetOptimizationReportByDate returns the optimization_report for the given date, or nil if not found.
+func (db *DB) GetOptimizationReportByDate(ctx context.Context, date string) (*models.OptimizationReport, error) {
+	row := db.QueryRowContext(ctx,
+		`SELECT id, date, overall_assessment, suggestions, apply_mode_snapshot, created_at
+		 FROM optimization_reports WHERE date = ?`, date)
+	var r models.OptimizationReport
+	if err := row.Scan(&r.ID, &r.Date, &r.OverallAssessment, &r.Suggestions, &r.ApplyModeSnapshot, &r.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }

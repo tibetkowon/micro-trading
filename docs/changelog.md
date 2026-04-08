@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-04-08 — AI 자동 최적화 제안 기능 추가
+
+- **`models/models.go`**: `OptimizationSuggestion`, `OptimizationReport` 구조체 추가
+- **`database/db.go`**: `optimization_reports` 테이블 신규 + CRUD 함수 3개 + `optimization_apply_mode` 기본 설정 추가
+- **`trader/claude.go`** (신규 메서드): `AnalyzeDailyReport()` — 일별 리포트·현재 설정을 Claude에 전달해 개선 제안(settings/feature 2카테고리) JSON 반환
+- **`report/optimization.go`** (신규): `GenerateOptimizationSuggestions()` + `ApplySuggestionByID()` + `RejectSuggestionByID()` — 분석 파이프라인 및 자동/수동 적용 로직
+- **`cmd/server/main.go`**: 15:20 스케줄러 블록에 `GenerateOptimizationSuggestions()` 연계, `claudeClient` 파라미터 추가
+- **`api/handlers.go`**: Handler에 `claude` 필드 + `SetClaudeClient()` + `optimization_apply_mode` GetSettings/UpdateSettings 처리 + 핸들러 4개 추가
+- **`api/router.go`**: `/api/reports/optimization` 라우트 4개 등록
+- **`pages/OptimizationReports.jsx`** (신규): AI 개선 제안 목록 페이지 (탭 필터, [적용]/[무시] 버튼)
+- **`pages/Settings.jsx`**: `optimization_apply_mode` 셀렉트 추가 (전체 자동/전체 수동)
+- **`App.jsx`**: "AI 개선 제안" 메뉴 + 라우트 추가
+
 ## 2026-04-07 — 거래 학습 리포트 기능 추가
 
 ### DB 스키마
