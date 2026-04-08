@@ -964,14 +964,6 @@ export default function Settings() {
               <p className={hintText}>주식 진입 시 거래세(0.2%) 차감 후 이 수익률 이상 기대 안 되면 Claude가 거절. 0=미사용. 권장: 0.8</p>
             </div>
 
-            <div className={`space-y-1 ${divider}`}>
-              <label className="space-y-1 block">
-                <span className={labelText}>Claude 최대 후보 종목 수</span>
-                <input type="number" step="1" min="1" max="50" value={maxClaudeCandidates} onChange={(e) => setMaxClaudeCandidates(e.target.value)} className={inputCls} />
-              </label>
-              <p className={hintText}>서버 필터 통과 후 Claude에 전달할 최대 종목 수. 많을수록 토큰 소모 증가. 기본값: 15</p>
-            </div>
-
             <div className={`space-y-2 ${divider}`}>
               <p className={labelText}>매도 조건 우선순위</p>
               <p className={hintText}>위에서부터 순서대로 평가됩니다. 화살표로 우선순위를 변경하세요.</p>
@@ -1277,6 +1269,19 @@ export default function Settings() {
               className={`${inputCls} font-mono`}
               placeholder="claude-sonnet-4-6"
             />
+          </label>
+          <label className="space-y-1 block">
+            <span className={labelText}>Claude 최대 후보 종목 수</span>
+            <input
+              type="number"
+              step="1"
+              min="1"
+              max="50"
+              value={maxClaudeCandidates}
+              onChange={(e) => setMaxClaudeCandidates(e.target.value)}
+              className={inputCls}
+            />
+            <p className={hintText}>서버 필터 통과 후 Claude에 전달할 최대 종목 수. 많을수록 토큰 소모 증가. 기본값: 15</p>
           </label>
           <div className={`pt-3 border-t border-black/5 dark:border-white/5 space-y-1`}>
             <span className={labelText}>AI 개선 제안 자동 적용 모드</span>
