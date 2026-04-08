@@ -224,7 +224,7 @@ export default function OptimizationReports() {
           >
             {analyzing ? '분석 요청 중...' : '오늘 분석 실행'}
           </button>
-          <button onClick={refetch} className="text-sm px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded">
+          <button onClick={refetch} className="text-sm px-3 py-1.5 bg-th-surface hover:bg-th-surface-high rounded text-th-on-muted hover:text-th-on-surface transition-colors">
             새로고침
           </button>
         </div>

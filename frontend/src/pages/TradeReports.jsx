@@ -91,7 +91,7 @@ export default function TradeReports() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold">거래 리포트</h1>
-        <button onClick={refetch} className="text-sm px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded">
+        <button onClick={refetch} className="text-sm px-3 py-1.5 bg-th-surface hover:bg-th-surface-high rounded text-th-on-muted hover:text-th-on-surface transition-colors">
           새로고침
         </button>
       </div>
@@ -119,7 +119,7 @@ export default function TradeReports() {
           <button
             type="button"
             onClick={() => { setDate(''); setStockCode(''); setPage(1) }}
-            className="text-sm px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded"
+            className="text-sm px-3 py-1.5 bg-th-surface hover:bg-th-surface-high rounded text-th-on-muted hover:text-th-on-surface transition-colors"
           >
             초기화
           </button>

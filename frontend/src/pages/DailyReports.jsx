@@ -141,7 +141,7 @@ export default function DailyReports() {
           >
             {generating ? '생성 중...' : '오늘 리포트 생성'}
           </button>
-          <button onClick={refetch} className="text-sm px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded">
+          <button onClick={refetch} className="text-sm px-3 py-1.5 bg-th-surface hover:bg-th-surface-high rounded text-th-on-muted hover:text-th-on-surface transition-colors">
             새로고침
           </button>
         </div>

@@ -26,7 +26,6 @@ const STATUS_STYLE = {
   FAILED: 'bg-red-500/10 text-red-400',
 }
 
-const MARKET_LABELS = { ALL: '전체', KR: '국장', US: '미장' }
 const TYPE_LABELS = { ALL: '전체', BUY: '매수', SELL: '매도' }
 const STATUS_FILTER_LABELS = { ALL: '전체', PENDING: '대기', FILLED: '체결', CANCELLED: '취소', FAILED: '실패' }
 
@@ -38,7 +37,6 @@ export default function Orders() {
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
 
-  const [filterMarket, setFilterMarket] = useState('ALL')
   const [filterType, setFilterType] = useState('ALL')
   const [filterStatus, setFilterStatus] = useState('ALL')
 
@@ -88,7 +86,6 @@ export default function Orders() {
   }, [loadMore])
 
   const filtered = allOrders.filter((o) => {
-    if (filterMarket !== 'ALL' && (o.market || 'KR') !== filterMarket) return false
     if (filterType !== 'ALL' && o.order_type !== filterType) return false
     if (filterStatus !== 'ALL') {
       if (filterStatus === 'FILLED' && o.status !== 'FILLED' && o.status !== 'PARTIALLY_FILLED') return false
@@ -188,19 +185,6 @@ export default function Orders() {
 
       {/* 필터 */}
       <div className="flex flex-wrap gap-2">
-        <div className="flex items-center gap-0.5 bg-th-surface rounded-lg p-1">
-          {Object.entries(MARKET_LABELS).map(([k, v]) => (
-            <button
-              key={k}
-              onClick={() => setFilterMarket(k)}
-              className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                filterMarket === k ? 'bg-th-surface-high text-th-on-surface font-medium' : 'text-th-on-muted hover:text-th-on-surface'
-              }`}
-            >
-              {v}
-            </button>
-          ))}
-        </div>
         <div className="flex items-center gap-0.5 bg-th-surface rounded-lg p-1">
           {Object.entries(TYPE_LABELS).map(([k, v]) => (
             <button

@@ -5,11 +5,48 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 )
+
+// isOverloadedError returns true when the Anthropic API responds with a 529 overloaded error.
+func isOverloadedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "529") || strings.Contains(s, "overloaded_error")
+}
+
+// callWithRetry calls fn up to maxAttempts times, retrying on 529 overloaded errors
+// with exponential backoff (2s, 4s, 8s …).
+func callWithRetry(ctx context.Context, maxAttempts int, fn func() error) error {
+	var err error
+	for i := 0; i < maxAttempts; i++ {
+		err = fn()
+		if err == nil {
+			return nil
+		}
+		if !isOverloadedError(err) {
+			return err
+		}
+		wait := time.Duration(1<<uint(i+1)) * time.Second // 2s, 4s, 8s
+		logger.Warn("claude: overloaded, retrying", map[string]any{
+			"attempt": i + 1,
+			"wait":    wait.String(),
+		})
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	return err
+}
 
 // RankItem is a unified representation of a stock from any ranking API,
 // enriched with technical indicators from GetStockInfo.
@@ -194,15 +231,19 @@ Best entry first:
 		rules.RSIBuyMin, rules.RSIBuyMax,
 		string(rankJSON), availableCash)
 
-	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(c.model),
-		MaxTokens: 4096,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("claude SelectStocks API error: %w", err)
+	var msg *anthropic.Message
+	if retryErr := callWithRetry(ctx, 3, func() error {
+		var e error
+		msg, e = c.client.Messages.New(ctx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(c.model),
+			MaxTokens: 4096,
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		return e
+	}); retryErr != nil {
+		return nil, fmt.Errorf("claude SelectStocks API error: %w", retryErr)
 	}
 
 	if len(msg.Content) == 0 {
@@ -347,15 +388,19 @@ Respond with ONLY valid JSON — no markdown, no explanation:
 		string(settingsJSON),
 	)
 
-	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(c.model),
-		MaxTokens: 2048,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("claude AnalyzeDailyReport API error: %w", err)
+	var msg *anthropic.Message
+	if retryErr := callWithRetry(ctx, 3, func() error {
+		var e error
+		msg, e = c.client.Messages.New(ctx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(c.model),
+			MaxTokens: 2048,
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		return e
+	}); retryErr != nil {
+		return nil, fmt.Errorf("claude AnalyzeDailyReport API error: %w", retryErr)
 	}
 	if len(msg.Content) == 0 {
 		return nil, fmt.Errorf("claude returned empty response")

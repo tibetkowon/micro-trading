@@ -380,15 +380,6 @@ export default function Dashboard() {
               </div>
             </StatusRow>
 
-            <StatusRow label="미장 (US)">
-              <div className="flex items-center gap-2">
-                <StatusDot ok={status.us_market_open} />
-                <span className="text-sm font-medium text-th-on-surface">
-                  {status.us_market_open ? '개장' : '폐장'}
-                </span>
-              </div>
-            </StatusRow>
-
             <StatusRow label="WebSocket">
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-1.5">
@@ -446,29 +437,6 @@ export default function Dashboard() {
               </div>
               {status.halt_reason && (
                 <p className="text-xs text-amber-400 mt-1 leading-snug">{status.halt_reason}</p>
-              )}
-            </StatusRow>
-
-            <StatusRow label="미장 트레이더">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className={`w-1 h-4 rounded-full shrink-0 ${
-                  !status.trader_state_us || status.trader_state_us === 'IDLE' ? 'bg-gray-700' :
-                  status.trader_state_us === 'MONITORING' ? 'bg-red-400' :
-                  'bg-emerald-400'
-                }`} />
-                <span className={`text-sm font-medium ${traderColor(status.trader_state_us)}`}>
-                  {traderLabel(status.trader_state_us)}
-                </span>
-                <button
-                  onClick={() => handleForceRun('US')}
-                  disabled={forceRunLoading}
-                  className="text-xs px-2 py-0.5 rounded-full bg-th-surface-high hover:text-emerald-400 disabled:opacity-40 transition-colors text-th-on-muted"
-                >
-                  강제 실행
-                </button>
-              </div>
-              {status.halt_reason_us && (
-                <p className="text-xs text-amber-400 mt-1 leading-snug">{status.halt_reason_us}</p>
               )}
             </StatusRow>
 

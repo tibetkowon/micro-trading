@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,6 +31,10 @@ type Handler struct {
 	engine       *trader.Engine
 	mstStore     *mst.Store
 	claude       *trader.ClaudeClient
+	// available_cash 캐시 (GetServerStatus 호출 시 KIS API 중복 호출 방지)
+	cashCacheMu  sync.Mutex
+	cashCacheVal float64
+	cashCacheExp time.Time
 }
 
 // NewHandler creates a new Handler with the given dependencies.
@@ -272,10 +277,21 @@ func (h *Handler) GetServerStatus(c *gin.Context) {
 		monitoredCount = h.monitor.Count()
 	}
 
-	// Available cash from balance
+	// Available cash from balance (30초 캐시 — KIS API 중복 호출 방지)
 	availableCash := float64(0)
-	if bal, err := h.client.GetInquireBalance(c.Request.Context()); err == nil {
-		availableCash = parseFloat(bal.OrderableAmt) // prvs_rcdl_excc_amt = D+2 주문가능금액 근사값
+	h.cashCacheMu.Lock()
+	if time.Now().Before(h.cashCacheExp) {
+		availableCash = h.cashCacheVal
+		h.cashCacheMu.Unlock()
+	} else {
+		h.cashCacheMu.Unlock()
+		if bal, err := h.client.GetInquireBalance(c.Request.Context()); err == nil {
+			availableCash = parseFloat(bal.OrderableAmt)
+			h.cashCacheMu.Lock()
+			h.cashCacheVal = availableCash
+			h.cashCacheExp = time.Now().Add(30 * time.Second)
+			h.cashCacheMu.Unlock()
+		}
 	}
 
 	tradingEnabled := h.db.GetSetting(c.Request.Context(), "trading_enabled") != "false"

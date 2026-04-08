@@ -42,18 +42,6 @@ function RankingResultSection({ log }) {
               <p className="text-sm font-data font-medium text-th-on-surface mt-0.5">{log.strength_count}개</p>
             </div>
           )}
-          {log.exec_count_count !== -1 && (
-            <div className="bg-th-surface-low rounded-lg px-3 py-2">
-              <p className="text-xs text-th-on-subtle">대량체결</p>
-              <p className="text-sm font-data font-medium text-th-on-surface mt-0.5">{log.exec_count_count}개</p>
-            </div>
-          )}
-          {log.disparity_count !== -1 && (
-            <div className="bg-th-surface-low rounded-lg px-3 py-2">
-              <p className="text-xs text-th-on-subtle">이격도</p>
-              <p className="text-sm font-data font-medium text-th-on-surface mt-0.5">{log.disparity_count}개</p>
-            </div>
-          )}
         </div>
       )}
 
@@ -380,8 +368,8 @@ RankingCard.propTypes = {
 const RANKING_TYPE_LABELS = {
   volume: '거래량',
   strength: '체결강도',
-  exec_count: '대량체결',
-  disparity: '이격도',
+  fluctuation: '등락률',
+  vi_status: 'VI발동',
 }
 function rankingTypeKr(type) {
   return RANKING_TYPE_LABELS[type] || type
@@ -397,8 +385,8 @@ const REFRESH_OPTIONS = [
 ]
 
 export default function StockLogs() {
-  const { data: rankingData, loading: rankingLoading, error: rankingError, refetch } = useApi('/api/logs/ranking?limit=100')
-  const { data: selectionData } = useApi('/api/logs/selection?limit=200')
+  const { data: rankingData, loading: rankingLoading, error: rankingError, refetch } = useApi('/api/logs/ranking?limit=20')
+  const { data: selectionData } = useApi('/api/logs/selection?limit=30')
 
   const [refreshInterval, setRefreshInterval] = useState(0)
   const intervalRef = useRef(null)

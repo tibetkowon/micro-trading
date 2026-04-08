@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-04-08 — UI/시스템 정합성 정리 및 API 성능 개선
+
+### Backend
+- **`trader/claude.go`**: Anthropic API 529 overloaded_error 발생 시 지수 백오프(2s→4s→8s) 최대 3회 재시도 로직 추가 (`SelectStocks`, `AnalyzeDailyReport`)
+- **`api/handlers.go`**: `GetServerStatus`에서 `GetInquireBalance` 결과를 30초 캐시 (`sync.Mutex` 기반) — 새로고침 빈도가 높을 때 KIS API 중복 호출 방지
+
+### Frontend
+- **`Dashboard.jsx`**: 백엔드에 구현되지 않은 `미장(US) 상태`·`미장 트레이더` 섹션 제거
+- **`Orders.jsx`**: 미장(US) 주문이 없는 시스템이므로 시장 필터(국장/미장) 제거
+- **`StockLogs.jsx`**: 엔진에서 사용하지 않는 `대량체결`·`이격도` 순위 카운트 UI 제거; RANKING_TYPE_LABELS을 실제 사용 타입(거래량/체결강도/등락률/VI발동)으로 교체; 조회 로그 수 축소(ranking 100→20, selection 200→30)
+- **`DailyReports.jsx`**, **`TradeReports.jsx`**, **`OptimizationReports.jsx`**: 하드코딩된 `bg-gray-800/gray-700` 버튼을 테마 변수(`bg-th-surface/bg-th-surface-high`, `text-th-on-muted`)로 교체 — 라이트 테마에서도 글자 가시성 확보
+
 ## 2026-04-08 — lease 등록 시점 변경으로 GetStockInfo 과다 호출 해결
 
 - **`trader/engine.go`**: lease 등록을 `getRankings` 직후에서 **모든 서버 필터(시가총액/거래대금/현금/RSI/이격도) 통과 후**로 이동
