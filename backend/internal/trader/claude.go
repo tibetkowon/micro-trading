@@ -152,6 +152,8 @@ func (c *ClaudeClient) SelectStocks(
 - 동일 신호 강도면 ETF_DOMESTIC > ETF > STOCK 우선`, stockTaxRate, stockTaxRate*100, rules.MinExpectedProfitPct)
 	}
 	prompt := fmt.Sprintf(`You are an elite Korean day-trader known for strict risk management, avoiding Bull Traps, and finding high-probability pullback(눌림목) entries.
+DO NOT explain your reasoning process. Output ONLY the final JSON array.
+
 
 %s## Hard Rejection Rules — skip if ANY apply (Kill-switch & Defense):
 1. market_index_drop < %.1f%%  → 전체 시장 급락 중(투매 장세), skip all
@@ -194,7 +196,7 @@ Best entry first:
 
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.model),
-		MaxTokens: 2048,
+		MaxTokens: 4096,
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 		},

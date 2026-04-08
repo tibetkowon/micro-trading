@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -389,49 +391,63 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no ranking results after excluding already-traded stocks")
 	}
 
-	// Enrich each candidate with technical indicators (MA5/MA20/RSI/MACD/VWAP/M5MA10/PrevVolumeRatio).
-	for i, r := range rankings {
-		info, err := agent.GetStockInfo(ctx, e.kisClient, r.StockCode)
-		if err != nil {
-			logger.Warn("engine: GetStockInfo failed, skipping indicators",
-				map[string]any{"stock_code": r.StockCode, "error": err.Error()})
-			continue
-		}
-		rankings[i].MA5 = info.MA5
-		rankings[i].MA20 = info.MA20
-		rankings[i].RSI14 = info.RSI14
-		rankings[i].MACDLine = info.MACDLine
-		rankings[i].MACDSignal = info.MACDSignal
-		rankings[i].DayOpen = info.DayOpen
-		rankings[i].DayHigh = info.DayHigh
-		rankings[i].DayLow = info.DayLow
-		rankings[i].HighPriceDiff = info.HighPriceDiff
-		rankings[i].OpenPriceDiff = info.OpenPriceDiff
-		rankings[i].DisparityM5 = info.DisparityM5
-		rankings[i].VWAP = info.VWAP
-		rankings[i].VWAPDiff = info.VWAPDiff
-		rankings[i].M5MA10 = info.M5MA10
-		rankings[i].PrevVolumeRatio = info.PrevVolumeRatio
-		rankings[i].BidAskRatio = info.BidAskRatio
-		rankings[i].TradingValue = info.TradingValue
-		// CurrentPrice 갱신 — hard_watch 종목처럼 초기값이 빈 경우 보정
-		if info.CurrentPrice != "" {
-			rankings[i].CurrentPrice = info.CurrentPrice
-		}
-		// MST 기반 자산 타입 태깅
-		assetType := e.resolveAssetType(ctx, r.StockCode)
-		rankings[i].AssetType = assetType
-		// 세금보정: ETF_DOMESTIC/ETF는 비과세, STOCK은 거래세 적용
+	// Enrich each candidate with technical indicators — parallel with semaphore (max 3 concurrent).
+	// GetBidAskRatio is NOT called here; it will be applied only to the final Claude candidates.
+	{
+		sem := make(chan struct{}, 3)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
 		stockTaxRate := settings.StockTaxRate
 		if stockTaxRate <= 0 {
 			stockTaxRate = 0.002
 		}
-		switch assetType {
-		case "ETF_DOMESTIC", "ETF":
-			rankings[i].ApplicableTaxRate = 0.0
-		default:
-			rankings[i].ApplicableTaxRate = stockTaxRate
+		for i, r := range rankings {
+			wg.Add(1)
+			go func(i int, r RankItem) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				info, err := agent.GetStockInfo(ctx, e.kisClient, r.StockCode)
+				if err != nil {
+					logger.Warn("engine: GetStockInfo failed, skipping indicators",
+						map[string]any{"stock_code": r.StockCode, "error": err.Error()})
+					return
+				}
+				assetType := e.resolveAssetType(ctx, r.StockCode)
+				var taxRate float64
+				switch assetType {
+				case "ETF_DOMESTIC", "ETF":
+					taxRate = 0.0
+				default:
+					taxRate = stockTaxRate
+				}
+				mu.Lock()
+				rankings[i].MA5 = info.MA5
+				rankings[i].MA20 = info.MA20
+				rankings[i].RSI14 = info.RSI14
+				rankings[i].MACDLine = info.MACDLine
+				rankings[i].MACDSignal = info.MACDSignal
+				rankings[i].DayOpen = info.DayOpen
+				rankings[i].DayHigh = info.DayHigh
+				rankings[i].DayLow = info.DayLow
+				rankings[i].HighPriceDiff = info.HighPriceDiff
+				rankings[i].OpenPriceDiff = info.OpenPriceDiff
+				rankings[i].DisparityM5 = info.DisparityM5
+				rankings[i].VWAP = info.VWAP
+				rankings[i].VWAPDiff = info.VWAPDiff
+				rankings[i].M5MA10 = info.M5MA10
+				rankings[i].PrevVolumeRatio = info.PrevVolumeRatio
+				rankings[i].TradingValue = info.TradingValue
+				if info.CurrentPrice != "" {
+					rankings[i].CurrentPrice = info.CurrentPrice
+				}
+				rankings[i].AssetType = assetType
+				rankings[i].ApplicableTaxRate = taxRate
+				mu.Unlock()
+			}(i, r)
 		}
+		wg.Wait()
 	}
 	// 시가총액 필터 (MST 상장주식수 × 현재가)
 	if settings.MinMarketCap > 0 {
@@ -463,18 +479,17 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no stocks passed min_market_cap filter")
 	}
 
-	// 거래대금 하한선 필터
+	// 거래대금 하한선 필터 — GetStockInfo 루프에서 이미 채워진 TradingValue 재사용
 	if settings.MinTradingValue > 0 {
 		var passed []RankItem
 		for _, item := range rankings {
-			info, err := agent.GetStockInfo(ctx, e.kisClient, item.StockCode)
-			if err != nil || info.TradingValue >= settings.MinTradingValue {
+			if item.TradingValue == 0 || item.TradingValue >= settings.MinTradingValue {
 				passed = append(passed, item)
 			} else {
 				allFilteredOut = append(allFilteredOut, filteredStockEntry{
 					StockCode:    item.StockCode,
 					StockName:    item.StockName,
-					FilterReason: fmt.Sprintf("거래대금 미달 (%.0f억 < %.0f억)", info.TradingValue/1e8, settings.MinTradingValue/1e8),
+					FilterReason: fmt.Sprintf("거래대금 미달 (%.0f억 < %.0f억)", item.TradingValue/1e8, settings.MinTradingValue/1e8),
 				})
 			}
 		}
@@ -597,6 +612,100 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		insertFailedSelectionLog(failMsg)
 		e.setState(StateMonitoring)
 		return fmt.Errorf("%s", failMsg)
+	}
+
+	// Claude 전달 전 사전 점수화 → 상위 max_claude_candidates개만 전달.
+	// 점수 기준: Claude 랭킹 기준(MA배열, MACD, RSI구간, VWAPDiff구간, 거래량감소)과 동일.
+	{
+		rsiBuyMin := settings.RSIBuyMin
+		if rsiBuyMin == 0 {
+			rsiBuyMin = 40.0
+		}
+		rsiBuyMax := settings.RSIBuyMax
+		if rsiBuyMax == 0 {
+			rsiBuyMax = 60.0
+		}
+		vwapDiffMin := settings.VWAPDiffMin
+		vwapDiffMax := settings.VWAPDiffMax
+		if vwapDiffMax == 0 {
+			vwapDiffMax = 1.5
+		}
+		type scoredItem struct {
+			item  RankItem
+			score float64
+		}
+		scored := make([]scoredItem, len(rankings))
+		for i, item := range rankings {
+			s := 0.0
+			if item.MA5 > 0 && item.MA20 > 0 && item.MA5 > item.MA20 {
+				s += 2.0
+			}
+			if item.MACDLine > item.MACDSignal {
+				s += 1.0
+			}
+			if item.PrevVolumeRatio > 0 && item.PrevVolumeRatio < 0.8 {
+				s += 1.0
+			}
+			if item.RSI14 > 0 {
+				rsiMid := (rsiBuyMin + rsiBuyMax) / 2
+				rsiRange := (rsiBuyMax - rsiBuyMin) / 2
+				if rsiRange > 0 {
+					dist := math.Abs(item.RSI14 - rsiMid)
+					if dist <= rsiRange {
+						s += 1.0 - dist/rsiRange
+					}
+				}
+			}
+			if item.VWAPDiff != 0 {
+				vwapMid := (vwapDiffMin + vwapDiffMax) / 2
+				vwapRange := (vwapDiffMax - vwapDiffMin) / 2
+				if vwapRange > 0 {
+					dist := math.Abs(item.VWAPDiff - vwapMid)
+					if dist <= vwapRange {
+						s += 1.0 - dist/vwapRange
+					}
+				}
+			}
+			scored[i] = scoredItem{item: item, score: s}
+		}
+		sort.Slice(scored, func(i, j int) bool {
+			return scored[i].score > scored[j].score
+		})
+		maxN := settings.MaxClaudeCandidates
+		if maxN <= 0 {
+			maxN = 15
+		}
+		if len(scored) > maxN {
+			scored = scored[:maxN]
+		}
+		rankings = make([]RankItem, len(scored))
+		for i, s := range scored {
+			rankings[i] = s.item
+		}
+		logger.Info("engine: pre-scored candidates for Claude",
+			map[string]any{"total": len(scored), "max_n": maxN})
+	}
+
+	// BidAskRatio: 최종 후보에만 호출 (LLM 랭킹 보조 지표 — 서버 필터와 무관).
+	{
+		sem := make(chan struct{}, 3)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		for i, r := range rankings {
+			wg.Add(1)
+			go func(i int, stockCode string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				ratio, err := e.kisClient.GetBidAskRatio(ctx, stockCode)
+				if err == nil {
+					mu.Lock()
+					rankings[i].BidAskRatio = math.Round(ratio*100) / 100
+					mu.Unlock()
+				}
+			}(i, r.StockCode)
+		}
+		wg.Wait()
 	}
 
 	// Persist selection log to DB (Claude 호출 전 INSERT — 실패해도 로그 남김).

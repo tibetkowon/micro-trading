@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-04-08 — TPS 초과 및 Claude 토큰 부족 수정
+
+### 문제 1: KIS API TPS 초과 (EGW00201)
+- **`agent/stock_info.go`**: `GetBidAskRatio` 호출 제거 — LLM 보조 지표는 최종 후보에만 별도 호출
+- **`trader/engine.go`**: `GetStockInfo` 루프를 세마포어(동시 3개) 기반 goroutine 병렬 처리로 변경
+- **`trader/engine.go`**: 거래대금 필터 중복 `GetStockInfo` 제거 → 1차 루프에서 채운 `item.TradingValue` 직접 사용
+- **`trader/engine.go`**: BidAskRatio를 서버 필터 + 점수화 후 최종 후보에만 병렬 호출
+
+### 문제 2: Claude 응답 truncated (JSON array 없음)
+- **`trader/claude.go`**: `MaxTokens` 2048 → 4096 증가
+- **`trader/claude.go`**: 프롬프트에 `DO NOT explain your reasoning process. Output ONLY the final JSON array.` 추가
+- **`trader/engine.go`**: 서버 사전 점수화(MA배열·MACD·RSI구간·VWAPDiff·PrevVolumeRatio) 후 상위 N개만 Claude 전달
+- **`database/db.go`**: `max_claude_candidates` 설정키 추가 (기본값 15, `MaxClaudeCandidates` 필드)
+
+### 효과
+- KIS API 호출 ~264회 순차 → ~106회 병렬(3개씩) — 약 60% 감소
+- 종목 선정 소요시간 ~30초 → ~4~6초
+- Claude 입력 후보 40개+ → 최대 15개
+
 ## 2026-04-08 — AI 자동 최적화 제안 기능 추가
 
 - **`models/models.go`**: `OptimizationSuggestion`, `OptimizationReport` 구조체 추가

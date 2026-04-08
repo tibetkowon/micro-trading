@@ -95,6 +95,8 @@ type TradingSettings struct {
 	MinMarketCap float64 // 최소 시가총액 (억원). 0=필터없음. MST 상장주식수 × 현재가 기준
 	// 세금보정
 	MinExpectedProfitPct float64 // 주식 진입 시 세후 최소 기대수익 (%). 0=미사용
+	// Claude 후보 제한
+	MaxClaudeCandidates int // Claude에 전달할 최대 후보 종목 수. 0=제한없음. 기본 15
 }
 
 // DB wraps the sql.DB connection.
@@ -386,6 +388,7 @@ func (db *DB) migrate() error {
 		{"min_expected_profit_pct", "0"},
 		{"active_preset_id", "0"},
 		{"optimization_apply_mode", "all_manual"},
+		{"max_claude_candidates", "15"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -432,7 +435,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'hard_high_price_diff_max','hard_high_price_diff_min',`+
 			`'hard_prev_vol_ratio_max','hard_strength_min','hard_rsi_max','hard_open_price_diff_max',`+
 			`'vwap_diff_min','vwap_diff_max','rsi_buy_min','rsi_buy_max','bid_ask_ratio_min',`+
-			`'min_market_cap','min_expected_profit_pct'`+
+			`'min_market_cap','min_expected_profit_pct',`+
+			`'max_claude_candidates'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -619,6 +623,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		BidAskRatioMin:            bidAskRatioMin,
 		MinMarketCap:              f64("min_market_cap"),
 		MinExpectedProfitPct:      f64("min_expected_profit_pct"),
+		MaxClaudeCandidates:       i64Default("max_claude_candidates", 15),
 	}, nil
 }
 

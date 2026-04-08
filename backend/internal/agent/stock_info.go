@@ -129,12 +129,6 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 		}
 	}
 
-	// BidAskRatio: 호가 잔량 비율 (매수잔량/매도잔량) — 별도 KIS API 호출
-	// 실패해도 info.BidAskRatio=0으로 처리하고 에러는 무시 (non-critical)
-	if ratio, err := client.GetBidAskRatio(ctx, stockCode); err == nil {
-		info.BidAskRatio = math.Round(ratio*100) / 100
-	}
-
 	return info, nil
 }
 
