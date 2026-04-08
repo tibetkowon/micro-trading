@@ -747,7 +747,6 @@ export default function Settings() {
                   {[
                     { code: '0001', label: 'KOSPI (거래소)' },
                     { code: '1001', label: 'KOSDAQ (코스닥)' },
-                    { code: '2001', label: 'KOSPI200' },
                   ].map(({ code, label }) => (
                     <label key={code} className="flex items-center gap-2 cursor-pointer">
                       <input
