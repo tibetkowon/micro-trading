@@ -319,6 +319,7 @@ export default function Settings() {
   const [bidAskRatioMin, setBidAskRatioMin] = useState('1.2')
   const [minMarketCap, setMinMarketCap] = useState('0')
   const [minExpectedProfitPct, setMinExpectedProfitPct] = useState('0')
+  const [maxClaudeCandidates, setMaxClaudeCandidates] = useState('15')
 
   // ── AI 설정 ──
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
@@ -403,6 +404,7 @@ export default function Settings() {
     if (data.bid_ask_ratio_min != null) setBidAskRatioMin(String(data.bid_ask_ratio_min))
     if (data.min_market_cap != null) setMinMarketCap(String(data.min_market_cap))
     if (data.min_expected_profit_pct != null) setMinExpectedProfitPct(String(data.min_expected_profit_pct))
+    if (data.max_claude_candidates != null) setMaxClaudeCandidates(String(data.max_claude_candidates))
     if (data.active_preset_id != null) setActivePresetId(Number(data.active_preset_id) || 0)
 
     if (data.filter_rsi_max != null) setFilterRsiMax(String(data.filter_rsi_max))
@@ -510,6 +512,7 @@ export default function Settings() {
       bid_ask_ratio_min: parseFloat(bidAskRatioMin),
       min_market_cap: parseFloat(minMarketCap),
       min_expected_profit_pct: parseFloat(minExpectedProfitPct),
+      max_claude_candidates: parseInt(maxClaudeCandidates, 10),
     }
 
     try {
@@ -959,6 +962,14 @@ export default function Settings() {
                 <input type="number" step="0.1" min="0" value={minExpectedProfitPct} onChange={(e) => setMinExpectedProfitPct(e.target.value)} className={inputCls} />
               </label>
               <p className={hintText}>주식 진입 시 거래세(0.2%) 차감 후 이 수익률 이상 기대 안 되면 Claude가 거절. 0=미사용. 권장: 0.8</p>
+            </div>
+
+            <div className={`space-y-1 ${divider}`}>
+              <label className="space-y-1 block">
+                <span className={labelText}>Claude 최대 후보 종목 수</span>
+                <input type="number" step="1" min="1" max="50" value={maxClaudeCandidates} onChange={(e) => setMaxClaudeCandidates(e.target.value)} className={inputCls} />
+              </label>
+              <p className={hintText}>서버 필터 통과 후 Claude에 전달할 최대 종목 수. 많을수록 토큰 소모 증가. 기본값: 15</p>
             </div>
 
             <div className={`space-y-2 ${divider}`}>

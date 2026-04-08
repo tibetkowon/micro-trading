@@ -608,6 +608,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"bid_ask_ratio_min":       ts.BidAskRatioMin,
 		"min_market_cap":          ts.MinMarketCap,
 		"min_expected_profit_pct": ts.MinExpectedProfitPct,
+		"max_claude_candidates":   ts.MaxClaudeCandidates,
 		// 하드 감시 종목 / 순위 유지 시간
 		"hard_watch_symbols":      ts.HardWatchSymbols,
 		"rank_lease_duration_min": ts.RankLeaseDurationMin,
@@ -695,6 +696,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		BidAskRatioMin       *float64 `json:"bid_ask_ratio_min"`
 		MinMarketCap         *float64 `json:"min_market_cap"`
 		MinExpectedProfitPct *float64 `json:"min_expected_profit_pct"`
+		MaxClaudeCandidates  *int     `json:"max_claude_candidates"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1106,6 +1108,11 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.MinExpectedProfitPct != nil {
 		if !save("min_expected_profit_pct", strconv.FormatFloat(*req.MinExpectedProfitPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.MaxClaudeCandidates != nil {
+		if !save("max_claude_candidates", strconv.Itoa(*req.MaxClaudeCandidates)) {
 			return
 		}
 	}
