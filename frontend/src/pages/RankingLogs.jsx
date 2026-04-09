@@ -18,20 +18,54 @@ function parseJSON(str) {
   try { return JSON.parse(str) } catch { return null }
 }
 
+const TYPE_LABELS = {
+  volume:      '거래량',
+  strength:    '체결강도',
+  fluctuation: '등락률',
+  vi_status:   'VI',
+  lease:       '리스',
+  hard_watch:  '관심',
+}
 
-function TypeCount({ label, count }) {
-  if (count === -1) return null
+const TYPE_COLORS = {
+  volume:      'bg-blue-900/50 text-blue-300 border-blue-700',
+  strength:    'bg-purple-900/50 text-purple-300 border-purple-700',
+  fluctuation: 'bg-yellow-900/50 text-yellow-300 border-yellow-700',
+  vi_status:   'bg-red-900/50 text-red-300 border-red-700',
+  lease:       'bg-teal-900/50 text-teal-300 border-teal-700',
+  hard_watch:  'bg-orange-900/50 text-orange-300 border-orange-700',
+}
+
+function typeLabel(key) {
+  return TYPE_LABELS[key] ?? key
+}
+
+function typeColorClass(key) {
+  return TYPE_COLORS[key] ?? 'bg-gray-800 text-gray-300 border-gray-600'
+}
+
+// 단일 타입 키 또는 "|"/"+"-구분 복합 타입을 뱃지로 렌더링
+function RankingTypeBadge({ rankingType }) {
+  if (!rankingType) return null
+  const sep = rankingType.includes('|') ? '|' : '+'
+  const parts = rankingType.split(sep)
   return (
-    <div className="flex items-center justify-between text-xs py-0.5">
-      <span className="text-gray-400">{label}</span>
-      <span className="font-mono text-gray-300">{count}개</span>
-    </div>
+    <span className="inline-flex items-center gap-0.5">
+      {parts.map((p, i) => (
+        <span
+          key={p}
+          className={`text-[10px] border rounded px-1 py-px font-medium ${typeColorClass(p)}`}
+        >
+          {i > 0 && <span className="text-gray-500 mr-0.5">{sep}</span>}
+          {typeLabel(p)}
+        </span>
+      ))}
+    </span>
   )
 }
 
-TypeCount.propTypes = {
-  label: PropTypes.string.isRequired,
-  count: PropTypes.number.isRequired,
+RankingTypeBadge.propTypes = {
+  rankingType: PropTypes.string,
 }
 
 export default function RankingLogs() {
@@ -72,8 +106,8 @@ export default function RankingLogs() {
             const resultLabel = isOR ? '합집합' : '교집합'
 
             const resultStocks = parseJSON(log.result_stocks) || []
-
             const filteredStocks = parseJSON(log.filtered_stocks) || []
+            const typeCounts = parseJSON(log.type_counts) || {}
 
             return (
               <div
@@ -106,9 +140,17 @@ export default function RankingLogs() {
                         하드필터 -{filteredStocks.length}
                       </span>
                     )}
+                    {/* 사용된 순위 종류 뱃지 */}
                     {types.length > 0 && (
-                      <span className="text-xs text-gray-400 font-mono">
-                        [{types.join(separator)}]
+                      <span className="inline-flex items-center gap-0.5">
+                        {types.map((t, i) => (
+                          <span key={t} className="inline-flex items-center gap-0.5">
+                            {i > 0 && <span className="text-gray-600 text-xs">{separator}</span>}
+                            <span className={`text-[10px] border rounded px-1 py-px font-medium ${typeColorClass(t)}`}>
+                              {typeLabel(t)}
+                            </span>
+                          </span>
+                        ))}
                       </span>
                     )}
                     <span className="text-xs text-gray-500">
@@ -128,16 +170,24 @@ export default function RankingLogs() {
                 )}
 
                 {/* 타입별 상세 (펼치기) */}
-                {!hasError && (
+                {!hasError && types.length > 0 && (
                   <details className="mt-3">
                     <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300">
                       타입별 필터 결과 보기
                     </summary>
                     <div className="mt-2 pl-2 border-l border-gray-700 space-y-0.5">
-                      <TypeCount label="거래량 (volume)" count={log.volume_count} />
-                      <TypeCount label="체결강도 (strength)" count={log.strength_count} />
-                      <TypeCount label="대량체결 (exec_count)" count={log.exec_count_count} />
-                      <TypeCount label="이격도 (disparity)" count={log.disparity_count} />
+                      {types.map((t) => {
+                        const count = typeCounts[t] ?? -1
+                        if (count === -1) return null
+                        return (
+                          <div key={t} className="flex items-center justify-between text-xs py-0.5">
+                            <span className={`text-[10px] border rounded px-1 py-px font-medium ${typeColorClass(t)}`}>
+                              {typeLabel(t)}
+                            </span>
+                            <span className="font-mono text-gray-300">{count}개</span>
+                          </div>
+                        )
+                      })}
                       <div className="flex items-center justify-between text-xs py-0.5 mt-1 border-t border-gray-700 pt-1">
                         <span className="text-gray-300 font-medium">{isOR ? 'OR 합집합' : 'AND 교집합'}</span>
                         <span className={`font-mono font-bold ${log.intersection_count > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
@@ -166,13 +216,17 @@ export default function RankingLogs() {
                   </details>
                 )}
 
-                {/* 결과 종목 목록 */}
+                {/* 결과 종목 목록 — 종목별 출처 뱃지 포함 */}
                 {!hasError && resultStocks.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {resultStocks.map((s) => (
-                      <span key={s.stock_code} className="inline-flex items-center gap-1 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-0.5">
+                      <span
+                        key={s.stock_code}
+                        className="inline-flex items-center gap-1 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-0.5"
+                      >
                         <span className="font-mono text-gray-300">{s.stock_code}</span>
                         <span className="text-gray-500">{s.stock_name}</span>
+                        {s.ranking_type && <RankingTypeBadge rankingType={s.ranking_type} />}
                       </span>
                     ))}
                   </div>

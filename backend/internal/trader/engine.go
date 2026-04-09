@@ -1329,13 +1329,16 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 
 	if settings.RankingCondition == "OR" {
 		// OR union: collect stocks appearing in any ranking type.
+		// Track which types each stock appeared in to set accurate RankingType.
 		seen := map[string]RankItem{}
-		for _, m := range byType {
+		seenTypes := map[string][]string{} // code → list of types it appeared in
+		for rt, m := range byType {
 			for code, item := range m {
-				if existing, exists := seen[code]; !exists {
-					item.RankingType = strings.Join(settings.RankingTypes, "|")
+				seenTypes[code] = append(seenTypes[code], rt)
+				if _, exists := seen[code]; !exists {
 					seen[code] = item
 				} else {
+					existing := seen[code]
 					if item.VolIncrRate != "" {
 						existing.VolIncrRate = item.VolIncrRate
 					}
@@ -1346,7 +1349,8 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				}
 			}
 		}
-		for _, item := range seen {
+		for code, item := range seen {
+			item.RankingType = strings.Join(seenTypes[code], "|")
 			result = append(result, item)
 		}
 	} else {
@@ -1450,12 +1454,18 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	}
 	typesJSON, _ := json.Marshal(settings.RankingTypes)
 	resultStocksJSON, _ := json.Marshal(result)
+	typeCountsMap := map[string]int{}
+	for rt, m := range byType {
+		typeCountsMap[rt] = len(m)
+	}
+	typeCountsJSON, _ := json.Marshal(typeCountsMap)
 	rankingLogID, logErr := e.db.InsertRankingLog(ctx, models.TraderRankingLog{
 		RankingTypes:      string(typesJSON),
 		PriceMin:          settings.RankingPriceMin,
 		PriceMax:          settings.RankingPriceMax,
 		VolumeCount:       countFor("volume"),
 		StrengthCount:     countFor("strength"),
+		TypeCounts:        string(typeCountsJSON),
 		RankingCondition:  settings.RankingCondition,
 		IntersectionCount: len(result),
 		ResultStocks:      string(resultStocksJSON),
