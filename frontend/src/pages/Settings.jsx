@@ -277,6 +277,9 @@ export default function Settings() {
   const [macdBearish, setMacdBearish] = useState(false)
   const [stagnationThresholdPct, setStagnationThresholdPct] = useState('1.0')
   const [stagnationDurationMin, setStagnationDurationMin] = useState('30')
+  const [stagnationPartialExitEnabled, setStagnationPartialExitEnabled] = useState(false)
+  const [stagnationBidAskSellThreshold, setStagnationBidAskSellThreshold] = useState('1.0')
+  const [momentumScoreMin, setMomentumScoreMin] = useState('0')
 
   // ── 매수 품질 필터 ──
   const [minTradingValue, setMinTradingValue] = useState('0')
@@ -372,6 +375,9 @@ export default function Settings() {
     if (data.indicator_macd_bearish_sell != null) setMacdBearish(data.indicator_macd_bearish_sell)
     if (data.stagnation_threshold_pct != null) setStagnationThresholdPct(String(data.stagnation_threshold_pct))
     if (data.stagnation_duration_min != null) setStagnationDurationMin(String(data.stagnation_duration_min))
+    if (data.stagnation_partial_exit_enabled != null) setStagnationPartialExitEnabled(data.stagnation_partial_exit_enabled)
+    if (data.stagnation_bid_ask_sell_threshold != null) setStagnationBidAskSellThreshold(String(data.stagnation_bid_ask_sell_threshold))
+    if (data.momentum_score_min != null) setMomentumScoreMin(String(data.momentum_score_min))
 
     if (data.min_trading_value != null) setMinTradingValue(String(data.min_trading_value))
     if (data.buy_pause_start) setBuyPauseStart(data.buy_pause_start)
@@ -480,6 +486,9 @@ export default function Settings() {
       indicator_macd_bearish_sell: macdBearish,
       stagnation_threshold_pct: parseFloat(stagnationThresholdPct),
       stagnation_duration_min: parseInt(stagnationDurationMin),
+      stagnation_partial_exit_enabled: stagnationPartialExitEnabled,
+      stagnation_bid_ask_sell_threshold: parseFloat(stagnationBidAskSellThreshold),
+      momentum_score_min: parseFloat(momentumScoreMin),
       min_trading_value: parseFloat(minTradingValue),
       buy_pause_start: buyPauseStart,
       buy_pause_end: buyPauseEnd,
@@ -1049,6 +1058,22 @@ export default function Settings() {
                     <input type="number" step="5" min="5" value={stagnationDurationMin} onChange={(e) => setStagnationDurationMin(e.target.value)} className={inputCls} />
                   </label>
                 </div>
+                <div className="space-y-2 pt-1 border-t border-th-border/40">
+                  <p className={`${labelText} font-medium`}>단계적 횡보 청산</p>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={stagnationPartialExitEnabled} onChange={(e) => setStagnationPartialExitEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded accent-orange-500" />
+                    <span className={labelText}>활성화 (1차 횡보→절반 청산, 2차 횡보→전량 청산)</span>
+                  </label>
+                  {stagnationPartialExitEnabled && (
+                    <label className="space-y-1 block">
+                      <span className={labelText}>즉시 전량청산 bid_ask 임계값 (이 값 미만이면 매도우세로 즉시 전량 청산)</span>
+                      <input type="number" step="0.1" min="0.1" value={stagnationBidAskSellThreshold}
+                        onChange={(e) => setStagnationBidAskSellThreshold(e.target.value)} className={inputCls} />
+                      <p className={hintText}>기본 1.0 — bid_ask_ratio가 이 값 미만이면 절반 청산 없이 즉시 전량 청산</p>
+                    </label>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1057,6 +1082,18 @@ export default function Settings() {
           <div className={sectionCls}>
             <p className={sectionTitle}>하드 필터 (매수 품질)</p>
             <p className={hintText}>LLM 호출 전 자동으로 제거되는 조건입니다.</p>
+
+            <div className={`space-y-1 ${divider}`}>
+              <label className="space-y-1 block">
+                <span className={labelText}>복합 모멘텀 스코어 최솟값 (0~100, 0=비활성)</span>
+                <input type="number" step="5" min="0" max="100" value={momentumScoreMin}
+                  onChange={(e) => setMomentumScoreMin(e.target.value)} className={inputCls} />
+              </label>
+              <p className={hintText}>
+                bid_ask_ratio(40pt) + 체결강도(40pt) + 거래량감소(20pt) 합산. 미달 종목은 Claude 전달 전 제거.
+                권장값 60 — 오늘 기준: 비츠로셀 97.6pt / 온코닉테라퓨틱스 49.4pt
+              </p>
+            </div>
 
             <div className={`space-y-1 ${divider}`}>
               <label className="space-y-1 block">

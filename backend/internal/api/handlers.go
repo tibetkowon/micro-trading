@@ -625,6 +625,10 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"min_market_cap":          ts.MinMarketCap,
 		"min_expected_profit_pct": ts.MinExpectedProfitPct,
 		"max_claude_candidates":   ts.MaxClaudeCandidates,
+		// 복합 모멘텀 스코어링 + 단계적 횡보 청산
+		"momentum_score_min":                ts.MomentumScoreMin,
+		"stagnation_partial_exit_enabled":   ts.StagnationPartialExitEnabled,
+		"stagnation_bid_ask_sell_threshold": ts.StagnationBidAskSellThreshold,
 		// 하드 감시 종목 / 순위 유지 시간
 		"hard_watch_symbols":      ts.HardWatchSymbols,
 		"rank_lease_duration_min": ts.RankLeaseDurationMin,
@@ -705,14 +709,17 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		HardRSIMax           *float64 `json:"hard_rsi_max"`
 		HardOpenPriceDiffMax *float64 `json:"hard_open_price_diff_max"`
 		// AI 매매 기준값 — 랭킹 기준
-		VWAPDiffMin          *float64 `json:"vwap_diff_min"`
-		VWAPDiffMax          *float64 `json:"vwap_diff_max"`
-		RSIBuyMin            *float64 `json:"rsi_buy_min"`
-		RSIBuyMax            *float64 `json:"rsi_buy_max"`
-		BidAskRatioMin       *float64 `json:"bid_ask_ratio_min"`
-		MinMarketCap         *float64 `json:"min_market_cap"`
-		MinExpectedProfitPct *float64 `json:"min_expected_profit_pct"`
-		MaxClaudeCandidates  *int     `json:"max_claude_candidates"`
+		VWAPDiffMin                   *float64 `json:"vwap_diff_min"`
+		VWAPDiffMax                   *float64 `json:"vwap_diff_max"`
+		RSIBuyMin                     *float64 `json:"rsi_buy_min"`
+		RSIBuyMax                     *float64 `json:"rsi_buy_max"`
+		BidAskRatioMin                *float64 `json:"bid_ask_ratio_min"`
+		MinMarketCap                  *float64 `json:"min_market_cap"`
+		MinExpectedProfitPct          *float64 `json:"min_expected_profit_pct"`
+		MaxClaudeCandidates           *int     `json:"max_claude_candidates"`
+		MomentumScoreMin              *float64 `json:"momentum_score_min"`
+		StagnationPartialExitEnabled  *bool    `json:"stagnation_partial_exit_enabled"`
+		StagnationBidAskSellThreshold *float64 `json:"stagnation_bid_ask_sell_threshold"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1129,6 +1136,25 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.MaxClaudeCandidates != nil {
 		if !save("max_claude_candidates", strconv.Itoa(*req.MaxClaudeCandidates)) {
+			return
+		}
+	}
+	if req.MomentumScoreMin != nil {
+		if !save("momentum_score_min", strconv.FormatFloat(*req.MomentumScoreMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.StagnationPartialExitEnabled != nil {
+		val := "false"
+		if *req.StagnationPartialExitEnabled {
+			val = "true"
+		}
+		if !save("stagnation_partial_exit_enabled", val) {
+			return
+		}
+	}
+	if req.StagnationBidAskSellThreshold != nil {
+		if !save("stagnation_bid_ask_sell_threshold", strconv.FormatFloat(*req.StagnationBidAskSellThreshold, 'f', -1, 64)) {
 			return
 		}
 	}
