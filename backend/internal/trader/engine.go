@@ -566,8 +566,6 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no stocks passed min_market_cap filter")
 	}
 
-
-
 	// 하드 필터: LLM 전달 전 과열/이격 과대 종목 제거 (제거된 종목은 ranking log에 기록)
 	{
 		filterRsiMax := settings.FilterRsiMax
@@ -727,6 +725,47 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			}(i, r.StockCode)
 		}
 		wg.Wait()
+	}
+
+	// 복합 모멘텀 스코어 계산 (BidAskRatio fetch 완료 후).
+	// 공식: bid_ask(40pt) + strength(40pt) + vol_decline(20pt) = 0~100
+	{
+		for i := range rankings {
+			item := &rankings[i]
+			// bid_ask 점수: ratio/5.0 상한 40pt
+			bidAskScore := math.Min(item.BidAskRatio/5.0, 1.0) * 40.0
+			// 체결강도 점수: (strength%-100)/100 상한 40pt. 100% 미만=0
+			var strPct float64
+			fmt.Sscanf(item.Strength, "%f", &strPct)
+			strengthScore := math.Min(math.Max(strPct-100.0, 0)/100.0, 1.0) * 40.0
+			// 거래량 감소 점수: (1-prev_vol_ratio) 상한 20pt. ratio≥1이면 0
+			volScore := math.Max(1.0-item.PrevVolumeRatio, 0) * 20.0
+			item.MomentumScore = math.Round((bidAskScore+strengthScore+volScore)*10) / 10
+		}
+		// MomentumScoreMin > 0 이면 미달 종목 제거
+		if settings.MomentumScoreMin > 0 {
+			var passed []RankItem
+			for _, item := range rankings {
+				if item.MomentumScore >= settings.MomentumScoreMin {
+					passed = append(passed, item)
+				} else {
+					logger.Info("engine: momentum score filter",
+						map[string]any{
+							"stock_code":     item.StockCode,
+							"stock_name":     item.StockName,
+							"momentum_score": item.MomentumScore,
+							"threshold":      settings.MomentumScoreMin,
+						})
+				}
+			}
+			rankings = passed
+			if len(rankings) == 0 {
+				const failMsg = "no stocks passed momentum score filter"
+				insertFailedSelectionLog(failMsg)
+				e.setState(StateMonitoring)
+				return fmt.Errorf("%s", failMsg)
+			}
+		}
 	}
 
 	// Persist selection log to DB (Claude 호출 전 INSERT — 실패해도 로그 남김).

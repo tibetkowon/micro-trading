@@ -97,6 +97,11 @@ type TradingSettings struct {
 	MinExpectedProfitPct float64 // 주식 진입 시 세후 최소 기대수익 (%). 0=미사용
 	// Claude 후보 제한
 	MaxClaudeCandidates int // Claude에 전달할 최대 후보 종목 수. 0=제한없음. 기본 15
+	// 복합 모멘텀 스코어링
+	MomentumScoreMin float64 // 최솟값(0~100). 0=비활성. BidAskRatio 조회 후 필터
+	// 단계적 횡보 청산
+	StagnationPartialExitEnabled  bool    // 횡보 감지 시 절반 청산 활성화 (false=기존 전량 청산)
+	StagnationBidAskSellThreshold float64 // 이 값 미만이면 즉시 전량 청산 (기본 1.0)
 }
 
 // DB wraps the sql.DB connection.
@@ -390,6 +395,9 @@ func (db *DB) migrate() error {
 		{"active_preset_id", "0"},
 		{"optimization_apply_mode", "all_manual"},
 		{"max_claude_candidates", "15"},
+		{"momentum_score_min", "0"},
+		{"stagnation_partial_exit_enabled", "false"},
+		{"stagnation_bid_ask_sell_threshold", "1.0"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -437,7 +445,9 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'hard_prev_vol_ratio_max','hard_strength_min','hard_rsi_max','hard_open_price_diff_max',`+
 			`'vwap_diff_min','vwap_diff_max','rsi_buy_min','rsi_buy_max','bid_ask_ratio_min',`+
 			`'min_market_cap','min_expected_profit_pct',`+
-			`'max_claude_candidates'`+
+			`'max_claude_candidates',`+
+			`'momentum_score_min',`+
+			`'stagnation_partial_exit_enabled','stagnation_bid_ask_sell_threshold'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -564,67 +574,70 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	bidAskRatioMin := f64Default("bid_ask_ratio_min", 1.2)
 
 	return TradingSettings{
-		TakeProfitPct:             takeProfitPct,
-		StopLossPct:               stopLossPct,
-		ETFTakeProfitPct:          f64("etf_take_profit_pct"),
-		ETFStopLossPct:            f64("etf_stop_loss_pct"),
-		StockTakeProfitPct:        f64("stock_take_profit_pct"),
-		StockStopLossPct:          f64("stock_stop_loss_pct"),
-		StockTaxRate:              f64("stock_tax_rate"),
-		HardWatchSymbols:          strSlice("hard_watch_symbols"),
-		RankLeaseDurationMin:      i64("rank_lease_duration_min"),
-		RankingTypes:              rankingTypes,
-		RankingPriceMin:           vals["ranking_price_min"],
-		RankingPriceMax:           vals["ranking_price_max"],
-		MaxPositions:              maxPositions,
-		OrderAmountPct:            orderAmountPct,
-		SellConditions:            sellConditions,
-		IndicatorCheckIntervalMin: indicatorCheckInterval,
-		IndicatorRSISellThreshold: rsiThreshold,
-		IndicatorMACDBearishSell:  vals["indicator_macd_bearish_sell"] == "true",
-		ClaudeModel:               claudeModel,
-		RankingVolumeMinIncrRate:  f64("ranking_volume_min_incrrate"),
-		RankingStrengthMin:        f64("ranking_strength_min"),
-		RankingFluctuationMinRate: f64("ranking_fluctuation_min_rate"),
-		RankingFluctuationMaxRate: f64("ranking_fluctuation_max_rate"),
-		RankingVIKindCode:         vals["ranking_vi_kind_code"],
-		RankingTopN:               i64("ranking_top_n"),
-		RankingExchanges:          rankingExchanges,
-		RankingVolumeBlngClsCodes: rankingVolumeBlngClsCodes,
-		TradingStartTime:          tradingStartTime,
-		TradingEndTime:            tradingEndTime,
-		StagnationThresholdPct:    stagnationThresholdPct,
-		StagnationDurationMin:     stagnationDurationMin,
-		RankingCondition:          rankingCondition,
-		MinTradingValue:           f64("min_trading_value"),
-		BuyPauseStart:             vals["buy_pause_start"],
-		BuyPauseEnd:               vals["buy_pause_end"],
-		TrailingTriggerPct:        f64("trailing_trigger_pct"),
-		TrailingStopPct:           f64("trailing_stop_pct"),
-		DailyMaxLossPct:           f64("daily_max_loss_pct"),
-		IndexCodes:                strSlice("index_codes"),
-		FilterRsiMax:              filterRsiMax,
-		FilterDisparityM5Max:      filterDisparityM5Max,
-		FilterHighPriceDiffMin:    filterHighPriceDiffMin,
-		FilterOpenPriceDiffMax:    filterOpenPriceDiffMax,
-		IndexDropThresholdPct:     indexDropThresholdPct,
-		TradingDays:               tradingDays,
-		HardDisparityM5Min:        hardDisparityM5Min,
-		HardDisparityM5Max:        hardDisparityM5Max,
-		HardHighPriceDiffMax:      hardHighPriceDiffMax,
-		HardHighPriceDiffMin:      hardHighPriceDiffMin,
-		HardPrevVolRatioMax:       hardPrevVolRatioMax,
-		HardStrengthMin:           hardStrengthMin,
-		HardRSIMax:                hardRSIMax,
-		HardOpenPriceDiffMax:      hardOpenPriceDiffMax,
-		VWAPDiffMin:               f64("vwap_diff_min"),
-		VWAPDiffMax:               vwapDiffMax,
-		RSIBuyMin:                 rsiBuyMin,
-		RSIBuyMax:                 rsiBuyMax,
-		BidAskRatioMin:            bidAskRatioMin,
-		MinMarketCap:              f64("min_market_cap"),
-		MinExpectedProfitPct:      f64("min_expected_profit_pct"),
-		MaxClaudeCandidates:       i64Default("max_claude_candidates", 15),
+		TakeProfitPct:                 takeProfitPct,
+		StopLossPct:                   stopLossPct,
+		ETFTakeProfitPct:              f64("etf_take_profit_pct"),
+		ETFStopLossPct:                f64("etf_stop_loss_pct"),
+		StockTakeProfitPct:            f64("stock_take_profit_pct"),
+		StockStopLossPct:              f64("stock_stop_loss_pct"),
+		StockTaxRate:                  f64("stock_tax_rate"),
+		HardWatchSymbols:              strSlice("hard_watch_symbols"),
+		RankLeaseDurationMin:          i64("rank_lease_duration_min"),
+		RankingTypes:                  rankingTypes,
+		RankingPriceMin:               vals["ranking_price_min"],
+		RankingPriceMax:               vals["ranking_price_max"],
+		MaxPositions:                  maxPositions,
+		OrderAmountPct:                orderAmountPct,
+		SellConditions:                sellConditions,
+		IndicatorCheckIntervalMin:     indicatorCheckInterval,
+		IndicatorRSISellThreshold:     rsiThreshold,
+		IndicatorMACDBearishSell:      vals["indicator_macd_bearish_sell"] == "true",
+		ClaudeModel:                   claudeModel,
+		RankingVolumeMinIncrRate:      f64("ranking_volume_min_incrrate"),
+		RankingStrengthMin:            f64("ranking_strength_min"),
+		RankingFluctuationMinRate:     f64("ranking_fluctuation_min_rate"),
+		RankingFluctuationMaxRate:     f64("ranking_fluctuation_max_rate"),
+		RankingVIKindCode:             vals["ranking_vi_kind_code"],
+		RankingTopN:                   i64("ranking_top_n"),
+		RankingExchanges:              rankingExchanges,
+		RankingVolumeBlngClsCodes:     rankingVolumeBlngClsCodes,
+		TradingStartTime:              tradingStartTime,
+		TradingEndTime:                tradingEndTime,
+		StagnationThresholdPct:        stagnationThresholdPct,
+		StagnationDurationMin:         stagnationDurationMin,
+		RankingCondition:              rankingCondition,
+		MinTradingValue:               f64("min_trading_value"),
+		BuyPauseStart:                 vals["buy_pause_start"],
+		BuyPauseEnd:                   vals["buy_pause_end"],
+		TrailingTriggerPct:            f64("trailing_trigger_pct"),
+		TrailingStopPct:               f64("trailing_stop_pct"),
+		DailyMaxLossPct:               f64("daily_max_loss_pct"),
+		IndexCodes:                    strSlice("index_codes"),
+		FilterRsiMax:                  filterRsiMax,
+		FilterDisparityM5Max:          filterDisparityM5Max,
+		FilterHighPriceDiffMin:        filterHighPriceDiffMin,
+		FilterOpenPriceDiffMax:        filterOpenPriceDiffMax,
+		IndexDropThresholdPct:         indexDropThresholdPct,
+		TradingDays:                   tradingDays,
+		HardDisparityM5Min:            hardDisparityM5Min,
+		HardDisparityM5Max:            hardDisparityM5Max,
+		HardHighPriceDiffMax:          hardHighPriceDiffMax,
+		HardHighPriceDiffMin:          hardHighPriceDiffMin,
+		HardPrevVolRatioMax:           hardPrevVolRatioMax,
+		HardStrengthMin:               hardStrengthMin,
+		HardRSIMax:                    hardRSIMax,
+		HardOpenPriceDiffMax:          hardOpenPriceDiffMax,
+		VWAPDiffMin:                   f64("vwap_diff_min"),
+		VWAPDiffMax:                   vwapDiffMax,
+		RSIBuyMin:                     rsiBuyMin,
+		RSIBuyMax:                     rsiBuyMax,
+		BidAskRatioMin:                bidAskRatioMin,
+		MinMarketCap:                  f64("min_market_cap"),
+		MinExpectedProfitPct:          f64("min_expected_profit_pct"),
+		MaxClaudeCandidates:           i64Default("max_claude_candidates", 15),
+		MomentumScoreMin:              f64("momentum_score_min"),
+		StagnationPartialExitEnabled:  vals["stagnation_partial_exit_enabled"] == "true",
+		StagnationBidAskSellThreshold: f64Default("stagnation_bid_ask_sell_threshold", 1.0),
 	}, nil
 }
 
