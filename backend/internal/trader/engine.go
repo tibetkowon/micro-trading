@@ -391,6 +391,93 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no ranking results after excluding already-traded stocks")
 	}
 
+	// 거래대금 사전 필터 — 순위 응답의 CurrentPrice × Volume으로 계산 (GetStockInfo 호출 전).
+	// Volume이 없거나 파싱 불가능한 경우 보수적으로 통과시킨다.
+	if settings.MinTradingValue > 0 {
+		var passed []RankItem
+		for _, item := range rankings {
+			price, errP := strconv.ParseFloat(item.CurrentPrice, 64)
+			vol, errV := strconv.ParseFloat(item.Volume, 64)
+			if errP != nil || errV != nil || price <= 0 || vol <= 0 {
+				passed = append(passed, item)
+				continue
+			}
+			tv := math.Round(price * vol)
+			if tv >= settings.MinTradingValue {
+				passed = append(passed, item)
+			} else {
+				allFilteredOut = append(allFilteredOut, filteredStockEntry{
+					StockCode:    item.StockCode,
+					StockName:    item.StockName,
+					FilterReason: fmt.Sprintf("거래대금 미달 (%.0f억 < %.0f억)", tv/1e8, settings.MinTradingValue/1e8),
+				})
+			}
+		}
+		rankings = passed
+	}
+	if len(rankings) == 0 {
+		insertFailedSelectionLog("거래대금 필터 후 후보 없음")
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no stocks passed min_trading_value filter")
+	}
+
+	// Get available cash.
+	summary, err := e.kisClient.GetInquireBalance(ctx)
+	if err != nil {
+		msg := fmt.Sprintf("잔고 조회 실패: %v", err)
+		insertFailedSelectionLog(msg)
+		e.setState(StateMonitoring)
+		return fmt.Errorf("GetInquireBalance: %w", err)
+	}
+	availableCash, _ := strconv.ParseFloat(summary.DepositAmt, 64)
+	if availableCash <= 0 {
+		insertFailedSelectionLog("가용 현금 없음")
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no available cash")
+	}
+
+	// 일일 최대 손실 한도 체크 (KR — KRW 기준)
+	if settings.DailyMaxLossPct > 0 {
+		pnl := e.db.GetTodayRealizedPnLByMarket(ctx, "KR")
+		if pnl < 0 {
+			totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
+			if totalEval <= 0 {
+				totalEval = availableCash
+			}
+			lossLimit := totalEval * settings.DailyMaxLossPct / 100
+			if -pnl >= lossLimit {
+				e.setState(StateMonitoring)
+				msg := fmt.Sprintf("일일 최대 손실 한도 도달 (%.0f원 손실 >= 한도 %.0f원)", -pnl, lossLimit)
+				insertFailedSelectionLog(msg)
+				e.db.InsertServiceLog(ctx, "TRADER", "ERROR", msg, "")
+				return fmt.Errorf("%s", msg)
+			}
+		}
+	}
+
+	// Filter out stocks whose current price exceeds available cash (can't buy even 1 share).
+	{
+		var passed []RankItem
+		for _, item := range rankings {
+			price, _ := strconv.ParseFloat(item.CurrentPrice, 64)
+			if price > 0 && price <= availableCash {
+				passed = append(passed, item)
+			} else if price > availableCash {
+				allFilteredOut = append(allFilteredOut, filteredStockEntry{
+					StockCode:    item.StockCode,
+					StockName:    item.StockName,
+					FilterReason: fmt.Sprintf("현금 부족 (주가 %.0f원 > 가용 %.0f원)", price, availableCash),
+				})
+			}
+		}
+		rankings = passed
+	}
+	if len(rankings) == 0 {
+		insertFailedSelectionLog(fmt.Sprintf("주가 > 가용현금(%.0f원)인 종목 전부 제거됨", availableCash))
+		e.setState(StateMonitoring)
+		return fmt.Errorf("no affordable stocks after price filter (cash: %.0f)", availableCash)
+	}
+
 	// Enrich each candidate with technical indicators — parallel with semaphore (max 3 concurrent).
 	// GetBidAskRatio is NOT called here; it will be applied only to the final Claude candidates.
 	{
@@ -479,84 +566,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no stocks passed min_market_cap filter")
 	}
 
-	// 거래대금 하한선 필터 — GetStockInfo 루프에서 이미 채워진 TradingValue 재사용
-	if settings.MinTradingValue > 0 {
-		var passed []RankItem
-		for _, item := range rankings {
-			if item.TradingValue == 0 || item.TradingValue >= settings.MinTradingValue {
-				passed = append(passed, item)
-			} else {
-				allFilteredOut = append(allFilteredOut, filteredStockEntry{
-					StockCode:    item.StockCode,
-					StockName:    item.StockName,
-					FilterReason: fmt.Sprintf("거래대금 미달 (%.0f억 < %.0f억)", item.TradingValue/1e8, settings.MinTradingValue/1e8),
-				})
-			}
-		}
-		rankings = passed
-	}
-	if len(rankings) == 0 {
-		insertFailedSelectionLog("거래대금 필터 후 후보 없음")
-		e.setState(StateMonitoring)
-		return fmt.Errorf("no stocks passed min_trading_value filter")
-	}
 
-	// Get available cash.
-	summary, err := e.kisClient.GetInquireBalance(ctx)
-	if err != nil {
-		msg := fmt.Sprintf("잔고 조회 실패: %v", err)
-		insertFailedSelectionLog(msg)
-		e.setState(StateMonitoring)
-		return fmt.Errorf("GetInquireBalance: %w", err)
-	}
-	availableCash, _ := strconv.ParseFloat(summary.DepositAmt, 64)
-	if availableCash <= 0 {
-		insertFailedSelectionLog("가용 현금 없음")
-		e.setState(StateMonitoring)
-		return fmt.Errorf("no available cash")
-	}
-
-	// 일일 최대 손실 한도 체크 (KR — KRW 기준)
-	if settings.DailyMaxLossPct > 0 {
-		pnl := e.db.GetTodayRealizedPnLByMarket(ctx, "KR")
-		if pnl < 0 {
-			totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
-			if totalEval <= 0 {
-				totalEval = availableCash
-			}
-			lossLimit := totalEval * settings.DailyMaxLossPct / 100
-			if -pnl >= lossLimit {
-				e.setState(StateMonitoring)
-				msg := fmt.Sprintf("일일 최대 손실 한도 도달 (%.0f원 손실 >= 한도 %.0f원)", -pnl, lossLimit)
-				insertFailedSelectionLog(msg)
-				e.db.InsertServiceLog(ctx, "TRADER", "ERROR", msg, "")
-				return fmt.Errorf("%s", msg)
-			}
-		}
-	}
-
-	// Filter out stocks whose current price exceeds available cash (can't buy even 1 share).
-	{
-		var passed []RankItem
-		for _, item := range rankings {
-			price, _ := strconv.ParseFloat(item.CurrentPrice, 64)
-			if price > 0 && price <= availableCash {
-				passed = append(passed, item)
-			} else if price > availableCash {
-				allFilteredOut = append(allFilteredOut, filteredStockEntry{
-					StockCode:    item.StockCode,
-					StockName:    item.StockName,
-					FilterReason: fmt.Sprintf("현금 부족 (주가 %.0f원 > 가용 %.0f원)", price, availableCash),
-				})
-			}
-		}
-		rankings = passed
-	}
-	if len(rankings) == 0 {
-		insertFailedSelectionLog(fmt.Sprintf("주가 > 가용현금(%.0f원)인 종목 전부 제거됨", availableCash))
-		e.setState(StateMonitoring)
-		return fmt.Errorf("no affordable stocks after price filter (cash: %.0f)", availableCash)
-	}
 
 	// 하드 필터: LLM 전달 전 과열/이격 과대 종목 제거 (제거된 종목은 ranking log에 기록)
 	{
@@ -1319,13 +1329,16 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 
 	if settings.RankingCondition == "OR" {
 		// OR union: collect stocks appearing in any ranking type.
+		// Track which types each stock appeared in to set accurate RankingType.
 		seen := map[string]RankItem{}
-		for _, m := range byType {
+		seenTypes := map[string][]string{} // code → list of types it appeared in
+		for rt, m := range byType {
 			for code, item := range m {
-				if existing, exists := seen[code]; !exists {
-					item.RankingType = strings.Join(settings.RankingTypes, "|")
+				seenTypes[code] = append(seenTypes[code], rt)
+				if _, exists := seen[code]; !exists {
 					seen[code] = item
 				} else {
+					existing := seen[code]
 					if item.VolIncrRate != "" {
 						existing.VolIncrRate = item.VolIncrRate
 					}
@@ -1336,7 +1349,8 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				}
 			}
 		}
-		for _, item := range seen {
+		for code, item := range seen {
+			item.RankingType = strings.Join(seenTypes[code], "|")
 			result = append(result, item)
 		}
 	} else {
@@ -1440,12 +1454,18 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	}
 	typesJSON, _ := json.Marshal(settings.RankingTypes)
 	resultStocksJSON, _ := json.Marshal(result)
+	typeCountsMap := map[string]int{}
+	for rt, m := range byType {
+		typeCountsMap[rt] = len(m)
+	}
+	typeCountsJSON, _ := json.Marshal(typeCountsMap)
 	rankingLogID, logErr := e.db.InsertRankingLog(ctx, models.TraderRankingLog{
 		RankingTypes:      string(typesJSON),
 		PriceMin:          settings.RankingPriceMin,
 		PriceMax:          settings.RankingPriceMax,
 		VolumeCount:       countFor("volume"),
 		StrengthCount:     countFor("strength"),
+		TypeCounts:        string(typeCountsJSON),
 		RankingCondition:  settings.RankingCondition,
 		IntersectionCount: len(result),
 		ResultStocks:      string(resultStocksJSON),

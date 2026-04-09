@@ -119,6 +119,7 @@ type TraderRankingLog struct {
 	PriceMax          string    `json:"price_max"`
 	VolumeCount       int       `json:"volume_count"` // -1 = 타입 미사용
 	StrengthCount     int       `json:"strength_count"`
+	TypeCounts        string    `json:"type_counts"`        // JSON: {"volume":15,"strength":20,...}
 	RankingCondition  string    `json:"ranking_condition"`  // "AND" | "OR"
 	IntersectionCount int       `json:"intersection_count"` // 최종 결과 종목 수 (AND=교집합, OR=합집합)
 	ResultStocks      string    `json:"result_stocks"`      // JSON array of RankItem (지표 보강 전)

@@ -315,6 +315,7 @@ func (db *DB) migrate() error {
 		`ALTER TABLE trader_selection_logs ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
 		`ALTER TABLE trader_ranking_logs ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
 		`ALTER TABLE trader_ranking_logs ADD COLUMN filtered_stocks TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE trader_ranking_logs ADD COLUMN type_counts TEXT NOT NULL DEFAULT '{}'`,
 		`ALTER TABLE trader_selection_logs ADD COLUMN ranking_log_id INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE settings_presets ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
 		`ALTER TABLE stock_masters ADD COLUMN listed_shares INTEGER NOT NULL DEFAULT 0`,
@@ -778,11 +779,11 @@ func (db *DB) InsertRankingLog(ctx context.Context, log models.TraderRankingLog)
 	res, err := db.ExecContext(ctx,
 		`INSERT INTO trader_ranking_logs
 		 (timestamp, ranking_types, price_min, price_max,
-		  volume_count, strength_count,
+		  volume_count, strength_count, type_counts,
 		  ranking_condition, intersection_count, result_stocks, error_message, market)
-		 VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.RankingTypes, log.PriceMin, log.PriceMax,
-		log.VolumeCount, log.StrengthCount,
+		log.VolumeCount, log.StrengthCount, log.TypeCounts,
 		log.RankingCondition, log.IntersectionCount, log.ResultStocks, log.ErrorMessage, log.Market)
 	if err != nil {
 		return 0, err
@@ -798,7 +799,7 @@ func (db *DB) GetRankingLogs(ctx context.Context, limit int) ([]models.TraderRan
 
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, timestamp, ranking_types, price_min, price_max,
-		        volume_count, strength_count,
+		        volume_count, strength_count, type_counts,
 		        ranking_condition, intersection_count, result_stocks, error_message, market,
 		        filtered_stocks
 		 FROM trader_ranking_logs ORDER BY id DESC LIMIT ?`, limit)
@@ -812,7 +813,7 @@ func (db *DB) GetRankingLogs(ctx context.Context, limit int) ([]models.TraderRan
 		var l models.TraderRankingLog
 		if err := rows.Scan(
 			&l.ID, &l.Timestamp, &l.RankingTypes, &l.PriceMin, &l.PriceMax,
-			&l.VolumeCount, &l.StrengthCount,
+			&l.VolumeCount, &l.StrengthCount, &l.TypeCounts,
 			&l.RankingCondition, &l.IntersectionCount, &l.ResultStocks, &l.ErrorMessage, &l.Market,
 			&l.FilteredStocks,
 		); err != nil {
@@ -932,7 +933,9 @@ func (db *DB) UpdateTradeReportOnSell(ctx context.Context, buyOrderID, sellOrder
 		buyOrderID).Scan(&buyPrice, &buyQty)
 
 	sellAmount := sellPrice * float64(sellQty)
-	profitAmount := sellAmount - (buyPrice * float64(buyQty))
+	// profitAmount: (매도가 - 매수가) × 매도수량.
+	// buyQty를 기준으로 계산하면 부분매도 또는 sellPrice=0(GetStockInfo 실패) 시 전액 손실로 기록되는 버그가 있음.
+	profitAmount := (sellPrice - buyPrice) * float64(sellQty)
 	profitPct := 0.0
 	if buyPrice > 0 {
 		profitPct = (sellPrice - buyPrice) / buyPrice * 100
@@ -971,6 +974,44 @@ func (db *DB) GetTradeReports(ctx context.Context, date, stockCode string, limit
 		        sell_price, sell_qty, sell_amount, sell_reason, sell_indicators,
 		        profit_amount, profit_pct, created_at, sold_at
 		 FROM trade_reports `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reports []models.TradeReport
+	for rows.Next() {
+		var r models.TradeReport
+		if err := rows.Scan(
+			&r.ID, &r.Date, &r.StockCode, &r.StockName,
+			&r.BuyOrderID, &r.SellOrderID, &r.SelectionLogID,
+			&r.BuyPrice, &r.BuyQty, &r.BuyAmount, &r.BuyReason, &r.BuyIndicators,
+			&r.SellPrice, &r.SellQty, &r.SellAmount, &r.SellReason, &r.SellIndicators,
+			&r.ProfitAmount, &r.ProfitPct, &r.CreatedAt, &r.SoldAt,
+		); err != nil {
+			return nil, err
+		}
+		reports = append(reports, r)
+	}
+	if reports == nil {
+		reports = []models.TradeReport{}
+	}
+	return reports, nil
+}
+
+// GetCompletedTradesBySoldDate returns trade_reports that were sold on the given date (KST "YYYY-MM-DD").
+// Used by GenerateDailyReport to collect trades by sell date, not buy date.
+func (db *DB) GetCompletedTradesBySoldDate(ctx context.Context, date string) ([]models.TradeReport, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, date, stock_code, stock_name,
+		        buy_order_id, sell_order_id, selection_log_id,
+		        buy_price, buy_qty, buy_amount, buy_reason, buy_indicators,
+		        sell_price, sell_qty, sell_amount, sell_reason, sell_indicators,
+		        profit_amount, profit_pct, created_at, sold_at
+		 FROM trade_reports
+		 WHERE sold_at IS NOT NULL
+		   AND date(sold_at) = ?
+		 ORDER BY id ASC`, date)
 	if err != nil {
 		return nil, err
 	}

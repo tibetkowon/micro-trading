@@ -48,17 +48,10 @@ func GenerateDailyReport(ctx context.Context, db *database.DB, date string) erro
 		date = time.Now().In(kst).Format("2006-01-02")
 	}
 
-	all, err := db.GetTradeReports(ctx, date, "", 1000, 0)
+	// sold_at 날짜 기준으로 집계 (매수일 기준 시 전날 매수+오늘 매도 거래가 누락됨)
+	completed, err := db.GetCompletedTradesBySoldDate(ctx, date)
 	if err != nil {
-		return fmt.Errorf("GetTradeReports: %w", err)
-	}
-
-	// 완료(매도)된 거래만 집계
-	var completed []models.TradeReport
-	for _, t := range all {
-		if t.SoldAt != nil {
-			completed = append(completed, t)
-		}
+		return fmt.Errorf("GetCompletedTradesBySoldDate: %w", err)
 	}
 
 	total := len(completed)

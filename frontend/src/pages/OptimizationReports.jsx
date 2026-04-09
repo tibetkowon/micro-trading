@@ -108,6 +108,7 @@ SuggestionCard.propTypes = {
 
 function OptimizationCard({ report, onRefetch }) {
   const [tab, setTab] = useState('all')
+  const [open, setOpen] = useState(false)
 
   let suggestions = []
   try {
@@ -121,59 +122,70 @@ function OptimizationCard({ report, onRefetch }) {
   const pendingCount = suggestions.filter((s) => s.status === 'PENDING').length
 
   return (
-    <div className="bg-th-surface border border-black/10 dark:border-white/10 rounded-xl p-5 space-y-4">
-      {/* 헤더 */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="font-bold text-base">{report.date}</h2>
-          <p className="text-xs text-th-on-muted mt-0.5">
-            적용 모드: <span className="font-medium">{report.apply_mode_snapshot === 'all_auto' ? '전체 자동' : '전체 수동'}</span>
-            {pendingCount > 0 && <span className="ml-2 text-yellow-400">({pendingCount}건 대기 중)</span>}
-          </p>
+    <div className="bg-th-surface border border-black/10 dark:border-white/10 rounded-xl overflow-hidden">
+      {/* 접을 수 있는 헤더 */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-5 py-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
+      >
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="font-bold text-sm">{report.date}</span>
+          <span className="text-xs text-th-on-muted">
+            {report.apply_mode_snapshot === 'all_auto' ? '자동' : '수동'}
+          </span>
+          {pendingCount > 0 && (
+            <span className="text-xs text-yellow-400 font-medium">{pendingCount}건 대기</span>
+          )}
+          <span className="text-xs text-th-on-muted">{suggestions.length}개 제안</span>
         </div>
-      </div>
+        <span className="text-th-on-muted text-sm shrink-0 ml-2">{open ? '▲' : '▼'}</span>
+      </button>
 
-      {/* 전체 평가 */}
-      {report.overall_assessment && (
-        <div className="p-3 rounded-lg bg-orange-500/5 border border-orange-500/20 text-sm text-th-on-surface leading-relaxed">
-          {report.overall_assessment}
-        </div>
-      )}
+      {open && (
+        <div className="px-5 pb-5 border-t border-black/5 dark:border-white/5 pt-4 space-y-4">
+          {/* 전체 평가 */}
+          {report.overall_assessment && (
+            <div className="p-3 rounded-lg bg-orange-500/5 border border-orange-500/20 text-sm text-th-on-surface leading-relaxed">
+              {report.overall_assessment}
+            </div>
+          )}
 
-      {/* 탭 */}
-      <div className="flex gap-1">
-        {[
-          { key: 'all', label: `전체 (${suggestions.length})` },
-          { key: 'settings', label: `설정 변경 (${suggestions.filter((s) => s.category === 'settings').length})` },
-          { key: 'feature', label: `기능 요청 (${suggestions.filter((s) => s.category === 'feature').length})` },
-        ].map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
-              tab === key
-                ? 'bg-orange-500 text-white font-medium'
-                : 'bg-black/5 dark:bg-white/5 text-th-on-muted hover:bg-black/10 dark:hover:bg-white/10'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+          {/* 탭 */}
+          <div className="flex gap-1 flex-wrap">
+            {[
+              { key: 'all', label: `전체 (${suggestions.length})` },
+              { key: 'settings', label: `설정 변경 (${suggestions.filter((s) => s.category === 'settings').length})` },
+              { key: 'feature', label: `기능 요청 (${suggestions.filter((s) => s.category === 'feature').length})` },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                  tab === key
+                    ? 'bg-orange-500 text-white font-medium'
+                    : 'bg-black/5 dark:bg-white/5 text-th-on-muted hover:bg-black/10 dark:hover:bg-white/10'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-      {/* 제안 목록 */}
-      {filtered.length === 0 ? (
-        <p className="text-sm text-th-on-muted">해당 카테고리의 제안이 없습니다.</p>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((s) => (
-            <SuggestionCard
-              key={s.id}
-              suggestion={s}
-              date={report.date}
-              onAction={onRefetch}
-            />
-          ))}
+          {/* 제안 목록 */}
+          {filtered.length === 0 ? (
+            <p className="text-sm text-th-on-muted">해당 카테고리의 제안이 없습니다.</p>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map((s) => (
+                <SuggestionCard
+                  key={s.id}
+                  suggestion={s}
+                  date={report.date}
+                  onAction={onRefetch}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
