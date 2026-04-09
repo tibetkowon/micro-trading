@@ -44,7 +44,7 @@ func NewClient(
 		accountType:  accountType,
 		tokenManager: tokenManager,
 		// KIS allows up to 20 TPS; burst=1 enforces strict per-request spacing.
-		rateLimiter: NewRateLimiter(10, 1),
+		rateLimiter: NewRateLimiter(7, 1),
 		db:          db,
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
