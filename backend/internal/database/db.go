@@ -933,7 +933,9 @@ func (db *DB) UpdateTradeReportOnSell(ctx context.Context, buyOrderID, sellOrder
 		buyOrderID).Scan(&buyPrice, &buyQty)
 
 	sellAmount := sellPrice * float64(sellQty)
-	profitAmount := sellAmount - (buyPrice * float64(buyQty))
+	// profitAmount: (매도가 - 매수가) × 매도수량.
+	// buyQty를 기준으로 계산하면 부분매도 또는 sellPrice=0(GetStockInfo 실패) 시 전액 손실로 기록되는 버그가 있음.
+	profitAmount := (sellPrice - buyPrice) * float64(sellQty)
 	profitPct := 0.0
 	if buyPrice > 0 {
 		profitPct = (sellPrice - buyPrice) / buyPrice * 100
@@ -972,6 +974,44 @@ func (db *DB) GetTradeReports(ctx context.Context, date, stockCode string, limit
 		        sell_price, sell_qty, sell_amount, sell_reason, sell_indicators,
 		        profit_amount, profit_pct, created_at, sold_at
 		 FROM trade_reports `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reports []models.TradeReport
+	for rows.Next() {
+		var r models.TradeReport
+		if err := rows.Scan(
+			&r.ID, &r.Date, &r.StockCode, &r.StockName,
+			&r.BuyOrderID, &r.SellOrderID, &r.SelectionLogID,
+			&r.BuyPrice, &r.BuyQty, &r.BuyAmount, &r.BuyReason, &r.BuyIndicators,
+			&r.SellPrice, &r.SellQty, &r.SellAmount, &r.SellReason, &r.SellIndicators,
+			&r.ProfitAmount, &r.ProfitPct, &r.CreatedAt, &r.SoldAt,
+		); err != nil {
+			return nil, err
+		}
+		reports = append(reports, r)
+	}
+	if reports == nil {
+		reports = []models.TradeReport{}
+	}
+	return reports, nil
+}
+
+// GetCompletedTradesBySoldDate returns trade_reports that were sold on the given date (KST "YYYY-MM-DD").
+// Used by GenerateDailyReport to collect trades by sell date, not buy date.
+func (db *DB) GetCompletedTradesBySoldDate(ctx context.Context, date string) ([]models.TradeReport, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, date, stock_code, stock_name,
+		        buy_order_id, sell_order_id, selection_log_id,
+		        buy_price, buy_qty, buy_amount, buy_reason, buy_indicators,
+		        sell_price, sell_qty, sell_amount, sell_reason, sell_indicators,
+		        profit_amount, profit_pct, created_at, sold_at
+		 FROM trade_reports
+		 WHERE sold_at IS NOT NULL
+		   AND date(sold_at) = ?
+		 ORDER BY id ASC`, date)
 	if err != nil {
 		return nil, err
 	}
