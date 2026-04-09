@@ -80,6 +80,7 @@ type RankItem struct {
 	M5MA10          float64 `json:"m5_ma10,omitempty"`           // 5분봉 MA10
 	PrevVolumeRatio float64 `json:"prev_volume_ratio,omitempty"` // 직전봉 대비 거래량 비율
 	BidAskRatio     float64 `json:"bid_ask_ratio,omitempty"`     // 총 매수잔량/총 매도잔량 (0=데이터 없음)
+	MomentumScore   float64 `json:"momentum_score,omitempty"`    // 복합 모멘텀 스코어 (0~100). bid_ask·체결강도·거래량 감소 가중합산
 	// 세금보정 필드
 	TradingValue      float64 `json:"trading_value,omitempty"`       // 당일 거래대금 (원)
 	ApplicableTaxRate float64 `json:"applicable_tax_rate,omitempty"` // 0.0=ETF비과세, 0.002=주식
@@ -317,7 +318,9 @@ var allowedSettingsKeys = map[string]bool{
 	"vwap_diff_min": true, "vwap_diff_max": true,
 	"rsi_buy_min": true, "rsi_buy_max": true,
 	"bid_ask_ratio_min": true, "index_drop_threshold_pct": true,
-	"min_expected_profit_pct": true,
+	"min_expected_profit_pct":         true,
+	"momentum_score_min":              true,
+	"stagnation_partial_exit_enabled": true, "stagnation_bid_ask_sell_threshold": true,
 }
 
 // AnalyzeDailyReport sends the daily report and current settings to Claude for optimization suggestions.

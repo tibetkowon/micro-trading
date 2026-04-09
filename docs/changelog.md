@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-04-09 — 눌림목 모멘텀 스코어링 + 단계적 횡보 청산 로직 추가
+
+### 복합 모멘텀 스코어링 (`trader/claude.go`, `trader/engine.go`)
+- `RankItem`에 `MomentumScore float64` 필드 추가 — Claude 프롬프트에도 노출
+- BidAskRatio 조회 완료 후 0~100점 스코어 계산: `bid_ask(40pt) + 체결강도(40pt) + 거래량감소(20pt)`
+- 신규 설정 `momentum_score_min` (기본 0=비활성): 이 값 미만 종목은 Claude 전달 전 제거
+- 오늘 기준 비츠로셀 97.6점 / 온코닉테라퓨틱스 49.4점 → threshold=60 설정 시 자동 차별화
+
+### 단계적 횡보 청산 (`monitor/monitor.go`, `cmd/server/main.go`)
+- `MonitoredEntry`에 `PartialExitDone bool` 필드 추가
+- `Monitor.SetStagnationExitConfig()` 메서드 추가
+- `Monitor.executePartialSell()` 메서드 추가 (보유량 절반 시장가 매도)
+- `checkIndicators` stagnation case 분기 로직:
+  - `stagnation_partial_exit_enabled=false` → 기존 전량 청산 유지 (하위 호환)
+  - `bid_ask < stagnation_bid_ask_sell_threshold` → 즉시 전량 청산 ("횡보 중 매도우세 전환")
+  - 1차 횡보 + 매수 우세 → 절반 청산 + 횡보 타이머 리셋
+  - 2차 횡보 (절반 청산 후 재횡보) → 전량 청산
+- 신규 설정 `stagnation_partial_exit_enabled` (기본 false), `stagnation_bid_ask_sell_threshold` (기본 1.0)
+- `cmd/server/main.go`에 `mon.SetStagnationExitConfig()` 호출 추가
+
+### DB 설정 추가 (`database/db.go`)
+- `momentum_score_min`, `stagnation_partial_exit_enabled`, `stagnation_bid_ask_sell_threshold` 3개 키 추가
+
 ## 2026-04-09 — KIS API TPS 제한 10 → 7 하향
 
 - **`kis/client.go`**: `NewRateLimiter(10, 1)` → `NewRateLimiter(7, 1)` — 초당 거래건수 초과 방지

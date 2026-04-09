@@ -319,6 +319,7 @@ func runMarketScheduler(ctx context.Context,
 
 				// Start indicator checker (횡보 감지 설정 포함)
 				mon.SetStagnationConfig(settings.StagnationThresholdPct, settings.StagnationDurationMin)
+				mon.SetStagnationExitConfig(settings.StagnationPartialExitEnabled, settings.StagnationBidAskSellThreshold)
 				indCtx, indCancel := context.WithCancel(ctx)
 				stopIndicator = indCancel
 				go mon.StartIndicatorChecker(

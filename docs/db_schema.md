@@ -44,6 +44,9 @@
 | `trading_end_time` | `"15:15"` | 자율 거래 엔진 종료 시간 및 전량 청산 트리거 (`HH:MM` 형식, KST) |
 | `stagnation_threshold_pct` | `"1.0"` | 횡보 감지 기준 변동폭 (%). 진입가 대비 ±이 값 이내이면 횡보로 판단 |
 | `stagnation_duration_min` | `"30"` | 횡보 지속 기준 시간 (분). 이 시간 이상 지속 시 `stagnation` 매도 조건 트리거 |
+| `stagnation_partial_exit_enabled` | `"false"` | 단계적 횡보 청산 활성화. `"true"` 시: 1차 횡보→절반 청산, 2차 횡보→전량 청산. `"false"`=기존 전량 청산 유지 |
+| `stagnation_bid_ask_sell_threshold` | `"1.0"` | 단계적 청산 활성화 시, bid_ask_ratio 이 값 미만이면 즉시 전량 청산 (매도 우세 전환 감지) |
+| `momentum_score_min` | `"0"` | 복합 모멘텀 스코어 최솟값 (0~100). 0=비활성. BidAskRatio×0.4 + 체결강도×0.4 + 거래량감소×0.2 합산. Claude 전달 전 미달 종목 제거 |
 | `ranking_condition` | `"AND"` | 순위 조건: `"AND"`=교집합, `"OR"`=합집합 |
 | `min_trading_value` | `"0"` | 최소 거래대금 (원). 0=필터없음. 미달 종목은 LLM 후보에서 제외 |
 | `buy_pause_start` | `"11:00"` | 매수 중단 시작 시간 (`HH:MM`, KST). 이 시간부터 `buy_pause_end`까지 매수 시도 안 함 |

@@ -41,6 +41,8 @@ type MonitoredEntry struct {
 	TrailingStopPct    float64 // 최고가 대비 하락 허용폭 (%)
 	TrailingActivated  bool    // 트레일링 스탑 활성화 여부
 	PeakPrice          float64 // 보유 중 도달한 최고가
+	// 단계적 횡보 청산
+	PartialExitDone bool // 절반 청산 완료 여부 (true이면 다음 횡보 감지 시 전량 청산)
 }
 
 // Monitor watches registered positions for target/stop price hits and
@@ -55,10 +57,12 @@ type Monitor struct {
 	mstStore  *mst.Store
 
 	// 횡보 감지
-	stagnMu                sync.Mutex
-	stagnantSince          map[string]*time.Time // stockCode → 횡보 시작 시각
-	stagnationThresholdPct float64               // 횡보 판단 기준 변동폭 (%, 0=비활성)
-	stagnationDurationMin  int                   // 횡보 지속 기준 시간 (분, 0=비활성)
+	stagnMu                       sync.Mutex
+	stagnantSince                 map[string]*time.Time // stockCode → 횡보 시작 시각
+	stagnationThresholdPct        float64               // 횡보 판단 기준 변동폭 (%, 0=비활성)
+	stagnationDurationMin         int                   // 횡보 지속 기준 시간 (분, 0=비활성)
+	stagnationPartialExitEnabled  bool                  // 단계적 횡보 청산 활성화
+	stagnationBidAskSellThreshold float64               // 이 값 미만이면 즉시 전량 청산 (기본 1.0)
 }
 
 // New creates a Monitor.
@@ -79,6 +83,20 @@ func (m *Monitor) SetStagnationConfig(thresholdPct float64, durationMin int) {
 	m.stagnMu.Lock()
 	m.stagnationThresholdPct = thresholdPct
 	m.stagnationDurationMin = durationMin
+	m.stagnMu.Unlock()
+}
+
+// SetStagnationExitConfig sets the staged exit behaviour for stagnation.
+// partialExitEnabled=true: first stagnation → sell 50%, second → sell all.
+// bidAskSellThreshold: if bid_ask_ratio is below this during stagnation, sell all immediately (default 1.0).
+// Call this before starting the indicator checker.
+func (m *Monitor) SetStagnationExitConfig(partialExitEnabled bool, bidAskSellThreshold float64) {
+	if bidAskSellThreshold <= 0 {
+		bidAskSellThreshold = 1.0
+	}
+	m.stagnMu.Lock()
+	m.stagnationPartialExitEnabled = partialExitEnabled
+	m.stagnationBidAskSellThreshold = bidAskSellThreshold
 	m.stagnMu.Unlock()
 }
 
@@ -321,6 +339,84 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	}
 
 	return qty
+}
+
+// executePartialSell sells approximately half of the current holdings for the given position.
+// It does NOT remove the position from monitoring. Returns the qty sold (0 on failure).
+func (m *Monitor) executePartialSell(stockCode string, pos *MonitoredEntry, reason string) int {
+	ctx := context.Background()
+
+	holdings, err := m.kisClient.GetHoldings(ctx)
+	if err != nil {
+		logger.Error("partial-sell: GetHoldings failed",
+			map[string]any{"stock_code": stockCode, "error": err.Error()})
+		return 0
+	}
+
+	totalQty := 0
+	for _, h := range holdings {
+		if h.StockCode == stockCode {
+			fmt.Sscanf(h.HoldingQty, "%d", &totalQty)
+			break
+		}
+	}
+	if totalQty <= 0 {
+		logger.Info("partial-sell: no holdings found", map[string]any{"stock_code": stockCode})
+		return 0
+	}
+
+	sellQty := totalQty / 2
+	if sellQty <= 0 {
+		sellQty = 1 // 최소 1주
+	}
+
+	resp, err := m.kisClient.PlaceSellOrder(ctx, kis.OrderRequest{
+		StockCode: stockCode,
+		OrderDivn: "01", // 시장가
+		Qty:       fmt.Sprintf("%d", sellQty),
+		Price:     "0",
+	})
+	if err != nil {
+		logger.Error("partial-sell: PlaceSellOrder failed",
+			map[string]any{"stock_code": stockCode, "qty": sellQty, "error": err.Error()})
+		return 0
+	}
+
+	logger.Info("partial-sell: sell order placed",
+		map[string]any{"stock_code": stockCode, "sell_qty": sellQty, "total_qty": totalQty, "reason": reason})
+
+	kisOrderID := ""
+	if resp != nil {
+		kisOrderID = resp.KISOrderID
+	}
+	_, _ = m.db.ExecContext(ctx,
+		`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
+		 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
+		stockCode, pos.StockName, sellQty, pos.FilledPrice, kisOrderID, reason, time.Now().UTC())
+
+	go func(buyOrderID int64, qty int, sellReason string) {
+		rCtx := context.Background()
+		var sellOrderID int64
+		_ = m.db.QueryRowContext(rCtx,
+			`SELECT id FROM orders WHERE stock_code=? AND order_type='SELL' ORDER BY id DESC LIMIT 1`,
+			stockCode).Scan(&sellOrderID)
+		var sellPrice float64
+		var sellIndJSON string
+		info, infoErr := agent.GetStockInfo(rCtx, m.kisClient, stockCode)
+		if infoErr == nil {
+			if p, e := strconv.ParseFloat(info.CurrentPrice, 64); e == nil {
+				sellPrice = p
+			}
+			b, _ := json.Marshal(info)
+			sellIndJSON = string(b)
+		}
+		if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, qty, sellReason, sellIndJSON); err != nil {
+			logger.Error("monitor: UpdateTradeReportOnSell (partial) failed",
+				map[string]any{"stock_code": stockCode, "error": err.Error()})
+		}
+	}(pos.OrderID, sellQty, reason)
+
+	return sellQty
 }
 
 // ForceSell places a market sell order for a specific monitored position and removes it from monitoring.
@@ -761,12 +857,50 @@ func (m *Monitor) checkIndicators(
 				since, hasSince := m.stagnantSince[code]
 				durationMin := m.stagnationDurationMin
 				thresholdPct := m.stagnationThresholdPct
+				partialExitEnabled := m.stagnationPartialExitEnabled
+				bidAskThreshold := m.stagnationBidAskSellThreshold
 				m.stagnMu.Unlock()
 				if hasSince && since != nil && durationMin > 0 && thresholdPct > 0 {
 					elapsed := time.Since(*since)
 					if elapsed >= time.Duration(durationMin)*time.Minute {
-						triggered = true
-						triggerReason = fmt.Sprintf("횡보 감지: %.1f%% 이내 변동 %.0f분 지속", thresholdPct, elapsed.Minutes())
+						if !partialExitEnabled {
+							// 기존 동작: 전량 청산
+							triggered = true
+							triggerReason = fmt.Sprintf("횡보 감지: %.1f%% 이내 변동 %.0f분 지속", thresholdPct, elapsed.Minutes())
+						} else {
+							// 단계적 청산: bid_ask_ratio 조회
+							bidAsk, baErr := m.kisClient.GetBidAskRatio(ctx, code)
+							if baErr != nil {
+								bidAsk = 0
+							}
+							if bidAsk > 0 && bidAsk < bidAskThreshold {
+								// 매도 우세 전환 → 즉시 전량 청산
+								triggered = true
+								triggerReason = fmt.Sprintf("횡보 중 매도우세 전환: bid_ask=%.2f < %.2f (%.0f분 횡보)", bidAsk, bidAskThreshold, elapsed.Minutes())
+							} else if !pos.PartialExitDone {
+								// 첫 번째 횡보 + 매수 우세 → 절반 청산
+								reason := fmt.Sprintf("횡보 절반청산(1차): bid_ask=%.2f, %.0f분 횡보", bidAsk, elapsed.Minutes())
+								soldQty := m.executePartialSell(code, pos, reason)
+								if soldQty > 0 {
+									// 포지션 플래그 설정 + 횡보 타이머 리셋
+									m.mu.Lock()
+									if p, ok2 := m.positions[code]; ok2 {
+										p.PartialExitDone = true
+									}
+									m.mu.Unlock()
+									m.stagnMu.Lock()
+									delete(m.stagnantSince, code)
+									m.stagnMu.Unlock()
+									logger.Info("monitor: stagnation partial exit done, timer reset",
+										map[string]any{"stock_code": code, "sold_qty": soldQty})
+								}
+								// triggered=false → 전량 청산하지 않고 계속 모니터링
+							} else {
+								// 두 번째 횡보 + 절반 청산 이미 완료 → 전량 청산
+								triggered = true
+								triggerReason = fmt.Sprintf("횡보 전량청산(2차): bid_ask=%.2f, %.0f분 횡보 (1차 절반청산 후 재횡보)", bidAsk, elapsed.Minutes())
+							}
+						}
 					}
 				}
 			}
