@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-04-09 — KIS API TPS 제한 10 → 7 하향
+
+- **`kis/client.go`**: `NewRateLimiter(10, 1)` → `NewRateLimiter(7, 1)` — 초당 거래건수 초과 방지
+
 ## 2026-04-08 — UI/시스템 정합성 정리 및 API 성능 개선
 
 ### Backend
