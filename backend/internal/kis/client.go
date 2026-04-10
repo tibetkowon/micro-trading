@@ -676,9 +676,9 @@ func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string)
 // --- Internal helpers ---
 
 const (
-	tpsErrCode     = "EGW00201"
-	tpsRetryDelay  = 500 * time.Millisecond
-	tpsMaxRetries  = 3
+	tpsErrCode    = "EGW00201"
+	tpsRetryDelay = 500 * time.Millisecond
+	tpsMaxRetries = 3
 )
 
 func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([]byte, error) {
