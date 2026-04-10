@@ -43,6 +43,8 @@ type MonitoredEntry struct {
 	PeakPrice          float64 // 보유 중 도달한 최고가
 	// 단계적 횡보 청산
 	PartialExitDone bool // 절반 청산 완료 여부 (true이면 다음 횡보 감지 시 전량 청산)
+	// 부분 익절 (TP partial) — stagnation과 독립적인 별도 플래그
+	PartialTPDone bool // 중간 목표가 도달 후 부분 매도 완료 여부
 }
 
 // Monitor watches registered positions for target/stop price hits and
@@ -63,6 +65,11 @@ type Monitor struct {
 	stagnationDurationMin         int                   // 횡보 지속 기준 시간 (분, 0=비활성)
 	stagnationPartialExitEnabled  bool                  // 단계적 횡보 청산 활성화
 	stagnationBidAskSellThreshold float64               // 이 값 미만이면 즉시 전량 청산 (기본 1.0)
+	// 부분 익절 설정
+	partialTPEnabled   bool    // 중간 목표가 도달 시 부분 매도 활성화
+	partialTPPct       float64 // 중간 익절 트리거 수익률 %
+	partialTPRatio     float64 // 매도 비율 (0~1)
+	partialTPRaiseStop bool    // 부분 익절 후 손절가를 매입가(BEP)로 올리기
 }
 
 // New creates a Monitor.
@@ -98,6 +105,24 @@ func (m *Monitor) SetStagnationExitConfig(partialExitEnabled bool, bidAskSellThr
 	m.stagnationPartialExitEnabled = partialExitEnabled
 	m.stagnationBidAskSellThreshold = bidAskSellThreshold
 	m.stagnMu.Unlock()
+}
+
+// SetPartialTPConfig configures the partial take-profit behaviour.
+// enabled: feature on/off; pct: intermediate trigger %; ratio: fraction to sell (e.g. 0.5=50%);
+// raiseStop: raise StopPrice to FilledPrice (breakeven) after partial TP fires.
+func (m *Monitor) SetPartialTPConfig(enabled bool, pct, ratio float64, raiseStop bool) {
+	if pct <= 0 {
+		pct = 1.0
+	}
+	if ratio <= 0 || ratio >= 1 {
+		ratio = 0.5
+	}
+	m.mu.Lock()
+	m.partialTPEnabled = enabled
+	m.partialTPPct = pct
+	m.partialTPRatio = ratio
+	m.partialTPRaiseStop = raiseStop
+	m.mu.Unlock()
 }
 
 // Register adds (or updates) a position to be monitored and persists it to DB.
@@ -216,6 +241,33 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 					return
 				}
 			}
+		}
+	}
+
+	// 부분 익절: full TP 체크 전에 중간 목표가 도달 여부 확인
+	m.mu.RLock()
+	partialTPEnabled := m.partialTPEnabled
+	partialTPPct := m.partialTPPct
+	partialTPRatio := m.partialTPRatio
+	partialTPRaiseStop := m.partialTPRaiseStop
+	m.mu.RUnlock()
+	if partialTPEnabled && !pos.PartialTPDone && pos.FilledPrice > 0 {
+		triggerPrice := pos.FilledPrice * (1 + partialTPPct/100)
+		if price >= triggerPrice && price < pos.TargetPrice {
+			logger.Info("monitor: PARTIAL TP hit",
+				map[string]any{"stock_code": stockCode, "price": price, "trigger": triggerPrice})
+			if !isTest {
+				m.executePartialSellWithRatio(stockCode, pos, "부분 익절", partialTPRatio)
+			}
+			m.mu.Lock()
+			if p, ok2 := m.positions[stockCode]; ok2 {
+				p.PartialTPDone = true
+				if partialTPRaiseStop {
+					p.StopPrice = p.FilledPrice // BEP 손절가
+				}
+			}
+			m.mu.Unlock()
+			return // 다음 틱에서 full TP 체크
 		}
 	}
 
@@ -412,6 +464,90 @@ func (m *Monitor) executePartialSell(stockCode string, pos *MonitoredEntry, reas
 		}
 		if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, qty, sellReason, sellIndJSON); err != nil {
 			logger.Error("monitor: UpdateTradeReportOnSell (partial) failed",
+				map[string]any{"stock_code": stockCode, "error": err.Error()})
+		}
+	}(pos.OrderID, sellQty, reason)
+
+	return sellQty
+}
+
+// executePartialSellWithRatio은 ratio 비율만큼 부분 매도한다.
+// stagnation 경로(executePartialSell, 고정 50%)와 독립적으로 사용된다.
+func (m *Monitor) executePartialSellWithRatio(stockCode string, pos *MonitoredEntry, reason string, ratio float64) int {
+	if ratio <= 0 || ratio >= 1 {
+		ratio = 0.5
+	}
+	ctx := context.Background()
+
+	holdings, err := m.kisClient.GetHoldings(ctx)
+	if err != nil {
+		logger.Error("partial-tp-sell: GetHoldings failed",
+			map[string]any{"stock_code": stockCode, "error": err.Error()})
+		return 0
+	}
+
+	totalQty := 0
+	for _, h := range holdings {
+		if h.StockCode == stockCode {
+			fmt.Sscanf(h.HoldingQty, "%d", &totalQty)
+			break
+		}
+	}
+	if totalQty <= 0 {
+		logger.Info("partial-tp-sell: no holdings found", map[string]any{"stock_code": stockCode})
+		return 0
+	}
+
+	sellQty := int(math.Round(float64(totalQty) * ratio))
+	if sellQty <= 0 {
+		sellQty = 1
+	}
+	if sellQty >= totalQty {
+		sellQty = totalQty - 1 // 최소 1주 잔여 보장
+	}
+
+	resp, err := m.kisClient.PlaceSellOrder(ctx, kis.OrderRequest{
+		StockCode: stockCode,
+		OrderDivn: "01", // 시장가
+		Qty:       fmt.Sprintf("%d", sellQty),
+		Price:     "0",
+	})
+	if err != nil {
+		logger.Error("partial-tp-sell: PlaceSellOrder failed",
+			map[string]any{"stock_code": stockCode, "qty": sellQty, "error": err.Error()})
+		return 0
+	}
+
+	logger.Info("partial-tp-sell: sell order placed",
+		map[string]any{"stock_code": stockCode, "sell_qty": sellQty, "total_qty": totalQty, "ratio": ratio, "reason": reason})
+
+	kisOrderID := ""
+	if resp != nil {
+		kisOrderID = resp.KISOrderID
+	}
+	_, _ = m.db.ExecContext(ctx,
+		`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
+		 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
+		stockCode, pos.StockName, sellQty, pos.FilledPrice, kisOrderID, reason, time.Now().UTC())
+
+	go func(buyOrderID int64, qty int, sellReason string) {
+		rCtx := context.Background()
+		var sellOrderID int64
+		_ = m.db.QueryRowContext(rCtx,
+			`SELECT id FROM orders WHERE stock_code=? AND order_type='SELL' ORDER BY id DESC LIMIT 1`,
+			stockCode).Scan(&sellOrderID)
+		var sellPrice float64
+		var sellIndJSON string
+		info, infoErr := agent.GetStockInfo(rCtx, m.kisClient, stockCode)
+		if infoErr == nil {
+			if p, e := strconv.ParseFloat(info.CurrentPrice, 64); e == nil {
+				sellPrice = p
+			}
+			b, _ := json.Marshal(info)
+			sellIndJSON = string(b)
+		}
+		if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, qty, sellReason, sellIndJSON); err != nil {
+			logger.Error("monitor: UpdateTradeReportOnSell (partial-tp) failed",
 				map[string]any{"stock_code": stockCode, "error": err.Error()})
 		}
 	}(pos.OrderID, sellQty, reason)

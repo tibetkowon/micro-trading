@@ -515,6 +515,7 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 				rankings[i].RSI14 = info.RSI14
 				rankings[i].MACDLine = info.MACDLine
 				rankings[i].MACDSignal = info.MACDSignal
+				rankings[i].MACDHisto = info.MACDHisto
 				rankings[i].DayOpen = info.DayOpen
 				rankings[i].DayHigh = info.DayHigh
 				rankings[i].DayLow = info.DayLow
@@ -728,19 +729,44 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	}
 
 	// 복합 모멘텀 스코어 계산 (BidAskRatio fetch 완료 후).
-	// 공식: bid_ask(40pt) + strength(40pt) + vol_decline(20pt) = 0~100
+	// 공식: bid_ask(wBidAsk) + strength(wStrength) + macd(wMACD) + rsi(wRSI) + vwap(wVWAP)
+	// 각 가중치는 settings.ScoringXxxWeight에서 읽음. 기본 합계=100pt.
 	{
+		wBidAsk := float64(settings.ScoringBidAskWeight)
+		wStrength := float64(settings.ScoringStrengthWeight)
+		wMACD := float64(settings.ScoringMACDWeight)
+		wRSI := float64(settings.ScoringRSIWeight)
+		wVWAP := float64(settings.ScoringVWAPWeight)
 		for i := range rankings {
 			item := &rankings[i]
-			// bid_ask 점수: ratio/5.0 상한 40pt
-			bidAskScore := math.Min(item.BidAskRatio/5.0, 1.0) * 40.0
-			// 체결강도 점수: (strength%-100)/100 상한 40pt. 100% 미만=0
+			// bid_ask 점수: ratio/5.0 상한 wBidAsk pt
+			bidAskScore := math.Min(item.BidAskRatio/5.0, 1.0) * wBidAsk
+			// 체결강도 점수: (strength%-100)/100 상한 wStrength pt. 100% 미만=0
 			var strPct float64
 			fmt.Sscanf(item.Strength, "%f", &strPct)
-			strengthScore := math.Min(math.Max(strPct-100.0, 0)/100.0, 1.0) * 40.0
-			// 거래량 감소 점수: (1-prev_vol_ratio) 상한 20pt. ratio≥1이면 0
-			volScore := math.Max(1.0-item.PrevVolumeRatio, 0) * 20.0
-			item.MomentumScore = math.Round((bidAskScore+strengthScore+volScore)*10) / 10
+			strengthScore := math.Min(math.Max(strPct-100.0, 0)/100.0, 1.0) * wStrength
+			// MACD 점수: Histo>0 이고 Line>Signal 이면 만점, 아니면 0
+			var macdScore float64
+			if item.MACDHisto > 0 && item.MACDLine > item.MACDSignal {
+				macdScore = wMACD
+			}
+			// RSI 점수: [40,60]=만점, [30,40)∪(60,70]=절반, 그 외=0
+			var rsiScore float64
+			rsi := item.RSI14
+			if rsi >= 40 && rsi <= 60 {
+				rsiScore = wRSI
+			} else if (rsi >= 30 && rsi < 40) || (rsi > 60 && rsi <= 70) {
+				rsiScore = wRSI * 0.5
+			}
+			// VWAP 점수: [0,1.5]=만점, [-1,0)=절반, 그 외=0
+			var vwapScore float64
+			vd := item.VWAPDiff
+			if vd >= 0 && vd <= 1.5 {
+				vwapScore = wVWAP
+			} else if vd >= -1 && vd < 0 {
+				vwapScore = wVWAP * 0.5
+			}
+			item.MomentumScore = math.Round((bidAskScore+strengthScore+macdScore+rsiScore+vwapScore)*10) / 10
 		}
 		// MomentumScoreMin > 0 이면 미달 종목 제거
 		if settings.MomentumScoreMin > 0 {

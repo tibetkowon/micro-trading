@@ -280,6 +280,17 @@ export default function Settings() {
   const [stagnationPartialExitEnabled, setStagnationPartialExitEnabled] = useState(false)
   const [stagnationBidAskSellThreshold, setStagnationBidAskSellThreshold] = useState('1.0')
   const [momentumScoreMin, setMomentumScoreMin] = useState('0')
+  // ── 부분 익절 ──
+  const [partialTPEnabled, setPartialTPEnabled] = useState(false)
+  const [partialTPPct, setPartialTPPct] = useState('1.0')
+  const [partialTPRatio, setPartialTPRatio] = useState('0.5')
+  const [partialTPRaiseStop, setPartialTPRaiseStop] = useState(true)
+  // ── 복합 스코어링 가중치 ──
+  const [scoringBidAskWeight, setScoringBidAskWeight] = useState('30')
+  const [scoringStrengthWeight, setScoringStrengthWeight] = useState('25')
+  const [scoringMACDWeight, setScoringMACDWeight] = useState('20')
+  const [scoringRSIWeight, setScoringRSIWeight] = useState('15')
+  const [scoringVWAPWeight, setScoringVWAPWeight] = useState('10')
 
   // ── 매수 품질 필터 ──
   const [minTradingValue, setMinTradingValue] = useState('0')
@@ -378,6 +389,15 @@ export default function Settings() {
     if (data.stagnation_partial_exit_enabled != null) setStagnationPartialExitEnabled(data.stagnation_partial_exit_enabled)
     if (data.stagnation_bid_ask_sell_threshold != null) setStagnationBidAskSellThreshold(String(data.stagnation_bid_ask_sell_threshold))
     if (data.momentum_score_min != null) setMomentumScoreMin(String(data.momentum_score_min))
+    if (data.partial_tp_enabled != null) setPartialTPEnabled(data.partial_tp_enabled)
+    if (data.partial_tp_pct != null) setPartialTPPct(String(data.partial_tp_pct))
+    if (data.partial_tp_ratio != null) setPartialTPRatio(String(data.partial_tp_ratio))
+    if (data.partial_tp_raise_stop != null) setPartialTPRaiseStop(data.partial_tp_raise_stop)
+    if (data.scoring_bidask_weight != null) setScoringBidAskWeight(String(data.scoring_bidask_weight))
+    if (data.scoring_strength_weight != null) setScoringStrengthWeight(String(data.scoring_strength_weight))
+    if (data.scoring_macd_weight != null) setScoringMACDWeight(String(data.scoring_macd_weight))
+    if (data.scoring_rsi_weight != null) setScoringRSIWeight(String(data.scoring_rsi_weight))
+    if (data.scoring_vwap_weight != null) setScoringVWAPWeight(String(data.scoring_vwap_weight))
 
     if (data.min_trading_value != null) setMinTradingValue(String(data.min_trading_value))
     if (data.buy_pause_start) setBuyPauseStart(data.buy_pause_start)
@@ -489,6 +509,15 @@ export default function Settings() {
       stagnation_partial_exit_enabled: stagnationPartialExitEnabled,
       stagnation_bid_ask_sell_threshold: parseFloat(stagnationBidAskSellThreshold),
       momentum_score_min: parseFloat(momentumScoreMin),
+      partial_tp_enabled: partialTPEnabled,
+      partial_tp_pct: parseFloat(partialTPPct),
+      partial_tp_ratio: parseFloat(partialTPRatio),
+      partial_tp_raise_stop: partialTPRaiseStop,
+      scoring_bidask_weight: parseInt(scoringBidAskWeight),
+      scoring_strength_weight: parseInt(scoringStrengthWeight),
+      scoring_macd_weight: parseInt(scoringMACDWeight),
+      scoring_rsi_weight: parseInt(scoringRSIWeight),
+      scoring_vwap_weight: parseInt(scoringVWAPWeight),
       min_trading_value: parseFloat(minTradingValue),
       buy_pause_start: buyPauseStart,
       buy_pause_end: buyPauseEnd,
@@ -545,6 +574,8 @@ export default function Settings() {
   }
 
   const stagnationActive = sellConditions.includes('stagnation')
+  const scoringTotal = [scoringBidAskWeight, scoringStrengthWeight, scoringMACDWeight, scoringRSIWeight, scoringVWAPWeight]
+    .map(Number).reduce((a, b) => a + b, 0)
   const labelText = 'text-xs text-th-on-muted'
 
   return (
@@ -1078,20 +1109,89 @@ export default function Settings() {
             )}
           </div>
 
-          {/* ── 섹션 5b: 하드 필터 ── */}
+          {/* ── 섹션 5b: 부분 익절 ── */}
+          <div className={sectionCls}>
+            <p className={sectionTitle}>부분 익절 (Partial Take Profit)</p>
+            <p className={hintText}>중간 목표가 도달 시 포지션 일부를 익절하여 수익을 확정합니다. 나머지는 최종 목표가까지 보유합니다.</p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={partialTPEnabled}
+                onChange={(e) => setPartialTPEnabled(e.target.checked)}
+                className="w-4 h-4 rounded accent-orange-500" />
+              <span className={labelText}>부분 익절 활성화</span>
+            </label>
+            {partialTPEnabled && (
+              <div className={`space-y-3 pt-2 border-t border-th-border/40`}>
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="space-y-1">
+                    <span className={labelText}>중간 익절 기준 수익률 (%)</span>
+                    <input type="number" step="0.1" min="0.1" value={partialTPPct}
+                      onChange={(e) => setPartialTPPct(e.target.value)} className={inputCls} />
+                    <p className={hintText}>기본 1.0 — 이 수익률 도달 시 부분 매도</p>
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelText}>매도 비율 (0~1)</span>
+                    <input type="number" step="0.05" min="0.05" max="0.95" value={partialTPRatio}
+                      onChange={(e) => setPartialTPRatio(e.target.value)} className={inputCls} />
+                    <p className={hintText}>기본 0.5 = 보유 수량의 50% 매도</p>
+                  </label>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer pt-1 border-t border-th-border/40">
+                  <input type="checkbox" checked={partialTPRaiseStop}
+                    onChange={(e) => setPartialTPRaiseStop(e.target.checked)}
+                    className="w-4 h-4 rounded accent-orange-500" />
+                  <span className={labelText}>부분 익절 후 손절가를 진입가(BEP)로 올리기</span>
+                </label>
+                <p className={hintText}>활성화하면 부분 익절 후 손절가가 매수가로 상향되어 잔여 포지션 원금을 보호합니다.</p>
+              </div>
+            )}
+          </div>
+
+          {/* ── 섹션 5c: 하드 필터 ── */}
           <div className={sectionCls}>
             <p className={sectionTitle}>하드 필터 (매수 품질)</p>
             <p className={hintText}>LLM 호출 전 자동으로 제거되는 조건입니다.</p>
 
+            <div className={`space-y-2 ${divider}`}>
+              <p className={`${labelText} font-medium`}>스코어링 가중치</p>
+              <p className={hintText}>각 지표의 가중치를 조정합니다. 합계: {scoringTotal}pt (기본 합계=100)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="space-y-1">
+                  <span className={labelText}>매수호가 우세 (BidAsk)</span>
+                  <input type="number" step="1" min="0" value={scoringBidAskWeight}
+                    onChange={(e) => setScoringBidAskWeight(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>체결강도 (Strength)</span>
+                  <input type="number" step="1" min="0" value={scoringStrengthWeight}
+                    onChange={(e) => setScoringStrengthWeight(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>MACD 방향성</span>
+                  <input type="number" step="1" min="0" value={scoringMACDWeight}
+                    onChange={(e) => setScoringMACDWeight(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>RSI 구간 [40–60]</span>
+                  <input type="number" step="1" min="0" value={scoringRSIWeight}
+                    onChange={(e) => setScoringRSIWeight(e.target.value)} className={inputCls} />
+                </label>
+                <label className="space-y-1">
+                  <span className={labelText}>VWAP 이격도 [0–1.5%]</span>
+                  <input type="number" step="1" min="0" value={scoringVWAPWeight}
+                    onChange={(e) => setScoringVWAPWeight(e.target.value)} className={inputCls} />
+                </label>
+              </div>
+              <p className={hintText}>가중치 합계가 100이면 기존과 동일 스케일(0~100pt). 합계와 momentum_score_min을 맞춰 설정하세요.</p>
+            </div>
+
             <div className={`space-y-1 ${divider}`}>
               <label className="space-y-1 block">
-                <span className={labelText}>복합 모멘텀 스코어 최솟값 (0~100, 0=비활성)</span>
-                <input type="number" step="5" min="0" max="100" value={momentumScoreMin}
+                <span className={labelText}>복합 모멘텀 스코어 최솟값 (0~합계pt, 0=비활성)</span>
+                <input type="number" step="5" min="0" value={momentumScoreMin}
                   onChange={(e) => setMomentumScoreMin(e.target.value)} className={inputCls} />
               </label>
               <p className={hintText}>
-                bid_ask_ratio(40pt) + 체결강도(40pt) + 거래량감소(20pt) 합산. 미달 종목은 Claude 전달 전 제거.
-                권장값 60 — 오늘 기준: 비츠로셀 97.6pt / 온코닉테라퓨틱스 49.4pt
+                bid_ask({scoringBidAskWeight}pt) + 체결강도({scoringStrengthWeight}pt) + MACD({scoringMACDWeight}pt) + RSI({scoringRSIWeight}pt) + VWAP({scoringVWAPWeight}pt) = 최대 {scoringTotal}pt. 미달 종목은 Claude 전달 전 제거.
               </p>
             </div>
 

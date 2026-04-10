@@ -629,6 +629,17 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"momentum_score_min":                ts.MomentumScoreMin,
 		"stagnation_partial_exit_enabled":   ts.StagnationPartialExitEnabled,
 		"stagnation_bid_ask_sell_threshold": ts.StagnationBidAskSellThreshold,
+		// 부분 익절
+		"partial_tp_enabled":    ts.PartialTPEnabled,
+		"partial_tp_pct":        ts.PartialTPPct,
+		"partial_tp_ratio":      ts.PartialTPRatio,
+		"partial_tp_raise_stop": ts.PartialTPRaiseStop,
+		// 복합 스코어링 가중치
+		"scoring_bidask_weight":   ts.ScoringBidAskWeight,
+		"scoring_strength_weight": ts.ScoringStrengthWeight,
+		"scoring_macd_weight":     ts.ScoringMACDWeight,
+		"scoring_rsi_weight":      ts.ScoringRSIWeight,
+		"scoring_vwap_weight":     ts.ScoringVWAPWeight,
 		// 하드 감시 종목 / 순위 유지 시간
 		"hard_watch_symbols":      ts.HardWatchSymbols,
 		"rank_lease_duration_min": ts.RankLeaseDurationMin,
@@ -720,6 +731,17 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		MomentumScoreMin              *float64 `json:"momentum_score_min"`
 		StagnationPartialExitEnabled  *bool    `json:"stagnation_partial_exit_enabled"`
 		StagnationBidAskSellThreshold *float64 `json:"stagnation_bid_ask_sell_threshold"`
+		// 부분 익절
+		PartialTPEnabled   *bool    `json:"partial_tp_enabled"`
+		PartialTPPct       *float64 `json:"partial_tp_pct"`
+		PartialTPRatio     *float64 `json:"partial_tp_ratio"`
+		PartialTPRaiseStop *bool    `json:"partial_tp_raise_stop"`
+		// 복합 스코어링 가중치
+		ScoringBidAskWeight   *int `json:"scoring_bidask_weight"`
+		ScoringStrengthWeight *int `json:"scoring_strength_weight"`
+		ScoringMACDWeight     *int `json:"scoring_macd_weight"`
+		ScoringRSIWeight      *int `json:"scoring_rsi_weight"`
+		ScoringVWAPWeight     *int `json:"scoring_vwap_weight"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1155,6 +1177,63 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.StagnationBidAskSellThreshold != nil {
 		if !save("stagnation_bid_ask_sell_threshold", strconv.FormatFloat(*req.StagnationBidAskSellThreshold, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.PartialTPEnabled != nil {
+		val := "false"
+		if *req.PartialTPEnabled {
+			val = "true"
+		}
+		if !save("partial_tp_enabled", val) {
+			return
+		}
+	}
+	if req.PartialTPPct != nil {
+		if !save("partial_tp_pct", strconv.FormatFloat(*req.PartialTPPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.PartialTPRatio != nil {
+		if *req.PartialTPRatio <= 0 || *req.PartialTPRatio >= 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "partial_tp_ratio는 0보다 크고 1보다 작아야 합니다"})
+			return
+		}
+		if !save("partial_tp_ratio", strconv.FormatFloat(*req.PartialTPRatio, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.PartialTPRaiseStop != nil {
+		val := "false"
+		if *req.PartialTPRaiseStop {
+			val = "true"
+		}
+		if !save("partial_tp_raise_stop", val) {
+			return
+		}
+	}
+	if req.ScoringBidAskWeight != nil {
+		if !save("scoring_bidask_weight", strconv.Itoa(*req.ScoringBidAskWeight)) {
+			return
+		}
+	}
+	if req.ScoringStrengthWeight != nil {
+		if !save("scoring_strength_weight", strconv.Itoa(*req.ScoringStrengthWeight)) {
+			return
+		}
+	}
+	if req.ScoringMACDWeight != nil {
+		if !save("scoring_macd_weight", strconv.Itoa(*req.ScoringMACDWeight)) {
+			return
+		}
+	}
+	if req.ScoringRSIWeight != nil {
+		if !save("scoring_rsi_weight", strconv.Itoa(*req.ScoringRSIWeight)) {
+			return
+		}
+	}
+	if req.ScoringVWAPWeight != nil {
+		if !save("scoring_vwap_weight", strconv.Itoa(*req.ScoringVWAPWeight)) {
 			return
 		}
 	}

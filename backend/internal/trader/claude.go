@@ -74,6 +74,7 @@ type RankItem struct {
 	RSI14      float64 `json:"rsi14,omitempty"`
 	MACDLine   float64 `json:"macd_line,omitempty"`
 	MACDSignal float64 `json:"macd_signal,omitempty"`
+	MACDHisto  float64 `json:"macd_histogram,omitempty"` // MACD Histogram (Line − Signal)
 	// 신규 기술 지표 (Phase 2)
 	VWAP            float64 `json:"vwap,omitempty"`              // 당일 VWAP
 	VWAPDiff        float64 `json:"vwap_diff,omitempty"`         // (현재가-VWAP)/VWAP×100

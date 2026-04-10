@@ -102,6 +102,17 @@ type TradingSettings struct {
 	// 단계적 횡보 청산
 	StagnationPartialExitEnabled  bool    // 횡보 감지 시 절반 청산 활성화 (false=기존 전량 청산)
 	StagnationBidAskSellThreshold float64 // 이 값 미만이면 즉시 전량 청산 (기본 1.0)
+	// 부분 익절 (Partial Take Profit)
+	PartialTPEnabled   bool    // 중간 목표가 도달 시 부분 매도 활성화
+	PartialTPPct       float64 // 중간 익절 트리거 수익률 % (기본 1.0)
+	PartialTPRatio     float64 // 매도 비율 0~1 (기본 0.5 = 50%)
+	PartialTPRaiseStop bool    // 부분 익절 후 손절가를 매입가(BEP)로 올리기
+	// 복합 스코어링 가중치
+	ScoringBidAskWeight   int // bid_ask 점수 가중치 (기본 30)
+	ScoringStrengthWeight int // 체결강도 점수 가중치 (기본 25)
+	ScoringMACDWeight     int // MACD 방향성 점수 가중치 (기본 20)
+	ScoringRSIWeight      int // RSI 구간 점수 가중치 (기본 15)
+	ScoringVWAPWeight     int // VWAP 이격도 점수 가중치 (기본 10)
 }
 
 // DB wraps the sql.DB connection.
@@ -398,6 +409,17 @@ func (db *DB) migrate() error {
 		{"momentum_score_min", "0"},
 		{"stagnation_partial_exit_enabled", "false"},
 		{"stagnation_bid_ask_sell_threshold", "1.0"},
+		// 부분 익절
+		{"partial_tp_enabled", "false"},
+		{"partial_tp_pct", "1.0"},
+		{"partial_tp_ratio", "0.5"},
+		{"partial_tp_raise_stop", "true"},
+		// 복합 스코어링 가중치
+		{"scoring_bidask_weight", "30"},
+		{"scoring_strength_weight", "25"},
+		{"scoring_macd_weight", "20"},
+		{"scoring_rsi_weight", "15"},
+		{"scoring_vwap_weight", "10"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -447,7 +469,9 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'min_market_cap','min_expected_profit_pct',`+
 			`'max_claude_candidates',`+
 			`'momentum_score_min',`+
-			`'stagnation_partial_exit_enabled','stagnation_bid_ask_sell_threshold'`+
+			`'stagnation_partial_exit_enabled','stagnation_bid_ask_sell_threshold',`+
+			`'partial_tp_enabled','partial_tp_pct','partial_tp_ratio','partial_tp_raise_stop',`+
+			`'scoring_bidask_weight','scoring_strength_weight','scoring_macd_weight','scoring_rsi_weight','scoring_vwap_weight'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -638,6 +662,17 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		MomentumScoreMin:              f64("momentum_score_min"),
 		StagnationPartialExitEnabled:  vals["stagnation_partial_exit_enabled"] == "true",
 		StagnationBidAskSellThreshold: f64Default("stagnation_bid_ask_sell_threshold", 1.0),
+		// 부분 익절
+		PartialTPEnabled:   vals["partial_tp_enabled"] == "true",
+		PartialTPPct:       f64Default("partial_tp_pct", 1.0),
+		PartialTPRatio:     f64Default("partial_tp_ratio", 0.5),
+		PartialTPRaiseStop: vals["partial_tp_raise_stop"] == "true",
+		// 복합 스코어링 가중치
+		ScoringBidAskWeight:   i64Default("scoring_bidask_weight", 30),
+		ScoringStrengthWeight: i64Default("scoring_strength_weight", 25),
+		ScoringMACDWeight:     i64Default("scoring_macd_weight", 20),
+		ScoringRSIWeight:      i64Default("scoring_rsi_weight", 15),
+		ScoringVWAPWeight:     i64Default("scoring_vwap_weight", 10),
 	}, nil
 }
 
