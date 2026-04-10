@@ -153,13 +153,13 @@ export default function DailyReports() {
 
       {/* 날짜 필터 */}
       <div className="flex flex-wrap gap-2 mb-6">
-        <div className="flex items-center gap-2 text-sm text-th-on-muted">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-th-on-muted">
           <span>기간</span>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-            className="bg-th-surface border border-black/10 dark:border-white/10 rounded px-2 py-1 text-th-on-surface text-sm" />
+            className="bg-th-surface border border-black/10 dark:border-white/10 rounded px-2 py-1 text-th-on-surface text-sm min-w-0" />
           <span>~</span>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-            className="bg-th-surface border border-black/10 dark:border-white/10 rounded px-2 py-1 text-th-on-surface text-sm" />
+            className="bg-th-surface border border-black/10 dark:border-white/10 rounded px-2 py-1 text-th-on-surface text-sm min-w-0" />
         </div>
       </div>
 

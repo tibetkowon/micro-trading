@@ -106,7 +106,7 @@ export default function Monitor() {
             {loading ? '로딩 중...' : `모니터링 중 ${positions.length}개`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* 새로고침 주기 */}
           <div className="flex items-center gap-0.5 bg-th-surface rounded-lg p-1">
             {INTERVAL_OPTIONS.map((opt) => (

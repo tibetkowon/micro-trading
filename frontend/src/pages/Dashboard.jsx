@@ -135,7 +135,7 @@ function PnLGraph() {
 
   return (
     <div className="bg-th-surface rounded-xl p-5">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-start justify-between mb-4 gap-2 flex-wrap">
         <div>
           <p className="text-[10px] text-th-on-subtle uppercase tracking-widest mb-1">실현 손익</p>
           {isPct ? (
@@ -156,7 +156,7 @@ function PnLGraph() {
             <p className="text-[10px] text-th-on-subtle mt-0.5">잔고 미연결 — 원화 모드로 표시</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
           {totalEval > 0 && (
             <div className="flex border border-black/10 dark:border-white/10 rounded-lg overflow-hidden text-xs">
               <button
@@ -306,12 +306,12 @@ export default function Dashboard() {
     <div className="space-y-6">
 
       {/* ── 페이지 헤더 ── */}
-      <div className="flex items-center justify-between pt-2">
+      <div className="flex items-start justify-between pt-2 gap-2 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-th-on-surface tracking-tight">대시보드</h1>
           <p className="text-xs text-th-on-muted mt-0.5 uppercase tracking-widest">실시간 트레이딩 현황</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <select
             value={refreshInterval}
             onChange={(e) => setRefreshInterval(Number(e.target.value))}

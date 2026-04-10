@@ -105,10 +105,16 @@ func collectCurrentSettings(ctx context.Context, db *database.DB) map[string]str
 	return result
 }
 
-// applySuggestion applies a single settings suggestion to the DB and updates its status.
+// applySuggestion applies a single suggestion and updates its status.
+// For "settings" category: writes the new value to the DB automatically.
+// For "feature" category: marks as APPLIED (manual implementation acknowledged by user).
 func applySuggestion(ctx context.Context, db *database.DB, s *models.OptimizationSuggestion) error {
+	if s.Category == "feature" {
+		s.Status = "APPLIED"
+		return nil
+	}
 	if s.Category != "settings" {
-		return fmt.Errorf("only settings suggestions can be applied automatically")
+		return fmt.Errorf("unsupported suggestion category: %s", s.Category)
 	}
 	if err := validateSettingValue(s.Key, s.SuggestedValue); err != nil {
 		return err

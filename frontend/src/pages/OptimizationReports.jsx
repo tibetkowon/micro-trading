@@ -32,6 +32,7 @@ function CategoryBadge({ category }) {
 CategoryBadge.propTypes = { category: PropTypes.string }
 
 function SuggestionCard({ suggestion, date, onAction }) {
+  const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
 
   async function handleAction(action) {
@@ -55,46 +56,58 @@ function SuggestionCard({ suggestion, date, onAction }) {
   const isPending = suggestion.status === 'PENDING'
 
   return (
-    <div className="p-4 rounded-lg bg-black/5 dark:bg-white/5 space-y-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <CategoryBadge category={suggestion.category} />
-        <StatusBadge status={suggestion.status} />
-        {suggestion.key && (
-          <code className="text-xs bg-black/10 dark:bg-white/10 px-1.5 py-0.5 rounded font-mono text-th-on-muted">
-            {suggestion.key}
-          </code>
-        )}
-        {suggestion.name && (
-          <span className="text-sm font-semibold text-th-on-surface">{suggestion.name}</span>
-        )}
-      </div>
-
-      {suggestion.category === 'settings' && suggestion.current_value !== '' && (
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-th-on-muted line-through">{suggestion.current_value}</span>
-          <span className="material-symbols-outlined text-[16px] text-orange-400">arrow_forward</span>
-          <span className="font-semibold text-orange-400">{suggestion.suggested_value}</span>
+    <div className="rounded-lg bg-black/5 dark:bg-white/5 overflow-hidden">
+      {/* 헤더 - 항상 노출 */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <CategoryBadge category={suggestion.category} />
+          <StatusBadge status={suggestion.status} />
+          {suggestion.key && (
+            <code className="text-xs bg-black/10 dark:bg-white/10 px-1.5 py-0.5 rounded font-mono text-th-on-muted">
+              {suggestion.key}
+            </code>
+          )}
+          {suggestion.name && (
+            <span className="text-sm font-semibold text-th-on-surface truncate">{suggestion.name}</span>
+          )}
         </div>
-      )}
+        <span className="text-th-on-muted text-xs shrink-0 ml-2">{open ? '▲' : '▼'}</span>
+      </button>
 
-      <p className="text-xs text-th-on-muted leading-relaxed">{suggestion.comment}</p>
+      {/* 상세 내용 */}
+      {open && (
+        <div className="px-4 pb-4 space-y-2 border-t border-black/5 dark:border-white/5 pt-2">
+          {suggestion.category === 'settings' && suggestion.current_value !== '' && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-th-on-muted line-through">{suggestion.current_value}</span>
+              <span className="material-symbols-outlined text-[16px] text-orange-400">arrow_forward</span>
+              <span className="font-semibold text-orange-400">{suggestion.suggested_value}</span>
+            </div>
+          )}
 
-      {isPending && (
-        <div className="flex gap-2 pt-1">
-          <button
-            onClick={() => handleAction('apply')}
-            disabled={loading || suggestion.category === 'feature'}
-            className="text-xs px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded font-medium transition-colors"
-          >
-            {suggestion.category === 'feature' ? '적용 불가 (기능 개발 필요)' : '적용'}
-          </button>
-          <button
-            onClick={() => handleAction('reject')}
-            disabled={loading}
-            className="text-xs px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-40 text-th-on-muted rounded font-medium transition-colors"
-          >
-            무시
-          </button>
+          <p className="text-xs text-th-on-muted leading-relaxed">{suggestion.comment}</p>
+
+          {isPending && (
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => handleAction('apply')}
+                disabled={loading}
+                className="text-xs px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white rounded font-medium transition-colors"
+              >
+                {suggestion.category === 'feature' ? '구현 완료로 표시' : '적용'}
+              </button>
+              <button
+                onClick={() => handleAction('reject')}
+                disabled={loading}
+                className="text-xs px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-40 text-th-on-muted rounded font-medium transition-colors"
+              >
+                무시
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -244,20 +257,20 @@ export default function OptimizationReports() {
 
       {/* 날짜 필터 */}
       <div className="flex flex-wrap gap-3 mb-6">
-        <div className="flex items-center gap-2 text-sm text-th-on-muted">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-th-on-muted">
           <span>기간</span>
           <input
             type="date"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
-            className="bg-th-surface border border-black/10 dark:border-white/10 rounded px-2 py-1 text-th-on-surface"
+            className="bg-th-surface border border-black/10 dark:border-white/10 rounded px-2 py-1 text-th-on-surface min-w-0"
           />
           <span>~</span>
           <input
             type="date"
             value={to}
             onChange={(e) => setTo(e.target.value)}
-            className="bg-th-surface border border-black/10 dark:border-white/10 rounded px-2 py-1 text-th-on-surface"
+            className="bg-th-surface border border-black/10 dark:border-white/10 rounded px-2 py-1 text-th-on-surface min-w-0"
           />
         </div>
       </div>

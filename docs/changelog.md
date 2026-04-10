@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-04-09 — 전체 프론트엔드 모바일 최적화
+
+### Orders.jsx
+- 모바일용 카드 뷰 추가 (`sm:hidden`): 종목명·유형·상태·가격·수량·시각·매도사유·액션 버튼
+- 기존 데스크탑 테이블은 `sm:` 이상에서 그대로 유지
+
+### Dashboard.jsx
+- 헤더 오른쪽 컨트롤(새로고침 주기 + 새로고침 버튼)에 `flex-wrap` 추가
+- PnL 그래프 헤더 (실현 손익 텍스트 + %/원·기간 버튼)에 `flex-wrap` 추가
+
+### Monitor.jsx
+- 새로고침 주기 버튼 그룹 + 새로고침 + 전체 매도 버튼 컨테이너에 `flex-wrap` 추가
+
+### DailyReports.jsx / OptimizationReports.jsx
+- 날짜 범위 필터 inner div에 `flex-wrap` 및 `min-w-0` 추가 — 좁은 화면에서 줄 바꿈 처리
+
+## 2026-04-09 — KIS TPS 초과(EGW00201) 자동 재시도 추가
+
+### KIS API 클라이언트 (`kis/client.go`)
+- `EGW00201` (초당 거래건수 초과) 응답 수신 시 500ms 대기 후 최대 3회 재시도
+- `get()` / `placeOrder()` 모두 적용
+- 재시도 중 context 취소 시 즉시 중단
+
 ## 2026-04-09 — 눌림목 모멘텀 스코어링 + 단계적 횡보 청산 로직 추가
 
 ### 복합 모멘텀 스코어링 (`trader/claude.go`, `trader/engine.go`)

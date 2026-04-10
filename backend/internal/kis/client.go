@@ -675,66 +675,78 @@ func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string)
 
 // --- Internal helpers ---
 
+const (
+	tpsErrCode     = "EGW00201"
+	tpsRetryDelay  = 500 * time.Millisecond
+	tpsMaxRetries  = 3
+)
+
 func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([]byte, error) {
-	if err := c.rateLimiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
-	}
-
-	tok, err := c.tokenManager.EnsureToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get token: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+endpoint+queryParams, nil)
-	if err != nil {
-		return nil, err
-	}
-	c.setHeaders(req, tok.AccessToken, trID)
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw))
-		return nil, fmt.Errorf("KIS GET %s returned %d", endpoint, resp.StatusCode)
-	}
-
-	// KIS GET endpoints return HTTP 200 even for API-level errors (e.g. expired token).
-	// Parse rt_cd from the envelope to detect these cases.
-	var envelope struct {
-		RtCd    string `json:"rt_cd"`
-		MsgCode string `json:"msg_cd"`
-		Msg     string `json:"msg1"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.RtCd == "1" {
-		c.logAPIError(endpoint, envelope.MsgCode, string(raw))
-		if envelope.MsgCode == "EGW00123" {
-			logger.Info("KIS token expired (EGW00123) — triggering immediate refresh", nil)
-			if _, refreshErr := c.tokenManager.IssueToken(ctx); refreshErr != nil {
-				logger.Error("immediate token refresh failed", map[string]any{"error": refreshErr.Error()})
-			}
+	for attempt := 0; attempt <= tpsMaxRetries; attempt++ {
+		if err := c.rateLimiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limiter: %w", err)
 		}
-		return nil, fmt.Errorf("KIS error [%s]: %s", envelope.MsgCode, envelope.Msg)
-	}
 
-	return raw, nil
+		tok, err := c.tokenManager.EnsureToken(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get token: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+endpoint+queryParams, nil)
+		if err != nil {
+			return nil, err
+		}
+		c.setHeaders(req, tok.AccessToken, trID)
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw))
+			return nil, fmt.Errorf("KIS GET %s returned %d", endpoint, resp.StatusCode)
+		}
+
+		// KIS GET endpoints return HTTP 200 even for API-level errors (e.g. expired token).
+		// Parse rt_cd from the envelope to detect these cases.
+		var envelope struct {
+			RtCd    string `json:"rt_cd"`
+			MsgCode string `json:"msg_cd"`
+			Msg     string `json:"msg1"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err == nil && envelope.RtCd == "1" {
+			if envelope.MsgCode == tpsErrCode && attempt < tpsMaxRetries {
+				logger.Info("KIS TPS exceeded — retrying", map[string]any{
+					"attempt": attempt + 1,
+					"delay":   tpsRetryDelay.String(),
+				})
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(tpsRetryDelay):
+				}
+				continue
+			}
+			c.logAPIError(endpoint, envelope.MsgCode, string(raw))
+			if envelope.MsgCode == "EGW00123" {
+				logger.Info("KIS token expired (EGW00123) — triggering immediate refresh", nil)
+				if _, refreshErr := c.tokenManager.IssueToken(ctx); refreshErr != nil {
+					logger.Error("immediate token refresh failed", map[string]any{"error": refreshErr.Error()})
+				}
+			}
+			return nil, fmt.Errorf("KIS error [%s]: %s", envelope.MsgCode, envelope.Msg)
+		}
+
+		return raw, nil
+	}
+	return nil, fmt.Errorf("KIS GET %s failed after %d retries (TPS exceeded)", endpoint, tpsMaxRetries)
 }
 
 func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoint string) (*OrderResponse, error) {
-	if err := c.rateLimiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
-	}
-
-	tok, err := c.tokenManager.EnsureToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get token: %w", err)
-	}
-
 	body, _ := json.Marshal(map[string]string{
 		"CANO":         c.accountNo,
 		"ACNT_PRDT_CD": c.accountType,
@@ -744,43 +756,67 @@ func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoin
 		"ORD_UNPR":     req.Price,
 	})
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	c.setHeaders(httpReq, tok.AccessToken, trID)
-	httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
+	for attempt := 0; attempt <= tpsMaxRetries; attempt++ {
+		if err := c.rateLimiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limiter: %w", err)
+		}
 
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+		tok, err := c.tokenManager.EnsureToken(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get token: %w", err)
+		}
 
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw))
-		return nil, fmt.Errorf("KIS POST %s returned %d", endpoint, resp.StatusCode)
-	}
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+endpoint, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		c.setHeaders(httpReq, tok.AccessToken, trID)
+		httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	var result struct {
-		Output  OrderResponse `json:"output"`
-		RtCd    string        `json:"rt_cd"`  // "0" = 성공
-		MsgCode string        `json:"msg_cd"` // 성공: APBK0013, MABC000 등
-		Msg     string        `json:"msg1"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
-		return nil, fmt.Errorf("parse order response: %w", err)
-	}
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
 
-	// rt_cd="0" 이 KIS 공식 성공 기준 (msg_cd는 계좌 유형별로 상이: APBK0013, MABC000 등)
-	if result.RtCd != "0" {
-		c.logAPIError(endpoint, result.MsgCode, string(raw))
-		return nil, fmt.Errorf("KIS order error [%s]: %s", result.MsgCode, result.Msg)
-	}
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw))
+			return nil, fmt.Errorf("KIS POST %s returned %d", endpoint, resp.StatusCode)
+		}
 
-	return &result.Output, nil
+		var result struct {
+			Output  OrderResponse `json:"output"`
+			RtCd    string        `json:"rt_cd"`  // "0" = 성공
+			MsgCode string        `json:"msg_cd"` // 성공: APBK0013, MABC000 등
+			Msg     string        `json:"msg1"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+			return nil, fmt.Errorf("parse order response: %w", err)
+		}
+
+		// rt_cd="0" 이 KIS 공식 성공 기준 (msg_cd는 계좌 유형별로 상이: APBK0013, MABC000 등)
+		if result.RtCd != "0" {
+			if result.MsgCode == tpsErrCode && attempt < tpsMaxRetries {
+				logger.Info("KIS TPS exceeded — retrying", map[string]any{
+					"attempt": attempt + 1,
+					"delay":   tpsRetryDelay.String(),
+				})
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(tpsRetryDelay):
+				}
+				continue
+			}
+			c.logAPIError(endpoint, result.MsgCode, string(raw))
+			return nil, fmt.Errorf("KIS order error [%s]: %s", result.MsgCode, result.Msg)
+		}
+
+		return &result.Output, nil
+	}
+	return nil, fmt.Errorf("KIS POST %s failed after %d retries (TPS exceeded)", endpoint, tpsMaxRetries)
 }
 
 func (c *Client) setHeaders(req *http.Request, accessToken, trID string) {

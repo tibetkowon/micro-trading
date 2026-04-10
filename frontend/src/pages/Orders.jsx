@@ -220,7 +220,7 @@ export default function Orders() {
         <span className="text-xs text-th-on-subtle self-center">{filtered.length}건</span>
       </div>
 
-      {/* 테이블 */}
+      {/* 목록 */}
       {loading ? (
         <p className="text-th-on-subtle text-sm">로딩 중...</p>
       ) : filtered.length === 0 ? (
@@ -229,109 +229,188 @@ export default function Orders() {
           <p className="text-th-on-muted text-sm">주문 내역이 없습니다.</p>
         </div>
       ) : (
-        <div className="bg-th-surface-low rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[10px] text-th-on-subtle uppercase tracking-widest">
-                  <th className="text-left px-4 py-3.5 font-medium hidden sm:table-cell">ID</th>
-                  <th className="text-left px-4 py-3.5 font-medium">종목</th>
-                  <th className="text-left px-4 py-3.5 font-medium hidden sm:table-cell">시장</th>
-                  <th className="text-left px-4 py-3.5 font-medium">유형</th>
-                  <th className="text-right px-4 py-3.5 font-medium hidden sm:table-cell">수량</th>
-                  <th className="text-right px-4 py-3.5 font-medium">주문가 / 체결가</th>
-                  <th className="text-left px-4 py-3.5 font-medium hidden md:table-cell">매도사유</th>
-                  <th className="text-left px-4 py-3.5 font-medium">상태</th>
-                  <th className="text-left px-4 py-3.5 font-medium hidden sm:table-cell">주문시각</th>
-                  <th className="px-4 py-3.5"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.04]">
-                {filtered.map((o) => {
-                  const isFilled = o.status === 'FILLED' || o.status === 'PARTIALLY_FILLED'
-                  const isPending = o.status === 'PENDING'
-                  const isCancel = cancellingIds.has(o.id)
-                  const isDelete = deletingIds.has(o.id)
-                  return (
-                    <tr key={o.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-4 py-3.5 text-th-on-subtle text-xs font-data hidden sm:table-cell">{o.id}</td>
-                      <td className="px-4 py-3.5">
-                        <span className="font-medium text-th-on-surface">{o.stock_name || o.stock_code}</span>
-                        {o.stock_name && (
-                          <span className="ml-2 text-xs text-th-on-subtle font-data">{o.stock_code}</span>
-                        )}
-                        {o.source === 'MANUAL' && (
-                          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-white/5 text-gray-500">수동</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5 hidden sm:table-cell">
-                        {o.market === 'US' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-orange-500/10 text-orange-400">해외</span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-blue-500/10 text-blue-400">국내</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                          o.order_type === 'BUY'
-                            ? 'bg-red-500/10 text-red-400'
-                            : 'bg-blue-500/10 text-blue-400'
-                        }`}>
-                          {o.order_type === 'BUY' ? '매수' : '매도'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-right text-th-on-muted font-data hidden sm:table-cell">
-                        {(o.qty || 0).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3.5 text-right font-data">
-                        {isFilled && o.filled_price > 0 ? (
-                          <span className="text-amber-400 font-medium">{fmtPrice(o.filled_price, o.market)}</span>
-                        ) : o.price > 0 ? (
-                          <span className="text-th-on-muted">{fmtPrice(o.price, o.market)}</span>
-                        ) : (
-                          <span className="text-th-on-subtle text-xs">시장가</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5 hidden md:table-cell">
-                        {o.order_type === 'SELL' && o.sell_reason ? (
-                          <span className="text-xs text-th-on-muted">{o.sell_reason}</span>
-                        ) : (
-                          <span className="text-th-on-subtle text-xs">-</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLE[o.status] || 'bg-white/5 text-gray-500'}`}>
-                          {STATUS_LABEL[o.status] || o.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-th-on-subtle text-xs hidden sm:table-cell">{fmtDate(o.created_at)}</td>
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-1">
-                          {isPending && (
-                            <button
-                              onClick={() => handleCancel(o.id)}
-                              disabled={isCancel}
-                              className="text-xs px-2 py-0.5 text-orange-400 hover:bg-orange-500/10 rounded disabled:opacity-40 transition-colors"
-                            >
-                              {isCancel ? '...' : '취소'}
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDelete(o.id)}
-                            disabled={isDelete}
-                            className="text-xs px-2 py-0.5 text-th-on-muted hover:text-red-400 hover:bg-red-500/10 rounded disabled:opacity-40 transition-colors"
-                          >
-                            {isDelete ? '...' : '삭제'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        <>
+          {/* 모바일 카드 */}
+          <div className="sm:hidden space-y-2">
+            {filtered.map((o) => {
+              const isFilled = o.status === 'FILLED' || o.status === 'PARTIALLY_FILLED'
+              const isPending = o.status === 'PENDING'
+              const isCancel = cancellingIds.has(o.id)
+              const isDelete = deletingIds.has(o.id)
+              return (
+                <div key={o.id} className="bg-th-surface rounded-xl px-4 py-3 space-y-2">
+                  {/* 상단: 종목 + 유형/상태 뱃지 */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-medium text-th-on-surface text-sm">{o.stock_name || o.stock_code}</span>
+                      {o.stock_name && (
+                        <span className="ml-1.5 text-xs text-th-on-subtle font-data">{o.stock_code}</span>
+                      )}
+                      {o.source === 'MANUAL' && (
+                        <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-white/5 text-gray-500">수동</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                        o.order_type === 'BUY' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'
+                      }`}>
+                        {o.order_type === 'BUY' ? '매수' : '매도'}
+                      </span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLE[o.status] || 'bg-white/5 text-gray-500'}`}>
+                        {STATUS_LABEL[o.status] || o.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 중단: 가격 + 수량 + 시각 */}
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="font-data">
+                      {isFilled && o.filled_price > 0 ? (
+                        <span className="text-amber-400 font-medium">{fmtPrice(o.filled_price, o.market)}</span>
+                      ) : o.price > 0 ? (
+                        <span className="text-th-on-muted">{fmtPrice(o.price, o.market)}</span>
+                      ) : (
+                        <span className="text-th-on-subtle">시장가</span>
+                      )}
+                      <span className="text-th-on-subtle ml-1.5">{(o.qty || 0).toLocaleString()}주</span>
+                    </div>
+                    <span className="text-th-on-subtle">{fmtDate(o.created_at)}</span>
+                  </div>
+
+                  {/* 매도사유 */}
+                  {o.order_type === 'SELL' && o.sell_reason && (
+                    <p className="text-xs text-th-on-muted">{o.sell_reason}</p>
+                  )}
+
+                  {/* 액션 */}
+                  <div className="flex items-center gap-1 pt-0.5">
+                    {isPending && (
+                      <button
+                        onClick={() => handleCancel(o.id)}
+                        disabled={isCancel}
+                        className="text-xs px-2.5 py-1 text-orange-400 hover:bg-orange-500/10 rounded-lg disabled:opacity-40 transition-colors"
+                      >
+                        {isCancel ? '...' : '주문 취소'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDelete(o.id)}
+                      disabled={isDelete}
+                      className="text-xs px-2.5 py-1 text-th-on-muted hover:text-red-400 hover:bg-red-500/10 rounded-lg disabled:opacity-40 transition-colors"
+                    >
+                      {isDelete ? '...' : '삭제'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        </div>
+
+          {/* 데스크탑 테이블 */}
+          <div className="hidden sm:block bg-th-surface-low rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[10px] text-th-on-subtle uppercase tracking-widest">
+                    <th className="text-left px-4 py-3.5 font-medium hidden sm:table-cell">ID</th>
+                    <th className="text-left px-4 py-3.5 font-medium">종목</th>
+                    <th className="text-left px-4 py-3.5 font-medium hidden sm:table-cell">시장</th>
+                    <th className="text-left px-4 py-3.5 font-medium">유형</th>
+                    <th className="text-right px-4 py-3.5 font-medium hidden sm:table-cell">수량</th>
+                    <th className="text-right px-4 py-3.5 font-medium">주문가 / 체결가</th>
+                    <th className="text-left px-4 py-3.5 font-medium hidden md:table-cell">매도사유</th>
+                    <th className="text-left px-4 py-3.5 font-medium">상태</th>
+                    <th className="text-left px-4 py-3.5 font-medium hidden sm:table-cell">주문시각</th>
+                    <th className="px-4 py-3.5"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.04]">
+                  {filtered.map((o) => {
+                    const isFilled = o.status === 'FILLED' || o.status === 'PARTIALLY_FILLED'
+                    const isPending = o.status === 'PENDING'
+                    const isCancel = cancellingIds.has(o.id)
+                    const isDelete = deletingIds.has(o.id)
+                    return (
+                      <tr key={o.id} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="px-4 py-3.5 text-th-on-subtle text-xs font-data hidden sm:table-cell">{o.id}</td>
+                        <td className="px-4 py-3.5">
+                          <span className="font-medium text-th-on-surface">{o.stock_name || o.stock_code}</span>
+                          {o.stock_name && (
+                            <span className="ml-2 text-xs text-th-on-subtle font-data">{o.stock_code}</span>
+                          )}
+                          {o.source === 'MANUAL' && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-white/5 text-gray-500">수동</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 hidden sm:table-cell">
+                          {o.market === 'US' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-orange-500/10 text-orange-400">해외</span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-blue-500/10 text-blue-400">국내</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                            o.order_type === 'BUY'
+                              ? 'bg-red-500/10 text-red-400'
+                              : 'bg-blue-500/10 text-blue-400'
+                          }`}>
+                            {o.order_type === 'BUY' ? '매수' : '매도'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 text-right text-th-on-muted font-data hidden sm:table-cell">
+                          {(o.qty || 0).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-data">
+                          {isFilled && o.filled_price > 0 ? (
+                            <span className="text-amber-400 font-medium">{fmtPrice(o.filled_price, o.market)}</span>
+                          ) : o.price > 0 ? (
+                            <span className="text-th-on-muted">{fmtPrice(o.price, o.market)}</span>
+                          ) : (
+                            <span className="text-th-on-subtle text-xs">시장가</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 hidden md:table-cell">
+                          {o.order_type === 'SELL' && o.sell_reason ? (
+                            <span className="text-xs text-th-on-muted">{o.sell_reason}</span>
+                          ) : (
+                            <span className="text-th-on-subtle text-xs">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLE[o.status] || 'bg-white/5 text-gray-500'}`}>
+                            {STATUS_LABEL[o.status] || o.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 text-th-on-subtle text-xs hidden sm:table-cell">{fmtDate(o.created_at)}</td>
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-1">
+                            {isPending && (
+                              <button
+                                onClick={() => handleCancel(o.id)}
+                                disabled={isCancel}
+                                className="text-xs px-2 py-0.5 text-orange-400 hover:bg-orange-500/10 rounded disabled:opacity-40 transition-colors"
+                              >
+                                {isCancel ? '...' : '취소'}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDelete(o.id)}
+                              disabled={isDelete}
+                              className="text-xs px-2 py-0.5 text-th-on-muted hover:text-red-400 hover:bg-red-500/10 rounded disabled:opacity-40 transition-colors"
+                            >
+                              {isDelete ? '...' : '삭제'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
 
       <div ref={sentinelRef} className="h-4" />
