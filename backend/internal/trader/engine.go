@@ -532,6 +532,11 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 				}
 				rankings[i].AssetType = assetType
 				rankings[i].ApplicableTaxRate = taxRate
+				// 데이터 품질 개선 필드 (1~3순위)
+				rankings[i].RecentCandles = info.RecentCandles
+				rankings[i].HighFormedMinsAgo = info.HighFormedMinsAgo
+				rankings[i].VolTrend3 = info.VolTrend3
+				rankings[i].VolAtHigh = info.VolAtHigh
 				mu.Unlock()
 			}(i, r)
 		}
@@ -706,24 +711,29 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 			map[string]any{"total": len(scored), "max_n": maxN})
 	}
 
-	// BidAskRatio: 최종 후보에만 호출 (LLM 랭킹 보조 지표 — 서버 필터와 무관).
+	// OrderBookSnapshot: 최종 후보에만 호출 (LLM 랭킹 보조 지표 — 서버 필터와 무관).
+	// 5순위 개선: 동일 API 1회 호출로 BidAskRatio + NearBidAskRatio + TopAskWall 추출.
 	{
 		sem := make(chan struct{}, 3)
 		var wg sync.WaitGroup
 		var mu sync.Mutex
 		for i, r := range rankings {
 			wg.Add(1)
-			go func(i int, stockCode string) {
+			go func(i int, r RankItem) {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				ratio, err := e.kisClient.GetBidAskRatio(ctx, stockCode)
+				curPrice, _ := strconv.ParseFloat(r.CurrentPrice, 64)
+				snap, err := e.kisClient.GetOrderBookSnapshot(ctx, r.StockCode, curPrice)
 				if err == nil {
 					mu.Lock()
-					rankings[i].BidAskRatio = math.Round(ratio*100) / 100
+					rankings[i].BidAskRatio = snap.BidAskRatio
+					rankings[i].NearBidAskRatio = snap.NearBidAskRatio
+					rankings[i].TopAskWall = snap.TopAskWall
+					rankings[i].TopAskWallSize = snap.TopAskWallSize
 					mu.Unlock()
 				}
-			}(i, r.StockCode)
+			}(i, r)
 		}
 		wg.Wait()
 	}

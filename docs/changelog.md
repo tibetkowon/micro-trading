@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-04-11 — Claude 종목 선정 데이터 품질 개선 (1~5순위)
+
+- **agent/stock_info.go**: `CandleSnap` 타입 추가; `StockInfo`에 `RecentCandles`(최근 5분봉 시퀀스), `HighFormedMinsAgo`(고점 경과 시간), `VolTrend3`(3봉 거래량 기울기), `VolAtHigh`(고점 봉 거래량) 필드 추가 및 계산 로직 구현
+- **kis/client.go**: `OrderBookSnapshot` 타입 추가; `GetOrderBookSnapshot()` — 동일 FHKST01010200 호출로 `NearBidAskRatio`(±2% 근거리 비율), `TopAskWall`(최대 매도 벽 위치), `TopAskWallSize` 추가 반환; `GetBidAskRatio()` 위임으로 하위호환 유지
+- **trader/claude.go**: `RankItem`에 신규 7개 필드 추가; `SelectStocks` 프롬프트에 장 시간대(SessionPhase) 주입 및 신규 필드 해석 가이드 추가
+- **trader/engine.go**: `StockInfo`→`RankItem` 매핑에 신규 4개 필드 추가; `GetBidAskRatio` → `GetOrderBookSnapshot` 교체 (추가 API 호출 0회)
+
 ## 2026-04-09 — 전체 프론트엔드 모바일 최적화
 
 ### Orders.jsx

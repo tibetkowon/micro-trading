@@ -9,6 +9,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/micro-trading-for-agent/backend/internal/agent"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 )
@@ -85,6 +86,14 @@ type RankItem struct {
 	// 세금보정 필드
 	TradingValue      float64 `json:"trading_value,omitempty"`       // 당일 거래대금 (원)
 	ApplicableTaxRate float64 `json:"applicable_tax_rate,omitempty"` // 0.0=ETF비과세, 0.002=주식
+	// 데이터 품질 개선 필드 (1~5순위)
+	RecentCandles     []agent.CandleSnap `json:"recent_candles,omitempty"`       // 최근 5개 5분봉 (구→신), dir: U/D/=
+	HighFormedMinsAgo int                `json:"high_formed_mins_ago,omitempty"` // 당일 고점 형성 후 경과 시간(분)
+	VolTrend3         float64            `json:"vol_trend_3,omitempty"`          // 최근 3봉 거래량 기울기 (-1~1, 음수=감소)
+	VolAtHigh         int64              `json:"vol_at_high,omitempty"`          // 고점 형성 봉 거래량
+	NearBidAskRatio   float64            `json:"near_bid_ask_ratio,omitempty"`   // 현재가 ±2% 범위 내 매수/매도 비율
+	TopAskWall        float64            `json:"top_ask_wall,omitempty"`         // 가장 큰 매도 벽 위치 (현재가 대비 %)
+	TopAskWallSize    int64              `json:"top_ask_wall_size,omitempty"`    // 가장 큰 매도 벽 잔량
 }
 
 // TradingRules holds parameterized hard rejection and ranking criteria for Claude prompts.
@@ -172,6 +181,28 @@ func (c *ClaudeClient) SelectStocks(
 
 	rankJSON, _ := json.Marshal(rankings)
 
+	// 4순위: 장 시간대 컨텍스트
+	now := time.Now()
+	hour, min := now.Hour(), now.Minute()
+	totalMin := hour*60 + min
+	sessionPhase := "MID"
+	sessionNote := ""
+	switch {
+	case totalMin < 9*60+15:
+		sessionPhase = "PRE"
+		sessionNote = "장 초반(09:15 이전): 변동성 극대, 진입 자제"
+	case totalMin < 10*60:
+		sessionPhase = "OPEN"
+		sessionNote = "개장 초반(09:15~10:00): 급등 후 첫 눌림 위험 높음, 거래량 확인 필수"
+	case totalMin < 14*60:
+		sessionPhase = "MID"
+		sessionNote = "장 중반(10:00~14:00): 가장 안정적인 눌림목 구간"
+	default:
+		sessionPhase = "CLOSE"
+		sessionNote = "장 마감(14:00~): 15:15 청산 고려, 목표가 달성 가능 종목만 선택"
+	}
+	_ = sessionPhase
+
 	marketIndexNote := ""
 	if rules.MarketIndexDrop != 0 {
 		marketIndexNote = fmt.Sprintf("Current market index: %.2f%% (시가 대비 등락률)\n", rules.MarketIndexDrop)
@@ -193,6 +224,8 @@ func (c *ClaudeClient) SelectStocks(
 	prompt := fmt.Sprintf(`You are an elite Korean day-trader known for strict risk management, avoiding Bull Traps, and finding high-probability pullback(눌림목) entries.
 DO NOT explain your reasoning process. Output ONLY the final JSON array.
 
+## Session Context (장 시간대)
+Current session phase: %s — %s
 
 %s## Hard Rejection Rules — skip if ANY apply (Kill-switch & Defense):
 1. market_index_drop < %.1f%%  → 전체 시장 급락 중(투매 장세), skip all
@@ -211,6 +244,15 @@ DO NOT explain your reasoning process. Output ONLY the final JSON array.
 - 최적 매수 구간: rsi14 between %.0f ~ %.0f (반등 구간, 과매수 아님)
 - MA 배열: ma5 > ma20 > m5_ma10 순서면 강세 배열 가산점
 
+## New Data Fields Guide (신규 필드 해석):
+- recent_candles: 최근 5개 5분봉 (구→신 순서). dir="D"+volume 감소 → 건강한 눌림목. dir="D"+volume 증가 → 추세 하락 위험.
+- high_formed_mins_ago: 고점 형성 후 경과 시간(분). 5분 미만=아직 하락 중(진입 위험), 15~45분=눌림 안정화 구간, 60분 이상=추세 전환 의심.
+- vol_trend_3: 최근 3봉 거래량 기울기(-1~1). 음수=거래량 감소(건강한 눌림), 양수=거래량 증가(상승 or 매도 가속 주의).
+- vol_at_high: 고점 봉 거래량. (vol_at_high - current candle volume) 이 클수록 거래량 감소 눌림목.
+- near_bid_ask_ratio: 현재가 ±2%% 이내 실질 매수/매도압력 비율. bid_ask_ratio보다 신뢰도 높음.
+- top_ask_wall: 가장 큰 매도 벽의 현재가 대비 위치(%%양수=위). 목표가보다 낮은 위치에 큰 벽 존재 시 진입 자제.
+- top_ask_wall_size: 매도 벽 잔량. 클수록 돌파 어려움.
+
 Ranking data (JSON format; vwap_diff=0 means VWAP unavailable):
 %s
 Available cash: %.0f KRW
@@ -218,7 +260,8 @@ Available cash: %.0f KRW
 Respond with ONLY a valid JSON array — no explanation, no markdown, no extra text.
 If no stock passes, respond with exactly: []
 Best entry first:
-[{"stock_code":"6-digit","reason":"고점(X원) 대비 -Y%% 눌림, VWAP 지지선 근처, 거래량 감소 눌림목, 체결강도 Z%% 매수우세로 반등 기대"}]`,
+[{"stock_code":"6-digit","reason":"고점(X원) 대비 -Y%% 눌림, VWAP 지지선 근처, 거래량 감소 눌림목(vol_trend_3 음수), 체결강도 Z%% 매수우세로 반등 기대"}]`,
+		sessionPhase, sessionNote,
 		marketIndexNote,
 		rules.IndexDropThreshold,
 		rules.HardDisparityM5Max, rules.HardDisparityM5Min,

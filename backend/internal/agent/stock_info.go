@@ -9,6 +9,13 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 )
 
+// CandleSnap is a compact snapshot of a single 5-minute candle for Claude context.
+type CandleSnap struct {
+	Close  float64 `json:"c"`           // 종가
+	Volume int64   `json:"v"`           // 거래량
+	Dir    string  `json:"d,omitempty"` // "U"=상승봉, "D"=하락봉, "="=보합
+}
+
 // StockInfo holds key stock data for the AI agent's decision-making,
 // including current price, moving averages, trading value, RSI, and MACD.
 type StockInfo struct {
@@ -36,6 +43,12 @@ type StockInfo struct {
 	BidAskRatio     float64 `json:"bid_ask_ratio"`     // 총 매수잔량 / 총 매도잔량; 0=API 실패 또는 데이터 없음
 	// 자산 타입 (MST 기반 — engine이 태깅)
 	AssetType string `json:"asset_type"` // "STOCK" | "ETF" | "ETF_DOMESTIC"
+
+	// 데이터 품질 개선 필드 (1~3순위)
+	RecentCandles     []CandleSnap `json:"recent_candles,omitempty"` // 최근 5개 5분봉 (구→신 순서)
+	HighFormedMinsAgo int          `json:"high_formed_mins_ago"`     // 당일 고점 형성 후 경과 시간(분); 0=데이터부족
+	VolTrend3         float64      `json:"vol_trend_3"`              // 최근 3봉 거래량 기울기 (-1=감소, 0=보합, 1=증가)
+	VolAtHigh         int64        `json:"vol_at_high"`              // 고점 형성 봉의 거래량; 0=데이터부족
 }
 
 // GetStockInfo fetches the latest price and computes all technical indicators:
@@ -124,6 +137,66 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 				prevVol := float64(candles5m[len(candles5m)-2].Volume)
 				if prevVol > 0 {
 					info.PrevVolumeRatio = math.Round(curVol/prevVol*100) / 100
+				}
+			}
+
+			// ── 1순위: 최근 5봉 캔들 시퀀스 ──────────────────────────────
+			// 최근 5개 5분봉을 구→신 순서로 저장 (데이터 부족 시 있는 만큼만)
+			{
+				n := len(candles5m)
+				start := n - 5
+				if start < 0 {
+					start = 0
+				}
+				recent := candles5m[start:]
+				snaps := make([]CandleSnap, len(recent))
+				for i, c := range recent {
+					dir := "="
+					if c.Close > c.Open {
+						dir = "U"
+					} else if c.Close < c.Open {
+						dir = "D"
+					}
+					snaps[i] = CandleSnap{
+						Close:  math.Round(c.Close*100) / 100,
+						Volume: c.Volume,
+						Dir:    dir,
+					}
+				}
+				info.RecentCandles = snaps
+			}
+
+			// ── 2순위: 고점 형성 경과 시간 + 3순위: 거래량 추세 ──────────
+			{
+				dayHigh, _ := strconv.ParseFloat(info.DayHigh, 64)
+				if dayHigh > 0 && len(candles5m) >= 1 {
+					// 고점 봉 탐색 (가장 최근에 고가를 경신한 봉 기준)
+					highIdx := -1
+					for i := len(candles5m) - 1; i >= 0; i-- {
+						if candles5m[i].High >= dayHigh*0.9999 {
+							highIdx = i
+							break
+						}
+					}
+					if highIdx >= 0 {
+						// 고점 형성 후 경과 봉 수 × 5분
+						minsAgo := (len(candles5m) - 1 - highIdx) * 5
+						info.HighFormedMinsAgo = minsAgo
+						info.VolAtHigh = candles5m[highIdx].Volume
+					}
+				}
+
+				// VolTrend3: 최근 3봉 거래량 선형 기울기 정규화 (-1~1)
+				if len(candles5m) >= 3 {
+					v1 := float64(candles5m[len(candles5m)-3].Volume)
+					v2 := float64(candles5m[len(candles5m)-2].Volume)
+					v3 := float64(candles5m[len(candles5m)-1].Volume)
+					// 단순 기울기: (v3-v1) / max(v1,v2,v3)
+					maxV := math.Max(v1, math.Max(v2, v3))
+					if maxV > 0 {
+						slope := (v3 - v1) / maxV
+						info.VolTrend3 = math.Round(slope*100) / 100
+					}
 				}
 			}
 		}

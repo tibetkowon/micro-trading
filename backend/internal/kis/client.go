@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -269,36 +270,143 @@ func (c *Client) GetIndexPrice(ctx context.Context, indexCode string) (*StockPri
 	}, nil
 }
 
-// GetBidAskRatio fetches the bid/ask ratio for a domestic stock using the order book API.
+// OrderBookSnapshot holds enriched order book data from FHKST01010200.
+type OrderBookSnapshot struct {
+	BidAskRatio     float64 // 총 매수잔량 / 총 매도잔량
+	NearBidAskRatio float64 // 현재가 ±2% 범위 내 호가만의 매수/매도 비율; 0=계산불가
+	TopAskWall      float64 // 가장 큰 매도 벽의 현재가 대비 위치 (%); 0=데이터없음
+	TopAskWallSize  int64   // 가장 큰 매도 벽의 잔량
+}
+
+// GetOrderBookSnapshot fetches the order book and returns enriched bid/ask metrics.
 // API: GET /uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn (FHKST01010200).
-// Returns total_bidp_rsqn / total_askp_rsqn (매수잔량 / 매도잔량).
-// Returns 0 if the ratio cannot be computed (e.g., zero ask volume).
-func (c *Client) GetBidAskRatio(ctx context.Context, stockCode string) (float64, error) {
+// currentPrice is used to compute near-price ratios; pass 0 to skip near/wall calculation.
+func (c *Client) GetOrderBookSnapshot(ctx context.Context, stockCode string, currentPrice float64) (OrderBookSnapshot, error) {
 	endpoint := "/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn"
 	params := fmt.Sprintf("?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=%s", stockCode)
 
 	raw, err := c.get(ctx, endpoint, params, "FHKST01010200")
 	if err != nil {
-		return 0, err
+		return OrderBookSnapshot{}, err
 	}
 
-	// KIS 호가 응답: output1 에 총잔량 합계가 존재
+	// KIS 호가 응답: output1 에 10단계 호가 + 총잔량 합계
 	var result struct {
 		Output1 struct {
-			TotalAskRsqn string `json:"total_askp_rsqn"` // 총 매도호가 잔량
-			TotalBidRsqn string `json:"total_bidp_rsqn"` // 총 매수호가 잔량
+			TotalAskRsqn string `json:"total_askp_rsqn"`
+			TotalBidRsqn string `json:"total_bidp_rsqn"`
+			AskP1        string `json:"askp1"`
+			AskP2        string `json:"askp2"`
+			AskP3        string `json:"askp3"`
+			AskP4        string `json:"askp4"`
+			AskP5        string `json:"askp5"`
+			AskP6        string `json:"askp6"`
+			AskP7        string `json:"askp7"`
+			AskP8        string `json:"askp8"`
+			AskP9        string `json:"askp9"`
+			AskP10       string `json:"askp10"`
+			AskR1        string `json:"askp_rsqn1"`
+			AskR2        string `json:"askp_rsqn2"`
+			AskR3        string `json:"askp_rsqn3"`
+			AskR4        string `json:"askp_rsqn4"`
+			AskR5        string `json:"askp_rsqn5"`
+			AskR6        string `json:"askp_rsqn6"`
+			AskR7        string `json:"askp_rsqn7"`
+			AskR8        string `json:"askp_rsqn8"`
+			AskR9        string `json:"askp_rsqn9"`
+			AskR10       string `json:"askp_rsqn10"`
+			BidP1        string `json:"bidp1"`
+			BidP2        string `json:"bidp2"`
+			BidP3        string `json:"bidp3"`
+			BidP4        string `json:"bidp4"`
+			BidP5        string `json:"bidp5"`
+			BidP6        string `json:"bidp6"`
+			BidP7        string `json:"bidp7"`
+			BidP8        string `json:"bidp8"`
+			BidP9        string `json:"bidp9"`
+			BidP10       string `json:"bidp10"`
+			BidR1        string `json:"bidp_rsqn1"`
+			BidR2        string `json:"bidp_rsqn2"`
+			BidR3        string `json:"bidp_rsqn3"`
+			BidR4        string `json:"bidp_rsqn4"`
+			BidR5        string `json:"bidp_rsqn5"`
+			BidR6        string `json:"bidp_rsqn6"`
+			BidR7        string `json:"bidp_rsqn7"`
+			BidR8        string `json:"bidp_rsqn8"`
+			BidR9        string `json:"bidp_rsqn9"`
+			BidR10       string `json:"bidp_rsqn10"`
 		} `json:"output1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return 0, fmt.Errorf("parse bid ask ratio: %w", err)
+		return OrderBookSnapshot{}, fmt.Errorf("parse order book snapshot: %w", err)
 	}
 
-	askVol, _ := strconv.ParseFloat(result.Output1.TotalAskRsqn, 64)
-	bidVol, _ := strconv.ParseFloat(result.Output1.TotalBidRsqn, 64)
-	if askVol <= 0 {
-		return 0, nil
+	o1 := result.Output1
+	totalAsk, _ := strconv.ParseFloat(o1.TotalAskRsqn, 64)
+	totalBid, _ := strconv.ParseFloat(o1.TotalBidRsqn, 64)
+
+	snap := OrderBookSnapshot{}
+	if totalAsk > 0 {
+		snap.BidAskRatio = math.Round(totalBid/totalAsk*100) / 100
 	}
-	return bidVol / askVol, nil
+
+	if currentPrice <= 0 {
+		return snap, nil
+	}
+
+	// 호가 레벨 배열 구성
+	askPrices := [10]string{o1.AskP1, o1.AskP2, o1.AskP3, o1.AskP4, o1.AskP5,
+		o1.AskP6, o1.AskP7, o1.AskP8, o1.AskP9, o1.AskP10}
+	askRsqns := [10]string{o1.AskR1, o1.AskR2, o1.AskR3, o1.AskR4, o1.AskR5,
+		o1.AskR6, o1.AskR7, o1.AskR8, o1.AskR9, o1.AskR10}
+	bidPrices := [10]string{o1.BidP1, o1.BidP2, o1.BidP3, o1.BidP4, o1.BidP5,
+		o1.BidP6, o1.BidP7, o1.BidP8, o1.BidP9, o1.BidP10}
+	bidRsqns := [10]string{o1.BidR1, o1.BidR2, o1.BidR3, o1.BidR4, o1.BidR5,
+		o1.BidR6, o1.BidR7, o1.BidR8, o1.BidR9, o1.BidR10}
+
+	nearBand := currentPrice * 0.02 // ±2%
+	var nearAsk, nearBid float64
+
+	// NearBidAskRatio: 현재가 ±2% 범위 내 호가 합산
+	for i := 0; i < 10; i++ {
+		ap, _ := strconv.ParseFloat(askPrices[i], 64)
+		ar, _ := strconv.ParseFloat(askRsqns[i], 64)
+		if ap > 0 && math.Abs(ap-currentPrice) <= nearBand {
+			nearAsk += ar
+		}
+		bp, _ := strconv.ParseFloat(bidPrices[i], 64)
+		br, _ := strconv.ParseFloat(bidRsqns[i], 64)
+		if bp > 0 && math.Abs(bp-currentPrice) <= nearBand {
+			nearBid += br
+		}
+	}
+	if nearAsk > 0 {
+		snap.NearBidAskRatio = math.Round(nearBid/nearAsk*100) / 100
+	}
+
+	// TopAskWall: 가장 큰 매도잔량 레벨의 위치(현재가 대비 %)와 크기
+	var maxAskSize float64
+	for i := 0; i < 10; i++ {
+		ap, _ := strconv.ParseFloat(askPrices[i], 64)
+		ar, _ := strconv.ParseFloat(askRsqns[i], 64)
+		if ap > 0 && ar > maxAskSize {
+			maxAskSize = ar
+			snap.TopAskWall = math.Round((ap-currentPrice)/currentPrice*10000) / 100
+			snap.TopAskWallSize = int64(ar)
+		}
+	}
+
+	return snap, nil
+}
+
+// GetBidAskRatio fetches the bid/ask ratio for a domestic stock using the order book API.
+// Deprecated: use GetOrderBookSnapshot for enriched data. Kept for backward compatibility.
+func (c *Client) GetBidAskRatio(ctx context.Context, stockCode string) (float64, error) {
+	snap, err := c.GetOrderBookSnapshot(ctx, stockCode, 0)
+	if err != nil {
+		return 0, err
+	}
+	return snap.BidAskRatio, nil
 }
 
 // GetAvailableOrder checks order feasibility for a specific stock (매수가능조회 TTTC8908R).
