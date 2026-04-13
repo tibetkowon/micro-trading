@@ -324,6 +324,8 @@ export default function Settings() {
   const [hardStrengthMin, setHardStrengthMin] = useState('100.0')
   const [hardRsiMax, setHardRsiMax] = useState('70.0')
   const [hardOpenPriceDiffMax, setHardOpenPriceDiffMax] = useState('15.0')
+  const [hardMacdBearishEnabled, setHardMacdBearishEnabled] = useState(false)
+  const [hardHighFormedMinsMax, setHardHighFormedMinsMax] = useState('0')
 
   // ── AI 매매 기준값 — 랭킹 기준 ──
   const [vwapDiffMin, setVwapDiffMin] = useState('0.0')
@@ -423,6 +425,8 @@ export default function Settings() {
     if (data.hard_strength_min != null) setHardStrengthMin(String(data.hard_strength_min))
     if (data.hard_rsi_max != null) setHardRsiMax(String(data.hard_rsi_max))
     if (data.hard_open_price_diff_max != null) setHardOpenPriceDiffMax(String(data.hard_open_price_diff_max))
+    if (data.hard_macd_bearish_enabled != null) setHardMacdBearishEnabled(data.hard_macd_bearish_enabled)
+    if (data.hard_high_formed_mins_max != null) setHardHighFormedMinsMax(String(data.hard_high_formed_mins_max))
     if (data.vwap_diff_min != null) setVwapDiffMin(String(data.vwap_diff_min))
     if (data.vwap_diff_max != null) setVwapDiffMax(String(data.vwap_diff_max))
     if (data.rsi_buy_min != null) setRsiBuyMin(String(data.rsi_buy_min))
@@ -543,6 +547,8 @@ export default function Settings() {
       hard_strength_min: parseFloat(hardStrengthMin),
       hard_rsi_max: parseFloat(hardRsiMax),
       hard_open_price_diff_max: parseFloat(hardOpenPriceDiffMax),
+      hard_macd_bearish_enabled: hardMacdBearishEnabled,
+      hard_high_formed_mins_max: parseFloat(hardHighFormedMinsMax),
       vwap_diff_min: parseFloat(vwapDiffMin),
       vwap_diff_max: parseFloat(vwapDiffMax),
       rsi_buy_min: parseFloat(rsiBuyMin),
@@ -1283,6 +1289,16 @@ export default function Settings() {
                 <span className={labelText}>시가 대비 상승률 상한 (%)</span>
                 <input type="number" step="0.5" min="0" value={hardOpenPriceDiffMax} onChange={(e) => setHardOpenPriceDiffMax(e.target.value)} className={inputCls} />
                 <p className={hintText}>이 값 이상 → 상한가 영역 (기본 15)</p>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer py-2">
+                <input type="checkbox" checked={hardMacdBearishEnabled} onChange={(e) => setHardMacdBearishEnabled(e.target.checked)} className="w-4 h-4 accent-th-primary" />
+                <span className={labelText}>MACD 베어리시 진입 차단</span>
+                <p className={`${hintText} ml-auto`}>MACD 선 &lt; 시그널 선이면 종목 제외</p>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>고점 경과 시간 상한 (분)</span>
+                <input type="number" step="1" min="0" value={hardHighFormedMinsMax} onChange={(e) => setHardHighFormedMinsMax(e.target.value)} className={inputCls} />
+                <p className={hintText}>0 = 비활성. 고점 형성 후 이 시간 초과 시 제외 (예: 60)</p>
               </label>
             </div>
 
