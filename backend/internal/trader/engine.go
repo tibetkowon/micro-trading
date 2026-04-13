@@ -828,6 +828,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	rules.HardStrengthMin = settings.HardStrengthMin
 	rules.HardRSIMax = settings.HardRSIMax
 	rules.HardOpenPriceDiffMax = settings.HardOpenPriceDiffMax
+	rules.HardMACDBearishEnabled = settings.HardMACDBearishEnabled
+	rules.HardHighFormedMinsMax = settings.HardHighFormedMinsMax
 	rules.VWAPDiffMin = settings.VWAPDiffMin
 	rules.VWAPDiffMax = settings.VWAPDiffMax
 	rules.RSIBuyMin = settings.RSIBuyMin

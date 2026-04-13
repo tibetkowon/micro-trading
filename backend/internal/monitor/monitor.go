@@ -235,7 +235,9 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 					logger.Info("monitor: TRAILING STOP hit",
 						map[string]any{"stock_code": stockCode, "price": price, "peak": pos.PeakPrice, "stop_threshold": stopThreshold})
 					if !isTest {
-						m.executeSell(stockCode, pos, "트레일링 스탑")
+						if soldQty := m.executeSell(stockCode, pos, "트레일링 스탑"); soldQty < 0 {
+							return // 주문 실패 — 포지션 유지, 다음 틱 재시도
+						}
 					}
 					m.Remove(context.Background(), stockCode)
 					return
@@ -276,17 +278,25 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 		logger.Info("monitor: TARGET hit",
 			map[string]any{"stock_code": stockCode, "price": price, "target": pos.TargetPrice})
 		if !isTest {
-			m.executeSell(stockCode, pos, "목표가 도달")
+			if soldQty := m.executeSell(stockCode, pos, "목표가 도달"); soldQty >= 0 {
+				m.Remove(context.Background(), stockCode)
+			}
+			// soldQty == -1: 주문 실패, 잔고 보존 → 다음 틱에서 재시도
+		} else {
+			m.Remove(context.Background(), stockCode)
 		}
-		m.Remove(context.Background(), stockCode)
 
 	case price <= pos.StopPrice:
 		logger.Info("monitor: STOP hit",
 			map[string]any{"stock_code": stockCode, "price": price, "stop": pos.StopPrice})
 		if !isTest {
-			m.executeSell(stockCode, pos, "손절가 도달")
+			if soldQty := m.executeSell(stockCode, pos, "손절가 도달"); soldQty >= 0 {
+				m.Remove(context.Background(), stockCode)
+			}
+			// soldQty == -1: 주문 실패, 잔고 보존 → 다음 틱에서 재시도
+		} else {
+			m.Remove(context.Background(), stockCode)
 		}
-		m.Remove(context.Background(), stockCode)
 
 	default:
 		// 목표/손절 미도달 — 횡보 여부 추적
@@ -307,8 +317,8 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 	}
 }
 
-// executeSell places a market sell order for the given position and returns the qty sold.
-// Returns 0 if holdings lookup fails, qty is 0, or sell order fails.
+// executeSell places a market sell order for the given position.
+// Returns qty > 0 on success, 0 when no holdings (safe to Remove), -1 when sell order failed (do NOT Remove).
 func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason string) int {
 	ctx := context.Background()
 
@@ -317,7 +327,7 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 		logger.Error("auto-sell: GetHoldings failed",
 			map[string]any{"stock_code": stockCode, "error": err.Error()})
 		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "자동 매도 실패: GetHoldings 오류", fmt.Sprintf("stock_code=%s error=%s", stockCode, err.Error()))
-		return 0
+		return -1 // 잔고 확인 불가 — 안전을 위해 Remove 차단
 	}
 
 	qty := 0
@@ -329,7 +339,7 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	}
 	if qty <= 0 {
 		logger.Info("auto-sell: no holdings found", map[string]any{"stock_code": stockCode})
-		return 0
+		return 0 // 잔고 없음 — Remove 허용
 	}
 
 	resp, err := m.kisClient.PlaceSellOrder(ctx, kis.OrderRequest{
@@ -341,8 +351,8 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	if err != nil {
 		logger.Error("auto-sell: PlaceSellOrder failed",
 			map[string]any{"stock_code": stockCode, "qty": qty, "error": err.Error()})
-		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "자동 매도 실패: 주문 오류", fmt.Sprintf("stock_code=%s qty=%d error=%s", stockCode, qty, err.Error()))
-		return 0
+		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "자동 매도 실패: 주문 오류 — 포지션 모니터링 유지", fmt.Sprintf("stock_code=%s qty=%d error=%s", stockCode, qty, err.Error()))
+		return -1 // 주문 실패 — 실제 잔고 있음, Remove 차단
 	}
 
 	logger.Info("auto-sell: sell order placed",
@@ -632,42 +642,45 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 			Price:     "0",
 		})
 		if err != nil {
-			logger.Error("liquidate: sell order failed",
-				map[string]any{"stock_code": code, "error": err.Error()})
-		} else {
-			logger.Info("liquidate: sell order placed",
-				map[string]any{"stock_code": code, "qty": qty})
-			kisOrderID := ""
-			if liqResp != nil {
-				kisOrderID = liqResp.KISOrderID
-			}
-			_, _ = m.db.ExecContext(ctx,
-				`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
-				 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
-				code, pos.StockName, qty, pos.FilledPrice, kisOrderID, "일일 자동 청산", time.Now().UTC())
-			// Update trade report (non-blocking).
-			go func(codeSnap string, buyOrderID int64, sellQty int, sellPriceEst float64) {
-				rCtx := context.Background()
-				var sellOrderID int64
-				_ = m.db.QueryRowContext(rCtx,
-					`SELECT id FROM orders WHERE stock_code=? AND order_type='SELL' ORDER BY id DESC LIMIT 1`,
-					codeSnap).Scan(&sellOrderID)
-				var sellIndJSON string
-				info, infoErr := agent.GetStockInfo(rCtx, m.kisClient, codeSnap)
-				sellPrice := sellPriceEst
-				if infoErr == nil {
-					if p, e := strconv.ParseFloat(info.CurrentPrice, 64); e == nil && p > 0 {
-						sellPrice = p
-					}
-					b, _ := json.Marshal(info)
-					sellIndJSON = string(b)
-				}
-				if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, sellQty, "일일 자동 청산", sellIndJSON); err != nil {
-					logger.Error("monitor: UpdateTradeReportOnSell (liquidate) failed",
-						map[string]any{"stock_code": codeSnap, "error": err.Error()})
-				}
-			}(code, pos.OrderID, qty, currentPrice)
+			// 매도 주문 실패 시 Remove 하지 않음 — 실제 잔고가 남아있으므로 모니터링 유지
+			logger.Error("liquidate: sell order failed — position retained in monitor",
+				map[string]any{"stock_code": code, "qty": qty, "error": err.Error()})
+			m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "장마감 청산 실패: 잔고 남아있음", fmt.Sprintf("stock_code=%s qty=%d error=%s", code, qty, err.Error()))
+			continue
 		}
+
+		logger.Info("liquidate: sell order placed",
+			map[string]any{"stock_code": code, "qty": qty})
+		kisOrderID := ""
+		if liqResp != nil {
+			kisOrderID = liqResp.KISOrderID
+		}
+		_, _ = m.db.ExecContext(ctx,
+			`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
+			 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
+			code, pos.StockName, qty, pos.FilledPrice, kisOrderID, "일일 자동 청산", time.Now().UTC())
+		// Update trade report (non-blocking).
+		go func(codeSnap string, buyOrderID int64, sellQty int, sellPriceEst float64) {
+			rCtx := context.Background()
+			var sellOrderID int64
+			_ = m.db.QueryRowContext(rCtx,
+				`SELECT id FROM orders WHERE stock_code=? AND order_type='SELL' ORDER BY id DESC LIMIT 1`,
+				codeSnap).Scan(&sellOrderID)
+			var sellIndJSON string
+			info, infoErr := agent.GetStockInfo(rCtx, m.kisClient, codeSnap)
+			sellPrice := sellPriceEst
+			if infoErr == nil {
+				if p, e := strconv.ParseFloat(info.CurrentPrice, 64); e == nil && p > 0 {
+					sellPrice = p
+				}
+				b, _ := json.Marshal(info)
+				sellIndJSON = string(b)
+			}
+			if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, sellQty, "일일 자동 청산", sellIndJSON); err != nil {
+				logger.Error("monitor: UpdateTradeReportOnSell (liquidate) failed",
+					map[string]any{"stock_code": codeSnap, "error": err.Error()})
+			}
+		}(code, pos.OrderID, qty, currentPrice)
 
 		m.Remove(ctx, code)
 	}
@@ -1051,8 +1064,10 @@ func (m *Monitor) checkIndicators(
 
 		logger.Info("indicator check: sell condition triggered",
 			map[string]any{"stock_code": code, "reason": triggerReason})
-		m.executeSell(code, pos, triggerReason)
-		m.Remove(ctx, code)
+		if soldQty := m.executeSell(code, pos, triggerReason); soldQty >= 0 {
+			m.Remove(ctx, code)
+		}
+		// soldQty == -1: 주문 실패 — 다음 인터벌에서 재시도
 	}
 }
 

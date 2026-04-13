@@ -77,14 +77,16 @@ type TradingSettings struct {
 	// 요일별 트레이딩 스케줄 (0=일 1=월 2=화 3=수 4=목 5=금 6=토). 빈 배열=매일
 	TradingDays []int
 	// AI 하드 거부 기준값
-	HardDisparityM5Min   float64 // 5분봉 이격도 하한 (이하 → 칼날 하락 스킵). 기본 -1.5
-	HardDisparityM5Max   float64 // 5분봉 이격도 상한 (이상 → 과열 스킵). 기본 3.0
-	HardHighPriceDiffMax float64 // 고점 대비 최대% (이상 → 고점권 스킵). 기본 -0.5
-	HardHighPriceDiffMin float64 // 고점 대비 최소% (이하 + 거래량급증 → 추세이탈 스킵). 기본 -5.0
-	HardPrevVolRatioMax  float64 // 전봉 대비 거래량 비율 상한. 기본 1.2
-	HardStrengthMin      float64 // 체결강도 하한 (이하 → 매수세 소멸 스킵). 기본 100.0
-	HardRSIMax           float64 // RSI 상한 (이상 → 과매수 스킵). 기본 70.0
-	HardOpenPriceDiffMax float64 // 시가 대비 상승률 상한 (이상 → 상한가권 스킵). 기본 15.0
+	HardDisparityM5Min     float64 // 5분봉 이격도 하한 (이하 → 칼날 하락 스킵). 기본 -1.5
+	HardDisparityM5Max     float64 // 5분봉 이격도 상한 (이상 → 과열 스킵). 기본 3.0
+	HardHighPriceDiffMax   float64 // 고점 대비 최대% (이상 → 고점권 스킵). 기본 -0.5
+	HardHighPriceDiffMin   float64 // 고점 대비 최소% (이하 + 거래량급증 → 추세이탈 스킵). 기본 -5.0
+	HardPrevVolRatioMax    float64 // 전봉 대비 거래량 비율 상한. 기본 1.2
+	HardStrengthMin        float64 // 체결강도 하한 (이하 → 매수세 소멸 스킵). 기본 100.0
+	HardRSIMax             float64 // RSI 상한 (이상 → 과매수 스킵). 기본 70.0
+	HardOpenPriceDiffMax   float64 // 시가 대비 상승률 상한 (이상 → 상한가권 스킵). 기본 15.0
+	HardMACDBearishEnabled bool    // true이면 macd_line < macd_signal 진입 차단. 기본 false
+	HardHighFormedMinsMax  float64 // 고점 형성 후 경과 시간 상한(분). 초과 시 모멘텀 소진으로 스킵. 0=비활성
 	// AI 매수 구간 기준값
 	VWAPDiffMin    float64 // VWAP 대비 이격도 하한 (%). 기본 0.0
 	VWAPDiffMax    float64 // VWAP 대비 이격도 상한 (%). 기본 1.5
@@ -396,6 +398,8 @@ func (db *DB) migrate() error {
 		{"hard_strength_min", "100.0"},
 		{"hard_rsi_max", "70.0"},
 		{"hard_open_price_diff_max", "15.0"},
+		{"hard_macd_bearish_enabled", "false"},
+		{"hard_high_formed_mins_max", "0"},
 		{"vwap_diff_min", "0.0"},
 		{"vwap_diff_max", "1.5"},
 		{"rsi_buy_min", "40.0"},
@@ -465,6 +469,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'hard_disparity_m5_min','hard_disparity_m5_max',`+
 			`'hard_high_price_diff_max','hard_high_price_diff_min',`+
 			`'hard_prev_vol_ratio_max','hard_strength_min','hard_rsi_max','hard_open_price_diff_max',`+
+			`'hard_macd_bearish_enabled','hard_high_formed_mins_max',`+
 			`'vwap_diff_min','vwap_diff_max','rsi_buy_min','rsi_buy_max','bid_ask_ratio_min',`+
 			`'min_market_cap','min_expected_profit_pct',`+
 			`'max_claude_candidates',`+
@@ -651,6 +656,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		HardStrengthMin:               hardStrengthMin,
 		HardRSIMax:                    hardRSIMax,
 		HardOpenPriceDiffMax:          hardOpenPriceDiffMax,
+		HardMACDBearishEnabled:        vals["hard_macd_bearish_enabled"] == "true",
+		HardHighFormedMinsMax:         f64("hard_high_formed_mins_max"),
 		VWAPDiffMin:                   f64("vwap_diff_min"),
 		VWAPDiffMax:                   vwapDiffMax,
 		RSIBuyMin:                     rsiBuyMin,

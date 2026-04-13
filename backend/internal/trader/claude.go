@@ -101,14 +101,16 @@ type TradingRules struct {
 	// 런타임 시장 상태
 	MarketIndexDrop float64 // 현재 지수 등락률 (%) — 음수=하락
 	// 하드 거부 기준값
-	HardDisparityM5Min   float64
-	HardDisparityM5Max   float64
-	HardHighPriceDiffMax float64
-	HardHighPriceDiffMin float64
-	HardPrevVolRatioMax  float64
-	HardStrengthMin      float64
-	HardRSIMax           float64
-	HardOpenPriceDiffMax float64
+	HardDisparityM5Min     float64
+	HardDisparityM5Max     float64
+	HardHighPriceDiffMax   float64
+	HardHighPriceDiffMin   float64
+	HardPrevVolRatioMax    float64
+	HardStrengthMin        float64
+	HardRSIMax             float64
+	HardOpenPriceDiffMax   float64
+	HardMACDBearishEnabled bool    // true이면 macd_line < macd_signal 진입 차단
+	HardHighFormedMinsMax  float64 // 고점 형성 후 경과 시간 상한(분). 0=비활성
 	// 매수 구간 기준값
 	VWAPDiffMin    float64
 	VWAPDiffMax    float64
@@ -207,6 +209,16 @@ func (c *ClaudeClient) SelectStocks(
 	if rules.MarketIndexDrop != 0 {
 		marketIndexNote = fmt.Sprintf("Current market index: %.2f%% (시가 대비 등락률)\n", rules.MarketIndexDrop)
 	}
+
+	// Hard Rejection Rule 9·10 조건부 생성
+	macdBearishRule := ""
+	if rules.HardMACDBearishEnabled {
+		macdBearishRule = "9. macd_line < macd_signal  → 진입 시점 MACD 이미 하락 교차(bearish), 역방향 진입 차단, skip\n"
+	}
+	highFormedRule := ""
+	if rules.HardHighFormedMinsMax > 0 {
+		highFormedRule = fmt.Sprintf("10. high_formed_mins_ago > %.0f  → 고점 형성 후 너무 오래 경과(모멘텀 소진), skip\n", rules.HardHighFormedMinsMax)
+	}
 	taxNote := ""
 	if rules.MinExpectedProfitPct > 0 {
 		stockTaxRate := rules.StockTaxRate
@@ -236,7 +248,7 @@ Current session phase: %s — %s
 6. strength < %.0f  → 매수 체결 우위 아님(매수세 소멸), skip
 7. rsi14 > %.0f  → 단기 과매수 상태에서 꺾이는 중, skip
 8. open_price_diff > %.0f%%  → 이미 너무 많이 오른 종목(설거지 위험), skip
-%s
+%s%s%s
 ## Ranking Criteria (for survivors):
 - 진정한 눌림목(True Pullback): vwap_diff between %.1f%% ~ %.1f%% (VWAP 지지선 부근 반등 대기); if vwap_diff is 0, use high_price_diff -1%% ~ -3%%
 - 건전한 거래량: 하락 시 prev_volume_ratio < 0.8 (거래량 감소) 및 net_buy_qty > 0 (순매수 우세)
@@ -271,6 +283,8 @@ Best entry first:
 		rules.HardRSIMax,
 		rules.HardOpenPriceDiffMax,
 		taxNote,
+		macdBearishRule,
+		highFormedRule,
 		rules.VWAPDiffMin, rules.VWAPDiffMax,
 		rules.BidAskRatioMin,
 		rules.RSIBuyMin, rules.RSIBuyMax,

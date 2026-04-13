@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-04-11 — 자동 매도 실패 시 포지션 모니터링 유지 버그 수정 + Hard Rejection 룰 2개 추가
+
+- **monitor/monitor.go**: `executeSell` 반환값 변경 — 주문 실패 시 `-1` 반환, 0은 잔고 없음, 양수는 성공. 실패 시 `Remove` 차단하여 실제 잔고 보존
+- **monitor/monitor.go**: `HandlePrice`(목표가/손절가/트레일링), `checkIndicators`, `LiquidateAll` — `executeSell` 결과 검사 후 `Remove` 조건부 실행으로 통일
+- **database/db.go**: `hard_macd_bearish_enabled`(false), `hard_high_formed_mins_max`(0) 설정 키 추가
+- **trader/claude.go**: Hard Rejection Rule 9(MACD bearish), Rule 10(고점 경과 시간 상한) 조건부 추가
+- **trader/engine.go**: 신규 TradingRules 필드 settings 매핑 추가
+
 ## 2026-04-11 — Claude 종목 선정 데이터 품질 개선 (1~5순위)
 
 - **agent/stock_info.go**: `CandleSnap` 타입 추가; `StockInfo`에 `RecentCandles`(최근 5분봉 시퀀스), `HighFormedMinsAgo`(고점 경과 시간), `VolTrend3`(3봉 거래량 기울기), `VolAtHigh`(고점 봉 거래량) 필드 추가 및 계산 로직 구현
