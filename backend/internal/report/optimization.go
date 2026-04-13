@@ -45,7 +45,7 @@ var settingsKeyLabel = map[string]string{
 	"buy_pause_start": "매수 정지 시작", "buy_pause_end": "매수 정지 종료",
 	// 랭킹 필터
 	"ranking_price_min": "랭킹 최소가", "ranking_price_max": "랭킹 최대가",
-	"ranking_top_n": "랭킹 상위 N종목",
+	"ranking_top_n":               "랭킹 상위 N종목",
 	"ranking_volume_min_incrrate": "거래량 최소 증가율", "ranking_strength_min": "최소 체결강도",
 	"ranking_fluctuation_min_rate": "최소 등락률", "ranking_fluctuation_max_rate": "최대 등락률",
 	"rank_lease_duration_min": "랭킹 유지 시간(분)",
@@ -95,7 +95,7 @@ var settingConstraints = map[string][2]float64{
 	"scoring_vwap_weight": {0.0, 100.0},
 	// 랭킹 필터
 	"ranking_price_min": {0.0, 1000000.0}, "ranking_price_max": {0.0, 1000000.0},
-	"ranking_top_n": {5.0, 100.0},
+	"ranking_top_n":               {5.0, 100.0},
 	"ranking_volume_min_incrrate": {0.0, 10000.0}, "ranking_strength_min": {0.0, 500.0},
 	"ranking_fluctuation_min_rate": {0.0, 30.0}, "ranking_fluctuation_max_rate": {0.0, 30.0},
 	"rank_lease_duration_min": {1.0, 60.0},
