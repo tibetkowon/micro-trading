@@ -16,46 +16,107 @@ import (
 )
 
 // settingsKeyLabel is a human-readable label for each settings key shown in logs.
+// Keys not listed here fall back to the raw key name — still included in the analysis.
 var settingsKeyLabel = map[string]string{
+	// 수익/손절
 	"take_profit_pct": "목표 수익률(%)", "stop_loss_pct": "손절률(%)",
 	"etf_take_profit_pct": "ETF 목표 수익률(%)", "etf_stop_loss_pct": "ETF 손절률(%)",
 	"stock_take_profit_pct": "주식 목표 수익률(%)", "stock_stop_loss_pct": "주식 손절률(%)",
-	"order_amount_pct": "주문 금액 비율(%)", "max_positions": "최대 포지션 수",
-	"indicator_check_interval_min": "지표 확인 주기(분)", "indicator_rsi_sell_threshold": "RSI 매도 임계값",
-	"stagnation_threshold_pct": "횡보 임계값(%)", "stagnation_duration_min": "횡보 감지 시간(분)",
+	"stock_tax_rate": "주식 세율",
+	// 트레일링/일손실
 	"trailing_trigger_pct": "트레일링 발동(%)", "trailing_stop_pct": "트레일링 손절(%)",
-	"daily_max_loss_pct":    "일 최대 손실(%)",
+	"daily_max_loss_pct": "일 최대 손실(%)",
+	// 주문
+	"order_amount_pct": "주문 금액 비율(%)", "max_positions": "최대 포지션 수",
+	// 지표 매도
+	"indicator_check_interval_min": "지표 확인 주기(분)", "indicator_rsi_sell_threshold": "RSI 매도 임계값",
+	"indicator_macd_bearish_sell": "MACD 데드크로스 매도",
+	// 횡보
+	"stagnation_threshold_pct": "횡보 임계값(%)", "stagnation_duration_min": "횡보 감지 시간(분)",
+	"stagnation_partial_exit_enabled": "횡보 부분 매도 활성", "stagnation_bid_ask_sell_threshold": "횡보 호가비율 매도 임계",
+	// 부분 익절
+	"partial_tp_enabled": "부분 익절 활성", "partial_tp_pct": "부분 익절 수익률(%)",
+	"partial_tp_ratio": "부분 익절 비율", "partial_tp_raise_stop": "부분 익절 후 손절 상향",
+	// 복합 스코어링 가중치
+	"scoring_bidask_weight": "호가비율 가중치", "scoring_strength_weight": "체결강도 가중치",
+	"scoring_macd_weight": "MACD 가중치", "scoring_rsi_weight": "RSI 가중치",
+	"scoring_vwap_weight": "VWAP 가중치",
+	// 매수 정지
+	"buy_pause_start": "매수 정지 시작", "buy_pause_end": "매수 정지 종료",
+	// 랭킹 필터
+	"ranking_price_min": "랭킹 최소가", "ranking_price_max": "랭킹 최대가",
+	"ranking_top_n": "랭킹 상위 N종목",
+	"ranking_volume_min_incrrate": "거래량 최소 증가율", "ranking_strength_min": "최소 체결강도",
+	"ranking_fluctuation_min_rate": "최소 등락률", "ranking_fluctuation_max_rate": "최대 등락률",
+	"rank_lease_duration_min": "랭킹 유지 시간(분)",
+	// 사전 필터
+	"filter_rsi_max": "사전필터 RSI 상한", "filter_disparity_m5_max": "사전필터 5분봉 이격도 상한",
+	"filter_high_price_diff_min": "사전필터 고점 대비 하락 하한", "filter_open_price_diff_max": "사전필터 시가 대비 상승 상한",
+	// 지수 하락 차단
+	"index_drop_threshold_pct": "지수 하락 임계값(%)",
+	// Hard Rejection
 	"hard_disparity_m5_min": "5분봉 이격도 하한", "hard_disparity_m5_max": "5분봉 이격도 상한",
 	"hard_high_price_diff_max": "고가 대비 하락 상한", "hard_high_price_diff_min": "고가 대비 하락 하한",
 	"hard_prev_vol_ratio_max": "직전봉 거래량 비율 상한", "hard_strength_min": "체결강도 하한",
 	"hard_rsi_max": "RSI 매수 상한", "hard_open_price_diff_max": "시가 대비 상승 상한",
 	"hard_macd_bearish_enabled": "MACD 베어리시 차단", "hard_high_formed_mins_max": "고점 경과 시간 상한(분)",
+	// 랭킹 기준 (선호 구간)
 	"vwap_diff_min": "VWAP 이격도 하한", "vwap_diff_max": "VWAP 이격도 상한",
 	"rsi_buy_min": "RSI 매수 하한", "rsi_buy_max": "RSI 매수 상한(구간)",
-	"bid_ask_ratio_min": "매수호가 비율 하한", "index_drop_threshold_pct": "지수 하락 임계값(%)",
-	"min_expected_profit_pct": "최소 기대 수익률(%)",
+	"bid_ask_ratio_min": "매수호가 비율 하한",
+	// 종목 선정 기준
+	"min_market_cap": "최소 시가총액", "min_expected_profit_pct": "최소 기대 수익률(%)",
+	"min_trading_value": "최소 거래대금", "momentum_score_min": "최소 모멘텀 스코어",
 }
 
 // settingConstraints defines validation bounds for numeric settings keys (auto-apply safety).
-// Keys not listed here are string-typed and pass validation without range checks.
+// Keys not listed here are string-typed or boolean and pass validation without range checks.
 var settingConstraints = map[string][2]float64{
+	// 수익/손절
 	"take_profit_pct": {0.1, 20.0}, "stop_loss_pct": {0.1, 10.0},
 	"etf_take_profit_pct": {0.1, 5.0}, "etf_stop_loss_pct": {0.1, 5.0},
 	"stock_take_profit_pct": {0.1, 10.0}, "stock_stop_loss_pct": {0.1, 10.0},
-	"order_amount_pct": {10.0, 99.0}, "max_positions": {1.0, 10.0},
-	"indicator_check_interval_min": {1.0, 60.0}, "indicator_rsi_sell_threshold": {50.0, 90.0},
-	"stagnation_threshold_pct": {0.1, 5.0}, "stagnation_duration_min": {5.0, 120.0},
+	"stock_tax_rate": {0.0, 0.01},
+	// 트레일링/일손실
 	"trailing_trigger_pct": {0.0, 10.0}, "trailing_stop_pct": {0.1, 5.0},
-	"daily_max_loss_pct":    {0.0, 20.0},
+	"daily_max_loss_pct": {0.0, 20.0},
+	// 주문
+	"order_amount_pct": {10.0, 99.0}, "max_positions": {1.0, 10.0},
+	// 지표 매도
+	"indicator_check_interval_min": {1.0, 60.0}, "indicator_rsi_sell_threshold": {50.0, 90.0},
+	// 횡보
+	"stagnation_threshold_pct": {0.1, 5.0}, "stagnation_duration_min": {5.0, 120.0},
+	"stagnation_bid_ask_sell_threshold": {0.5, 3.0},
+	// 부분 익절
+	"partial_tp_pct": {0.1, 10.0}, "partial_tp_ratio": {0.1, 0.9},
+	// 스코어링 가중치
+	"scoring_bidask_weight": {0.0, 100.0}, "scoring_strength_weight": {0.0, 100.0},
+	"scoring_macd_weight": {0.0, 100.0}, "scoring_rsi_weight": {0.0, 100.0},
+	"scoring_vwap_weight": {0.0, 100.0},
+	// 랭킹 필터
+	"ranking_price_min": {0.0, 1000000.0}, "ranking_price_max": {0.0, 1000000.0},
+	"ranking_top_n": {5.0, 100.0},
+	"ranking_volume_min_incrrate": {0.0, 10000.0}, "ranking_strength_min": {0.0, 500.0},
+	"ranking_fluctuation_min_rate": {0.0, 30.0}, "ranking_fluctuation_max_rate": {0.0, 30.0},
+	"rank_lease_duration_min": {1.0, 60.0},
+	// 사전 필터
+	"filter_rsi_max": {50.0, 100.0}, "filter_disparity_m5_max": {0.0, 20.0},
+	"filter_high_price_diff_min": {-30.0, 0.0}, "filter_open_price_diff_max": {0.0, 30.0},
+	// 지수 하락
+	"index_drop_threshold_pct": {-5.0, 0.0},
+	// Hard Rejection
 	"hard_disparity_m5_min": {-10.0, 0.0}, "hard_disparity_m5_max": {0.0, 10.0},
 	"hard_high_price_diff_max": {-5.0, 0.0}, "hard_high_price_diff_min": {-20.0, -0.1},
 	"hard_prev_vol_ratio_max": {0.5, 5.0}, "hard_strength_min": {50.0, 150.0},
 	"hard_rsi_max": {50.0, 90.0}, "hard_open_price_diff_max": {5.0, 30.0},
 	"hard_high_formed_mins_max": {0.0, 240.0},
+	// 랭킹 기준
 	"vwap_diff_min": {-5.0, 5.0}, "vwap_diff_max": {0.0, 10.0},
 	"rsi_buy_min": {20.0, 60.0}, "rsi_buy_max": {40.0, 80.0},
-	"bid_ask_ratio_min": {0.5, 3.0}, "index_drop_threshold_pct": {-5.0, 0.0},
-	"min_expected_profit_pct": {0.0, 5.0},
+	"bid_ask_ratio_min": {0.5, 3.0},
+	// 종목 선정
+	"min_market_cap": {0.0, 1e12}, "min_expected_profit_pct": {0.0, 5.0},
+	"min_trading_value": {0.0, 1e12}, "momentum_score_min": {0.0, 100.0},
 }
 
 // validateSettingValue checks if the suggested value is within allowed range.
@@ -75,30 +136,35 @@ func validateSettingValue(key, suggested string) error {
 	return nil
 }
 
-// collectCurrentSettings returns relevant settings key-value pairs for the analysis prompt.
+// skipSettingsKeys is a set of keys excluded from the AI analysis prompt.
+// These are meta/config keys that are not trading parameters Claude can optimize.
+var skipSettingsKeys = map[string]bool{
+	"claude_model":                  true,
+	"active_preset_id":              true,
+	"optimization_apply_mode":       true,
+	"max_claude_candidates":         true,
+	"hard_watch_symbols":            true,
+	"ranking_types":                 true,
+	"ranking_exchanges":             true,
+	"ranking_volume_blng_cls_codes": true,
+	"ranking_vi_kind_code":          true,
+	"sell_conditions":               true,
+	"index_codes":                   true,
+	"trading_days":                  true,
+	"trading_start_time":            true,
+	"trading_end_time":              true,
+	"ranking_condition":             true,
+}
+
+// collectCurrentSettings returns all trading-relevant settings for the analysis prompt.
+// Any new settings key added to the DB is automatically included unless listed in skipSettingsKeys.
 func collectCurrentSettings(ctx context.Context, db *database.DB) map[string]string {
-	keys := []string{
-		"take_profit_pct", "stop_loss_pct",
-		"etf_take_profit_pct", "etf_stop_loss_pct",
-		"stock_take_profit_pct", "stock_stop_loss_pct",
-		"order_amount_pct", "max_positions",
-		"indicator_check_interval_min", "indicator_rsi_sell_threshold",
-		"stagnation_threshold_pct", "stagnation_duration_min",
-		"trailing_trigger_pct", "trailing_stop_pct",
-		"daily_max_loss_pct", "buy_pause_start", "buy_pause_end",
-		"hard_disparity_m5_min", "hard_disparity_m5_max",
-		"hard_high_price_diff_max", "hard_high_price_diff_min",
-		"hard_prev_vol_ratio_max", "hard_strength_min",
-		"hard_rsi_max", "hard_open_price_diff_max",
-		"hard_macd_bearish_enabled", "hard_high_formed_mins_max",
-		"vwap_diff_min", "vwap_diff_max",
-		"rsi_buy_min", "rsi_buy_max",
-		"bid_ask_ratio_min", "index_drop_threshold_pct",
-		"min_expected_profit_pct",
-	}
-	result := make(map[string]string, len(keys))
-	for _, k := range keys {
-		v := db.GetSetting(ctx, k)
+	all := db.GetAllSettings(ctx)
+	result := make(map[string]string, len(all))
+	for k, v := range all {
+		if skipSettingsKeys[k] {
+			continue
+		}
 		label := settingsKeyLabel[k]
 		if label == "" {
 			label = k

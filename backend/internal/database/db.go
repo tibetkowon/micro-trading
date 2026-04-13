@@ -691,6 +691,23 @@ func (db *DB) GetSetting(ctx context.Context, key string) string {
 	return value
 }
 
+// GetAllSettings returns all key-value pairs from the settings table.
+func (db *DB) GetAllSettings(ctx context.Context) map[string]string {
+	rows, err := db.QueryContext(ctx, "SELECT key, value FROM settings")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	result := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if rows.Scan(&k, &v) == nil {
+			result[k] = v
+		}
+	}
+	return result
+}
+
 // SetSetting upserts a key-value pair in the settings table.
 func (db *DB) SetSetting(ctx context.Context, key, value string) error {
 	_, err := db.ExecContext(ctx,

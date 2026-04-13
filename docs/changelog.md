@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-04-13 — Settings UI Hard Rejection 신규 항목 추가 + AI 개선 제안 설정 누락 수정
+
+- **frontend/Settings.jsx**: MACD 베어리시 차단(토글), 고점 경과 시간 상한(분) UI 항목 추가
+- **report/optimization.go**: `collectCurrentSettings`에 `hard_macd_bearish_enabled`, `hard_high_formed_mins_max` 등록 → AI 일일 개선 제안에 해당 설정값 포함되도록 수정
+- **report/optimization.go**: `settingsKeyLabel`, `settingConstraints`에 두 키 레이블·범위 추가
+
 ## 2026-04-11 — 자동 매도 실패 시 포지션 모니터링 유지 버그 수정 + Hard Rejection 룰 2개 추가
 
 - **monitor/monitor.go**: `executeSell` 반환값 변경 — 주문 실패 시 `-1` 반환, 0은 잔고 없음, 양수는 성공. 실패 시 `Remove` 차단하여 실제 잔고 보존
