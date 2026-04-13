@@ -167,6 +167,23 @@ Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
 | `index_codes` | [] | 지수 필터 코드 JSON 배열 |
 | `ranking_excl_cls` | 1111111111 | 순위 조회 제외 종목 플래그 |
 
+### Claude Hard Rejection 룰 (국장 KR)
+
+Claude가 종목 선정 시 적용하는 서버사이드 하드 거부 기준입니다. 해당 조건에 맞는 종목은 후보 전달 전에 자동 제외됩니다.
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
+| `hard_disparity_m5_min` | -1.5 | 5분봉 MA5 이격도 하한 (%) — 이하이면 칼날 하락으로 스킵 |
+| `hard_disparity_m5_max` | 3.0 | 5분봉 MA5 이격도 상한 (%) — 이상이면 과열로 스킵 |
+| `hard_high_price_diff_max` | -0.5 | 당일 고점 대비 최대 하락 (%) — 이상이면 고점 추격 위험 |
+| `hard_high_price_diff_min` | -5.0 | 당일 고점 대비 최소 하락 (%) — 이하+거래량 급증이면 추세 이탈 |
+| `hard_prev_vol_ratio_max` | 1.2 | 직전봉 대비 거래량 비율 상한 — 이상이면 대량 매도 징후 |
+| `hard_strength_min` | 100.0 | 최소 체결강도 (%) — 이하이면 매수세 소멸 |
+| `hard_rsi_max` | 70.0 | RSI 상한 — 이상이면 단기 과매수 |
+| `hard_open_price_diff_max` | 15.0 | 시가 대비 상승률 상한 (%) — 이상이면 설거지 위험 |
+| `hard_macd_bearish_enabled` | false | true이면 MACD line < signal 상태에서 진입 차단 |
+| `hard_high_formed_mins_max` | 0 | 고점 형성 후 경과 시간 상한 (분, 0=비활성) — 모멘텀 소진 방지 |
+
 ### 미장(US) 설정
 
 | 설정 키 | 기본값 | 설명 |
