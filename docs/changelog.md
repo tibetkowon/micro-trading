@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-04-21 — KIS TPS 에러 방지 강화 (속도 감소 + 지수 백오프 + 일시 스로틀)
+
+- **kis/ratelimiter.go**: `Throttle(slowRPS, duration)` 메서드 추가 — TPS 에러 발생 시 3 RPS로 3초간 일시 감속 후 자동 복원 (`sync.Mutex` 안전, 중복 호출 시 타이머 연장)
+- **kis/client.go**: RPS 7→5로 낮춤 (~200ms 간격); 고정 500ms 재시도 → 지수 백오프(500ms·1s·2s)로 변경; TPS 에러 시 `Throttle()` 호출 추가 (GET·POST 모두)
+
 ## 2026-04-21 — 거래량 회복 필터 + 시장 대비 상대강도 필터 추가
 
 - **agent/stock_info.go**: `VolVs3AvgRatio` 필드 추가 — 현재 5분봉 거래량 / 직전 3봉 평균 거래량 (거래량 회복 비율)

@@ -44,8 +44,9 @@ func NewClient(
 		accountNo:    accountNo,
 		accountType:  accountType,
 		tokenManager: tokenManager,
-		// KIS allows up to 20 TPS; burst=1 enforces strict per-request spacing.
-		rateLimiter: NewRateLimiter(7, 1),
+		// KIS allows up to 20 TPS nominally, but sustained loads above ~5 RPS
+		// often trigger EGW00201. burst=1 enforces strict per-request spacing (~200ms).
+		rateLimiter: NewRateLimiter(5, 1),
 		db:          db,
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
@@ -785,9 +786,18 @@ func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string)
 
 const (
 	tpsErrCode    = "EGW00201"
-	tpsRetryDelay = 500 * time.Millisecond
 	tpsMaxRetries = 3
 )
+
+// tpsBackoff returns the wait duration for a given retry attempt (0-indexed).
+// Delays: 500ms, 1s, 2s — exponential backoff to avoid hammering after TPS errors.
+func tpsBackoff(attempt int) time.Duration {
+	d := 500 * time.Millisecond
+	for i := 0; i < attempt; i++ {
+		d *= 2
+	}
+	return d
+}
 
 func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([]byte, error) {
 	for attempt := 0; attempt <= tpsMaxRetries; attempt++ {
@@ -828,14 +838,16 @@ func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([
 		}
 		if err := json.Unmarshal(raw, &envelope); err == nil && envelope.RtCd == "1" {
 			if envelope.MsgCode == tpsErrCode && attempt < tpsMaxRetries {
+				delay := tpsBackoff(attempt)
 				logger.Info("KIS TPS exceeded — retrying", map[string]any{
 					"attempt": attempt + 1,
-					"delay":   tpsRetryDelay.String(),
+					"delay":   delay.String(),
 				})
+				c.rateLimiter.Throttle(3, 3*time.Second)
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
-				case <-time.After(tpsRetryDelay):
+				case <-time.After(delay):
 				}
 				continue
 			}
@@ -907,14 +919,16 @@ func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoin
 		// rt_cd="0" 이 KIS 공식 성공 기준 (msg_cd는 계좌 유형별로 상이: APBK0013, MABC000 등)
 		if result.RtCd != "0" {
 			if result.MsgCode == tpsErrCode && attempt < tpsMaxRetries {
+				delay := tpsBackoff(attempt)
 				logger.Info("KIS TPS exceeded — retrying", map[string]any{
 					"attempt": attempt + 1,
-					"delay":   tpsRetryDelay.String(),
+					"delay":   delay.String(),
 				})
+				c.rateLimiter.Throttle(3, 3*time.Second)
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
-				case <-time.After(tpsRetryDelay):
+				case <-time.After(delay):
 				}
 				continue
 			}
