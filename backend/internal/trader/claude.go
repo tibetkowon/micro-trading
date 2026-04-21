@@ -377,7 +377,7 @@ func (c *ClaudeClient) AnalyzeNoTradeDay(
 	settingsJSON, _ := json.MarshalIndent(currentSettings, "", "  ")
 
 	prompt := fmt.Sprintf(`You are an expert algorithmic trading analyst. Today the Korean day-trading system executed 0 completed trades.
-Analyze why no trades occurred and suggest specific settings adjustments to enable more trading opportunities.
+Analyze why no trades occurred and provide concrete, actionable improvement suggestions.
 
 ## No-Trade Day Summary
 %s
@@ -385,33 +385,45 @@ Analyze why no trades occurred and suggest specific settings adjustments to enab
 ## Current System Settings
 %s
 
-## Context — How to interpret the summary fields
-- filter_rejection_reasons: server-side pre-filters that blocked stocks BEFORE Claude's own selection step.
+## How to interpret the summary fields
+- filter_rejection_reasons: server-side pre-filters that blocked stocks BEFORE the LLM selection step.
   - "현금 부족" → insufficient cash. Fix: lower max_positions or order_amount_pct.
-  - "거래대금 미달" → min_trading_value too high. Fix: lower min_trading_value.
-  - "Hard Rule" fields (hard_*) → Claude prompt hard rejection rules. Fix: relax the relevant hard_* setting.
-- selection_fail_reasons: why Claude's own stock-selection calls failed.
-  - "조건에 맞는 종목 없음" → Claude found no stock passing its Hard Rejection Rules in the prompt.
+  - "거래대금 미달" → min_trading_value filter is too strict. Fix: lower min_trading_value.
+  - "Hard Rule *" → a hard_* prompt rule blocked the stock. Fix: relax the specific hard_* setting.
+- selection_fail_reasons: why the LLM's own stock-selection calls returned no candidates.
+  - "조건에 맞는 종목 없음" → LLM hard rejection rules blocked every candidate.
     Fix: relax hard_strength_min, hard_high_price_diff_max, hard_rsi_max, etc.
 
 ## Your Task
-1. Identify the top 1-2 root causes from the summary.
-2. Suggest 2-4 conservative settings changes. Each change must map to a key in Current System Settings.
-3. Always output at least 1 suggestion when ranking_attempts > 0.
+1. Identify the PRIMARY root cause (the filter/setting that caused the most rejections).
+2. Provide 2-4 SPECIFIC suggestions. Mix "settings" changes AND "feature" ideas where relevant.
+3. MANDATORY: When ranking_attempts > 0, you MUST output at least 2 suggestions.
+4. For settings suggestions, use the EXACT key name from Current System Settings.
+5. For feature suggestions, describe a new indicator, filter, or system improvement.
 
 Respond with ONLY valid JSON — no markdown, no explanation:
 {
-  "overall_assessment": "2-3 sentence summary in Korean of why no trades occurred and key bottlenecks",
+  "overall_assessment": "2-3문장으로 왜 거래가 없었는지, 핵심 병목이 무엇인지 한국어로 설명",
   "suggestions": [
     {
       "id": "1",
       "category": "settings",
-      "key": "exact_settings_key",
+      "key": "exact_settings_key_from_above",
       "name": "",
       "type": "",
       "current_value": "current value from settings",
-      "suggested_value": "new value",
-      "comment": "evidence from summary (Korean ok)"
+      "suggested_value": "새 값",
+      "comment": "요약 데이터 근거를 한국어로 구체적으로 설명"
+    },
+    {
+      "id": "2",
+      "category": "feature",
+      "key": "",
+      "name": "기능 이름",
+      "type": "indicator",
+      "current_value": "",
+      "suggested_value": "",
+      "comment": "이 기능이 왜 도움이 되는지 한국어로 설명"
     }
   ]
 }`, summaryJSON, string(settingsJSON))
@@ -491,6 +503,8 @@ var allowedSettingsKeys = map[string]bool{
 	"bid_ask_ratio_min": true, "index_drop_threshold_pct": true,
 	"min_expected_profit_pct":         true,
 	"momentum_score_min":              true,
+	"min_trading_value":               true,
+	"min_market_cap":                  true,
 	"stagnation_partial_exit_enabled": true, "stagnation_bid_ask_sell_threshold": true,
 	"hard_vol_vs_3avg_ratio_min": true,
 	"hard_relative_strength_min": true,
