@@ -155,17 +155,15 @@ func (e *Engine) SoldCh() chan<- string {
 }
 
 // retryBackoff returns wait duration based on consecutive failure count.
-// 1st: 30s, 2nd: 1m, 3rd: 3m, 4th+: 5m
+// 1st: 30s, 2nd: 1m, 3rd+: 3m
 func retryBackoff(failures int) time.Duration {
 	switch failures {
 	case 1:
 		return 30 * time.Second
 	case 2:
 		return 1 * time.Minute
-	case 3:
-		return 3 * time.Minute
 	default:
-		return 5 * time.Minute
+		return 3 * time.Minute
 	}
 }
 
