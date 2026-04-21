@@ -822,12 +822,11 @@ func (db *DB) GetTodaySelectionLogs(ctx context.Context) ([]models.TraderSelecti
 }
 
 // GetTodayRankingLogs returns today's (KST) ranking log entries.
-// result_stocks column is omitted to minimize memory usage.
 func (db *DB) GetTodayRankingLogs(ctx context.Context) ([]models.TraderRankingLog, error) {
 	kst, _ := time.LoadLocation("Asia/Seoul")
 	today := time.Now().In(kst).Format("2006-01-02")
 	rows, err := db.QueryContext(ctx,
-		`SELECT id, timestamp, ranking_condition, intersection_count, filtered_stocks, error_message, market
+		`SELECT id, timestamp, ranking_condition, intersection_count, result_stocks, filtered_stocks, error_message, market
 		 FROM trader_ranking_logs
 		 WHERE date(timestamp) = date(?)
 		 ORDER BY id ASC`, today)
@@ -838,7 +837,7 @@ func (db *DB) GetTodayRankingLogs(ctx context.Context) ([]models.TraderRankingLo
 	var logs []models.TraderRankingLog
 	for rows.Next() {
 		var l models.TraderRankingLog
-		if err := rows.Scan(&l.ID, &l.Timestamp, &l.RankingCondition, &l.IntersectionCount, &l.FilteredStocks, &l.ErrorMessage, &l.Market); err != nil {
+		if err := rows.Scan(&l.ID, &l.Timestamp, &l.RankingCondition, &l.IntersectionCount, &l.ResultStocks, &l.FilteredStocks, &l.ErrorMessage, &l.Market); err != nil {
 			return nil, err
 		}
 		logs = append(logs, l)

@@ -404,7 +404,10 @@ func generateNoTradeReport(ctx context.Context, db *database.DB, claude *trader.
 		Date              string         `json:"date"`
 		RankingAttempts   int            `json:"ranking_attempts"`
 		AvgCandidates     float64        `json:"avg_candidates_passed"`
+		CandidateTrend    []int          `json:"candidates_per_cycle"`
+		PassedStockCodes  []string       `json:"passed_stock_codes"`
 		FilterReasons     map[string]int `json:"filter_rejection_reasons"`
+		RankingErrors     []string       `json:"ranking_errors"`
 		SelectionAttempts int            `json:"selection_attempts"`
 		FailReasons       []string       `json:"selection_fail_reasons"`
 	}
@@ -415,9 +418,33 @@ func generateNoTradeReport(ctx context.Context, db *database.DB, claude *trader.
 	}
 
 	// Aggregate filter rejection reasons from ranking logs
+	seenCodes := map[string]bool{}
+	seenErrors := map[string]bool{}
 	var totalCandidates int
 	for _, rl := range rankLogs {
 		totalCandidates += rl.IntersectionCount
+		summary.CandidateTrend = append(summary.CandidateTrend, rl.IntersectionCount)
+
+		// 사이클별 통과 종목 코드 수집 (중복 제거)
+		var stocks []struct {
+			StockCode string `json:"stock_code"`
+		}
+		if rl.ResultStocks != "" {
+			_ = json.Unmarshal([]byte(rl.ResultStocks), &stocks)
+		}
+		for _, s := range stocks {
+			if s.StockCode != "" && !seenCodes[s.StockCode] {
+				summary.PassedStockCodes = append(summary.PassedStockCodes, s.StockCode)
+				seenCodes[s.StockCode] = true
+			}
+		}
+
+		// 랭킹 오류 수집 (중복 제거)
+		if rl.ErrorMessage != "" && !seenErrors[rl.ErrorMessage] {
+			summary.RankingErrors = append(summary.RankingErrors, rl.ErrorMessage)
+			seenErrors[rl.ErrorMessage] = true
+		}
+
 		var entries []filteredEntry
 		if rl.FilteredStocks != "" {
 			_ = json.Unmarshal([]byte(rl.FilteredStocks), &entries)
