@@ -507,6 +507,44 @@ func generateNoTradeReport(ctx context.Context, db *database.DB, claude *trader.
 	logger.Info("optimization: no-trade report saved", map[string]any{
 		"date": date, "suggestions": len(result.Suggestions),
 	})
+
+	if applyMode == "all_auto" {
+		saved, err := db.GetOptimizationReportByDate(ctx, date)
+		if err != nil {
+			return fmt.Errorf("reload after save (no-trade): %w", err)
+		}
+		var suggestions []models.OptimizationSuggestion
+		if err := json.Unmarshal([]byte(saved.Suggestions), &suggestions); err != nil {
+			return fmt.Errorf("parse saved suggestions (no-trade): %w", err)
+		}
+
+		appliedCount := 0
+		for i := range suggestions {
+			if suggestions[i].Category != "settings" {
+				continue
+			}
+			if err := applySuggestion(ctx, db, &suggestions[i]); err != nil {
+				logger.Warn("optimization: auto-apply skipped", map[string]any{
+					"key": suggestions[i].Key, "error": err.Error(),
+				})
+			} else {
+				appliedCount++
+				logger.Info("optimization: auto-applied setting", map[string]any{
+					"key": suggestions[i].Key, "value": suggestions[i].SuggestedValue,
+				})
+			}
+		}
+
+		updated, _ := json.Marshal(suggestions)
+		saved.Suggestions = string(updated)
+		if err := db.UpsertOptimizationReport(ctx, *saved); err != nil {
+			return fmt.Errorf("persist auto-apply results (no-trade): %w", err)
+		}
+		logger.Info("optimization: no-trade auto-apply complete", map[string]any{
+			"date": date, "applied": appliedCount,
+		})
+	}
+
 	return nil
 }
 
