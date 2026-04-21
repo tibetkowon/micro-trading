@@ -608,14 +608,18 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		// 요일 스케줄
 		"trading_days": ts.TradingDays,
 		// AI 매매 기준값 — 하드 리젝션
-		"hard_disparity_m5_min":    ts.HardDisparityM5Min,
-		"hard_disparity_m5_max":    ts.HardDisparityM5Max,
-		"hard_high_price_diff_max": ts.HardHighPriceDiffMax,
-		"hard_high_price_diff_min": ts.HardHighPriceDiffMin,
-		"hard_prev_vol_ratio_max":  ts.HardPrevVolRatioMax,
-		"hard_strength_min":        ts.HardStrengthMin,
-		"hard_rsi_max":             ts.HardRSIMax,
-		"hard_open_price_diff_max": ts.HardOpenPriceDiffMax,
+		"hard_disparity_m5_min":      ts.HardDisparityM5Min,
+		"hard_disparity_m5_max":      ts.HardDisparityM5Max,
+		"hard_high_price_diff_max":   ts.HardHighPriceDiffMax,
+		"hard_high_price_diff_min":   ts.HardHighPriceDiffMin,
+		"hard_prev_vol_ratio_max":    ts.HardPrevVolRatioMax,
+		"hard_strength_min":          ts.HardStrengthMin,
+		"hard_rsi_max":               ts.HardRSIMax,
+		"hard_open_price_diff_max":   ts.HardOpenPriceDiffMax,
+		"hard_macd_bearish_enabled":  ts.HardMACDBearishEnabled,
+		"hard_high_formed_mins_max":  ts.HardHighFormedMinsMax,
+		"hard_vol_vs_3avg_ratio_min": ts.HardVolVs3AvgRatioMin,
+		"hard_relative_strength_min": ts.HardRelativeStrengthMin,
 		// AI 매매 기준값 — 랭킹 기준
 		"vwap_diff_min":           ts.VWAPDiffMin,
 		"vwap_diff_max":           ts.VWAPDiffMax,
@@ -711,14 +715,18 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		HardWatchSymbols     []string `json:"hard_watch_symbols"`
 		RankLeaseDurationMin *int     `json:"rank_lease_duration_min"`
 		// AI 매매 기준값 — 하드 리젝션 룰
-		HardDisparityM5Min   *float64 `json:"hard_disparity_m5_min"`
-		HardDisparityM5Max   *float64 `json:"hard_disparity_m5_max"`
-		HardHighPriceDiffMax *float64 `json:"hard_high_price_diff_max"`
-		HardHighPriceDiffMin *float64 `json:"hard_high_price_diff_min"`
-		HardPrevVolRatioMax  *float64 `json:"hard_prev_vol_ratio_max"`
-		HardStrengthMin      *float64 `json:"hard_strength_min"`
-		HardRSIMax           *float64 `json:"hard_rsi_max"`
-		HardOpenPriceDiffMax *float64 `json:"hard_open_price_diff_max"`
+		HardDisparityM5Min      *float64 `json:"hard_disparity_m5_min"`
+		HardDisparityM5Max      *float64 `json:"hard_disparity_m5_max"`
+		HardHighPriceDiffMax    *float64 `json:"hard_high_price_diff_max"`
+		HardHighPriceDiffMin    *float64 `json:"hard_high_price_diff_min"`
+		HardPrevVolRatioMax     *float64 `json:"hard_prev_vol_ratio_max"`
+		HardStrengthMin         *float64 `json:"hard_strength_min"`
+		HardRSIMax              *float64 `json:"hard_rsi_max"`
+		HardOpenPriceDiffMax    *float64 `json:"hard_open_price_diff_max"`
+		HardMACDBearishEnabled  *bool    `json:"hard_macd_bearish_enabled"`
+		HardHighFormedMinsMax   *float64 `json:"hard_high_formed_mins_max"`
+		HardVolVs3AvgRatioMin   *float64 `json:"hard_vol_vs_3avg_ratio_min"`
+		HardRelativeStrengthMin *float64 `json:"hard_relative_strength_min"`
 		// AI 매매 기준값 — 랭킹 기준
 		VWAPDiffMin                   *float64 `json:"vwap_diff_min"`
 		VWAPDiffMax                   *float64 `json:"vwap_diff_max"`
@@ -1117,6 +1125,30 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.HardOpenPriceDiffMax != nil {
 		if !save("hard_open_price_diff_max", strconv.FormatFloat(*req.HardOpenPriceDiffMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardMACDBearishEnabled != nil {
+		v := "false"
+		if *req.HardMACDBearishEnabled {
+			v = "true"
+		}
+		if !save("hard_macd_bearish_enabled", v) {
+			return
+		}
+	}
+	if req.HardHighFormedMinsMax != nil {
+		if !save("hard_high_formed_mins_max", strconv.FormatFloat(*req.HardHighFormedMinsMax, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardVolVs3AvgRatioMin != nil {
+		if !save("hard_vol_vs_3avg_ratio_min", strconv.FormatFloat(*req.HardVolVs3AvgRatioMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.HardRelativeStrengthMin != nil {
+		if !save("hard_relative_strength_min", strconv.FormatFloat(*req.HardRelativeStrengthMin, 'f', -1, 64)) {
 			return
 		}
 	}
