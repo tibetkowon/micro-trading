@@ -126,6 +126,10 @@ type TradingRules struct {
 	// 세금보정 기준값
 	MinExpectedProfitPct float64 // 주식 세후 최소 기대수익 (%). 0=미사용
 	StockTaxRate         float64 // 주식 세율 (기본 0.002)
+	// Adaptive Threshold
+	AdaptiveRelaxActive bool    // true이면 완화 중 — 프롬프트에 경고 메모 삽입
+	AdaptiveRelaxPct    float64 // 현재 완화 비율 (로그용)
+	AdaptiveFailures    int     // 현재 연속 실패 횟수 (로그용)
 }
 
 // DefaultTradingRules returns safe default values (matches the hard-coded prompt values).
@@ -214,6 +218,14 @@ func (c *ClaudeClient) SelectStocks(
 		marketIndexNote = fmt.Sprintf("Current market index: %.2f%% (시가 대비 등락률)\n", rules.MarketIndexDrop)
 	}
 
+	// Adaptive Threshold 완화 중 경고 메모
+	adaptiveNote := ""
+	if rules.AdaptiveRelaxActive {
+		adaptiveNote = fmt.Sprintf(
+			"⚠️ ADAPTIVE MODE: Hard rules have been relaxed by %.0f%% after %d consecutive failures. Be more lenient than usual.\n\n",
+			rules.AdaptiveRelaxPct, rules.AdaptiveFailures)
+	}
+
 	// Hard Rejection Rule 9·10 조건부 생성
 	macdBearishRule := ""
 	if rules.HardMACDBearishEnabled {
@@ -248,7 +260,7 @@ func (c *ClaudeClient) SelectStocks(
 	prompt := fmt.Sprintf(`You are an elite Korean day-trader known for strict risk management, avoiding Bull Traps, and finding high-probability pullback(눌림목) entries.
 DO NOT explain your reasoning process. Output ONLY the final JSON array.
 
-## Session Context (장 시간대)
+%s## Session Context (장 시간대)
 Current session phase: %s — %s
 
 %s## Hard Rejection Rules — skip if ANY apply (Kill-switch & Defense):
@@ -287,6 +299,7 @@ Respond with ONLY a valid JSON array — no explanation, no markdown, no extra t
 If no stock passes, respond with exactly: []
 Best entry first:
 [{"stock_code":"6-digit","reason":"고점(X원) 대비 -Y%% 눌림, VWAP 지지선 근처, 거래량 감소 눌림목(vol_trend_3 음수), 체결강도 Z%% 매수우세로 반등 기대"}]`,
+		adaptiveNote,
 		sessionPhase, sessionNote,
 		marketIndexNote,
 		rules.IndexDropThreshold,

@@ -117,6 +117,11 @@ type TradingSettings struct {
 	ScoringMACDWeight     int // MACD 방향성 점수 가중치 (기본 20)
 	ScoringRSIWeight      int // RSI 구간 점수 가중치 (기본 15)
 	ScoringVWAPWeight     int // VWAP 이격도 점수 가중치 (기본 10)
+	// Adaptive Threshold — Hard Rule 자동 완화
+	AdaptiveThresholdEnabled bool    // N회 연속 실패 시 hard rule 완화 활성화
+	AdaptiveThresholdTrigger int     // 완화 발동 연속 실패 횟수 (기본 10)
+	AdaptiveRelaxPct         float64 // hard rule 완화 비율 % (기본 20.0)
+	AdaptiveRelaxActive      bool    // 런타임 플래그 — 현재 완화 적용 중 (DB에 저장 안 함)
 }
 
 // DB wraps the sql.DB connection.
@@ -428,6 +433,10 @@ func (db *DB) migrate() error {
 		{"scoring_macd_weight", "20"},
 		{"scoring_rsi_weight", "15"},
 		{"scoring_vwap_weight", "10"},
+		// Adaptive Threshold
+		{"adaptive_threshold_enabled", "false"},
+		{"adaptive_threshold_trigger", "10"},
+		{"adaptive_relax_pct", "20"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -481,7 +490,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'momentum_score_min',`+
 			`'stagnation_partial_exit_enabled','stagnation_bid_ask_sell_threshold',`+
 			`'partial_tp_enabled','partial_tp_pct','partial_tp_ratio','partial_tp_raise_stop',`+
-			`'scoring_bidask_weight','scoring_strength_weight','scoring_macd_weight','scoring_rsi_weight','scoring_vwap_weight'`+
+			`'scoring_bidask_weight','scoring_strength_weight','scoring_macd_weight','scoring_rsi_weight','scoring_vwap_weight',`+
+			`'adaptive_threshold_enabled','adaptive_threshold_trigger','adaptive_relax_pct'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -687,6 +697,10 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		ScoringMACDWeight:     i64Default("scoring_macd_weight", 20),
 		ScoringRSIWeight:      i64Default("scoring_rsi_weight", 15),
 		ScoringVWAPWeight:     i64Default("scoring_vwap_weight", 10),
+		// Adaptive Threshold
+		AdaptiveThresholdEnabled: vals["adaptive_threshold_enabled"] == "true",
+		AdaptiveThresholdTrigger: i64Default("adaptive_threshold_trigger", 10),
+		AdaptiveRelaxPct:         f64Default("adaptive_relax_pct", 20.0),
 	}, nil
 }
 

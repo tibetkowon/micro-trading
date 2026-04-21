@@ -154,6 +154,33 @@ func (e *Engine) SoldCh() chan<- string {
 	return e.soldCh
 }
 
+// relaxTradingSettings returns a copy of settings with hard rules relaxed by AdaptiveRelaxPct%.
+// Thresholds that are 0 (disabled) are left unchanged.
+// HardMACDBearishEnabled is turned off during relaxation.
+func relaxTradingSettings(s database.TradingSettings) database.TradingSettings {
+	pct := s.AdaptiveRelaxPct / 100.0
+	// 하한값 → 낮추기 (더 관대)
+	if s.HardStrengthMin > 0 {
+		s.HardStrengthMin *= (1 - pct)
+	}
+	if s.HardDisparityM5Min != 0 {
+		s.HardDisparityM5Min *= (1 + pct) // 음수이므로 절대값이 커짐
+	}
+	// 상한값 → 높이기 (더 관대)
+	s.HardDisparityM5Max *= (1 + pct)
+	if s.HardHighPriceDiffMax != 0 {
+		s.HardHighPriceDiffMax *= (1 - pct) // 음수이므로 절대값이 작아짐
+	}
+	if s.HardRSIMax > 0 {
+		s.HardRSIMax *= (1 + pct)
+	}
+	// MACD 차단 해제
+	s.HardMACDBearishEnabled = false
+	// 런타임 플래그
+	s.AdaptiveRelaxActive = true
+	return s
+}
+
 // retryBackoff returns wait duration based on consecutive failure count.
 // 1st: 30s, 2nd: 1m, 3rd+: 3m
 func retryBackoff(failures int) time.Duration {
@@ -218,6 +245,15 @@ func (e *Engine) runCycle(ctx context.Context) {
 			case <-time.After(60 * time.Second):
 			}
 			continue
+		}
+
+		if settings.AdaptiveThresholdEnabled &&
+			consecutiveFailures >= settings.AdaptiveThresholdTrigger {
+			logger.Info("engine: adaptive threshold active — relaxing hard rules", map[string]any{
+				"failures":  consecutiveFailures,
+				"relax_pct": settings.AdaptiveRelaxPct,
+			})
+			settings = relaxTradingSettings(settings)
 		}
 
 		if err := e.selectAndBuy(ctx, settings, false); err != nil {
@@ -844,6 +880,9 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	if rules.StockTaxRate <= 0 {
 		rules.StockTaxRate = 0.002
 	}
+	rules.AdaptiveRelaxActive = settings.AdaptiveRelaxActive
+	rules.AdaptiveRelaxPct = settings.AdaptiveRelaxPct
+	rules.AdaptiveFailures = settings.AdaptiveThresholdTrigger
 
 	// Ask Claude to rank all viable candidates (single API call).
 	// excludedCodes are already filtered server-side above; pass nil here.

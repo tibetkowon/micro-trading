@@ -644,6 +644,10 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"scoring_macd_weight":     ts.ScoringMACDWeight,
 		"scoring_rsi_weight":      ts.ScoringRSIWeight,
 		"scoring_vwap_weight":     ts.ScoringVWAPWeight,
+		// Adaptive Threshold
+		"adaptive_threshold_enabled": ts.AdaptiveThresholdEnabled,
+		"adaptive_threshold_trigger": ts.AdaptiveThresholdTrigger,
+		"adaptive_relax_pct":         ts.AdaptiveRelaxPct,
 		// 하드 감시 종목 / 순위 유지 시간
 		"hard_watch_symbols":      ts.HardWatchSymbols,
 		"rank_lease_duration_min": ts.RankLeaseDurationMin,
@@ -750,6 +754,10 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		ScoringMACDWeight     *int `json:"scoring_macd_weight"`
 		ScoringRSIWeight      *int `json:"scoring_rsi_weight"`
 		ScoringVWAPWeight     *int `json:"scoring_vwap_weight"`
+		// Adaptive Threshold
+		AdaptiveThresholdEnabled *bool    `json:"adaptive_threshold_enabled"`
+		AdaptiveThresholdTrigger *int     `json:"adaptive_threshold_trigger"`
+		AdaptiveRelaxPct         *float64 `json:"adaptive_relax_pct"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1266,6 +1274,26 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.ScoringVWAPWeight != nil {
 		if !save("scoring_vwap_weight", strconv.Itoa(*req.ScoringVWAPWeight)) {
+			return
+		}
+	}
+	// Adaptive Threshold
+	if req.AdaptiveThresholdEnabled != nil {
+		val := "false"
+		if *req.AdaptiveThresholdEnabled {
+			val = "true"
+		}
+		if !save("adaptive_threshold_enabled", val) {
+			return
+		}
+	}
+	if req.AdaptiveThresholdTrigger != nil {
+		if !save("adaptive_threshold_trigger", strconv.Itoa(*req.AdaptiveThresholdTrigger)) {
+			return
+		}
+	}
+	if req.AdaptiveRelaxPct != nil {
+		if !save("adaptive_relax_pct", strconv.FormatFloat(*req.AdaptiveRelaxPct, 'f', -1, 64)) {
 			return
 		}
 	}

@@ -329,6 +329,11 @@ export default function Settings() {
   const [hardVolVs3AvgRatioMin, setHardVolVs3AvgRatioMin] = useState('0')
   const [hardRelativeStrengthMin, setHardRelativeStrengthMin] = useState('0')
 
+  // ── Adaptive Threshold ──
+  const [adaptiveThresholdEnabled, setAdaptiveThresholdEnabled] = useState(false)
+  const [adaptiveThresholdTrigger, setAdaptiveThresholdTrigger] = useState('10')
+  const [adaptiveRelaxPct, setAdaptiveRelaxPct] = useState('20')
+
   // ── AI 매매 기준값 — 랭킹 기준 ──
   const [vwapDiffMin, setVwapDiffMin] = useState('0.0')
   const [vwapDiffMax, setVwapDiffMax] = useState('1.5')
@@ -431,6 +436,9 @@ export default function Settings() {
     if (data.hard_high_formed_mins_max != null) setHardHighFormedMinsMax(String(data.hard_high_formed_mins_max))
     if (data.hard_vol_vs_3avg_ratio_min != null) setHardVolVs3AvgRatioMin(String(data.hard_vol_vs_3avg_ratio_min))
     if (data.hard_relative_strength_min != null) setHardRelativeStrengthMin(String(data.hard_relative_strength_min))
+    if (data.adaptive_threshold_enabled != null) setAdaptiveThresholdEnabled(data.adaptive_threshold_enabled)
+    if (data.adaptive_threshold_trigger != null) setAdaptiveThresholdTrigger(String(data.adaptive_threshold_trigger))
+    if (data.adaptive_relax_pct != null) setAdaptiveRelaxPct(String(data.adaptive_relax_pct))
     if (data.vwap_diff_min != null) setVwapDiffMin(String(data.vwap_diff_min))
     if (data.vwap_diff_max != null) setVwapDiffMax(String(data.vwap_diff_max))
     if (data.rsi_buy_min != null) setRsiBuyMin(String(data.rsi_buy_min))
@@ -555,6 +563,9 @@ export default function Settings() {
       hard_high_formed_mins_max: parseFloat(hardHighFormedMinsMax),
       hard_vol_vs_3avg_ratio_min: parseFloat(hardVolVs3AvgRatioMin),
       hard_relative_strength_min: parseFloat(hardRelativeStrengthMin),
+      adaptive_threshold_enabled: adaptiveThresholdEnabled,
+      adaptive_threshold_trigger: parseInt(adaptiveThresholdTrigger),
+      adaptive_relax_pct: parseFloat(adaptiveRelaxPct),
       vwap_diff_min: parseFloat(vwapDiffMin),
       vwap_diff_max: parseFloat(vwapDiffMax),
       rsi_buy_min: parseFloat(rsiBuyMin),
@@ -1315,6 +1326,29 @@ export default function Settings() {
                 <span className={labelText}>시장 대비 상대강도 최솟값 (%)</span>
                 <input type="number" step="0.5" value={hardRelativeStrengthMin} onChange={(e) => setHardRelativeStrengthMin(e.target.value)} className={inputCls} />
                 <p className={hintText}>0 = 비활성. 종목 등락률 − 시장 등락률. 이 미만이면 제외 (예: -2.0)</p>
+              </label>
+            </div>
+
+            <div className={`space-y-1 ${divider}`}>
+              <p className="text-xs font-semibold text-th-on-muted uppercase tracking-widest">Adaptive Threshold (Hard Rule 자동 완화)</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <label className="flex items-center gap-3 space-y-0">
+                <input type="checkbox" checked={adaptiveThresholdEnabled} onChange={(e) => setAdaptiveThresholdEnabled(e.target.checked)} className="w-4 h-4" />
+                <div>
+                  <span className={labelText}>Hard Rule 자동 완화 활성</span>
+                  <p className={hintText}>N회 연속 종목 선정 실패 시 hard rule을 일시 완화하고, 거래 성사 후 자동 복원</p>
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>발동 연속 실패 횟수</span>
+                <input type="number" step="1" min="1" value={adaptiveThresholdTrigger} onChange={(e) => setAdaptiveThresholdTrigger(e.target.value)} className={inputCls} />
+                <p className={hintText}>이 횟수 이상 연속 실패 시 완화 시작 (기본 10)</p>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>완화 비율 (%)</span>
+                <input type="number" step="5" min="5" max="50" value={adaptiveRelaxPct} onChange={(e) => setAdaptiveRelaxPct(e.target.value)} className={inputCls} />
+                <p className={hintText}>hard rule 임계값을 이 비율만큼 완화 (기본 20%)</p>
               </label>
             </div>
 
