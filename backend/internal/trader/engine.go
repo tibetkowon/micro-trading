@@ -537,6 +537,9 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 				rankings[i].HighFormedMinsAgo = info.HighFormedMinsAgo
 				rankings[i].VolTrend3 = info.VolTrend3
 				rankings[i].VolAtHigh = info.VolAtHigh
+				rankings[i].VolVs3AvgRatio = info.VolVs3AvgRatio
+				// 시장 대비 상대강도: 종목 등락률 - 시장 지수 등락률
+				rankings[i].RelativeStrengthVsMkt = math.Round((info.OpenPriceDiff-marketIndexDrop)*100) / 100
 				mu.Unlock()
 			}(i, r)
 		}
@@ -830,6 +833,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	rules.HardOpenPriceDiffMax = settings.HardOpenPriceDiffMax
 	rules.HardMACDBearishEnabled = settings.HardMACDBearishEnabled
 	rules.HardHighFormedMinsMax = settings.HardHighFormedMinsMax
+	rules.HardVolVs3AvgRatioMin = settings.HardVolVs3AvgRatioMin
+	rules.HardRelativeStrengthMin = settings.HardRelativeStrengthMin
 	rules.VWAPDiffMin = settings.VWAPDiffMin
 	rules.VWAPDiffMax = settings.VWAPDiffMax
 	rules.RSIBuyMin = settings.RSIBuyMin

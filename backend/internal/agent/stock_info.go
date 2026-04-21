@@ -49,6 +49,7 @@ type StockInfo struct {
 	HighFormedMinsAgo int          `json:"high_formed_mins_ago"`     // 당일 고점 형성 후 경과 시간(분); 0=데이터부족
 	VolTrend3         float64      `json:"vol_trend_3"`              // 최근 3봉 거래량 기울기 (-1=감소, 0=보합, 1=증가)
 	VolAtHigh         int64        `json:"vol_at_high"`              // 고점 형성 봉의 거래량; 0=데이터부족
+	VolVs3AvgRatio    float64      `json:"vol_vs_3avg_ratio"`        // 현재봉 거래량 / 직전 3봉 평균 거래량 (거래량 회복 비율); 0=데이터부족
 }
 
 // GetStockInfo fetches the latest price and computes all technical indicators:
@@ -196,6 +197,17 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 					if maxV > 0 {
 						slope := (v3 - v1) / maxV
 						info.VolTrend3 = math.Round(slope*100) / 100
+					}
+				}
+
+				// VolVs3AvgRatio: 현재봉 거래량 / 직전 3봉 평균 거래량 (거래량 회복 비율)
+				if len(candles5m) >= 4 {
+					cur := float64(candles5m[len(candles5m)-1].Volume)
+					avg3 := (float64(candles5m[len(candles5m)-2].Volume) +
+						float64(candles5m[len(candles5m)-3].Volume) +
+						float64(candles5m[len(candles5m)-4].Volume)) / 3
+					if avg3 > 0 {
+						info.VolVs3AvgRatio = math.Round(cur/avg3*100) / 100
 					}
 				}
 			}

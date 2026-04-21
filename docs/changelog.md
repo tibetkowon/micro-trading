@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-04-21 — 거래량 회복 필터 + 시장 대비 상대강도 필터 추가
+
+- **agent/stock_info.go**: `VolVs3AvgRatio` 필드 추가 — 현재 5분봉 거래량 / 직전 3봉 평균 거래량 (거래량 회복 비율)
+- **trader/claude.go**: `RankItem`에 `vol_vs_3avg_ratio`, `relative_strength_vs_market` 필드 추가; `TradingRules`에 `HardVolVs3AvgRatioMin`, `HardRelativeStrengthMin` 추가; Claude 프롬프트 Hard Rule 11·12 조건부 삽입; New Data Fields 가이드 설명 추가; `allowedSettingsKeys`에 두 키 등록
+- **trader/engine.go**: rankings 정보 수집 시 `VolVs3AvgRatio`·`RelativeStrengthVsMkt` 할당; TradingRules 빌드 시 새 설정 적용
+- **database/db.go**: `TradingSettings`에 두 필드 추가; `GetTradingSettings` 쿼리·파싱·반환값 확장; 기본값 `0` (비활성) INSERT OR IGNORE
+- **frontend/Settings.jsx**: Hard Rejection Rules 섹션에 "거래량 회복 비율 최솟값", "시장 대비 상대강도 최솟값" 입력 UI 추가
+
 ## 2026-04-13 — Settings UI Hard Rejection 신규 항목 추가 + AI 개선 제안 설정 누락 수정
 
 - **frontend/Settings.jsx**: MACD 베어리시 차단(토글), 고점 경과 시간 상한(분) UI 항목 추가

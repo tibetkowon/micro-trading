@@ -94,6 +94,8 @@ type RankItem struct {
 	NearBidAskRatio   float64            `json:"near_bid_ask_ratio,omitempty"`   // 현재가 ±2% 범위 내 매수/매도 비율
 	TopAskWall        float64            `json:"top_ask_wall,omitempty"`         // 가장 큰 매도 벽 위치 (현재가 대비 %)
 	TopAskWallSize    int64              `json:"top_ask_wall_size,omitempty"`    // 가장 큰 매도 벽 잔량
+	VolVs3AvgRatio        float64 `json:"vol_vs_3avg_ratio,omitempty"`         // 현재봉 거래량 / 직전 3봉 평균 거래량 (거래량 회복 비율)
+	RelativeStrengthVsMkt float64 `json:"relative_strength_vs_market,omitempty"` // 개별 종목 등락률 - 시장 지수 등락률
 }
 
 // TradingRules holds parameterized hard rejection and ranking criteria for Claude prompts.
@@ -111,6 +113,8 @@ type TradingRules struct {
 	HardOpenPriceDiffMax   float64
 	HardMACDBearishEnabled bool    // true이면 macd_line < macd_signal 진입 차단
 	HardHighFormedMinsMax  float64 // 고점 형성 후 경과 시간 상한(분). 0=비활성
+	HardVolVs3AvgRatioMin  float64 // 거래량 회복 비율 하한. 0=비활성
+	HardRelativeStrengthMin float64 // 시장 대비 상대강도 하한(%). 0=비활성
 	// 매수 구간 기준값
 	VWAPDiffMin    float64
 	VWAPDiffMax    float64
@@ -219,6 +223,14 @@ func (c *ClaudeClient) SelectStocks(
 	if rules.HardHighFormedMinsMax > 0 {
 		highFormedRule = fmt.Sprintf("10. high_formed_mins_ago > %.0f  → 고점 형성 후 너무 오래 경과(모멘텀 소진), skip\n", rules.HardHighFormedMinsMax)
 	}
+	volVs3AvgRule := ""
+	if rules.HardVolVs3AvgRatioMin > 0 {
+		volVs3AvgRule = fmt.Sprintf("11. vol_vs_3avg_ratio < %.2f  → 거래량 미회복(반등 동력 없음), skip\n", rules.HardVolVs3AvgRatioMin)
+	}
+	relStrengthRule := ""
+	if rules.HardRelativeStrengthMin != 0 {
+		relStrengthRule = fmt.Sprintf("12. relative_strength_vs_market < %.1f%%  → 시장 대비 약세(상대강도 부족), skip\n", rules.HardRelativeStrengthMin)
+	}
 	taxNote := ""
 	if rules.MinExpectedProfitPct > 0 {
 		stockTaxRate := rules.StockTaxRate
@@ -248,7 +260,7 @@ Current session phase: %s — %s
 6. strength < %.0f  → 매수 체결 우위 아님(매수세 소멸), skip
 7. rsi14 > %.0f  → 단기 과매수 상태에서 꺾이는 중, skip
 8. open_price_diff > %.0f%%  → 이미 너무 많이 오른 종목(설거지 위험), skip
-%s%s%s
+%s%s%s%s%s
 ## Ranking Criteria (for survivors):
 - 진정한 눌림목(True Pullback): vwap_diff between %.1f%% ~ %.1f%% (VWAP 지지선 부근 반등 대기); if vwap_diff is 0, use high_price_diff -1%% ~ -3%%
 - 건전한 거래량: 하락 시 prev_volume_ratio < 0.8 (거래량 감소) 및 net_buy_qty > 0 (순매수 우세)
@@ -264,6 +276,8 @@ Current session phase: %s — %s
 - near_bid_ask_ratio: 현재가 ±2%% 이내 실질 매수/매도압력 비율. bid_ask_ratio보다 신뢰도 높음.
 - top_ask_wall: 가장 큰 매도 벽의 현재가 대비 위치(%%양수=위). 목표가보다 낮은 위치에 큰 벽 존재 시 진입 자제.
 - top_ask_wall_size: 매도 벽 잔량. 클수록 돌파 어려움.
+- vol_vs_3avg_ratio: 현재봉 거래량 / 직전 3봉 평균 거래량. 1.0 이상=거래량 회복 중(반등 동력), 0.5 미만=거래량 소진 상태.
+- relative_strength_vs_market: 개별 종목 등락률 - 시장 지수 등락률. 양수=시장 대비 강세, 음수=시장 대비 약세.
 
 Ranking data (JSON format; vwap_diff=0 means VWAP unavailable):
 %s
@@ -285,6 +299,8 @@ Best entry first:
 		taxNote,
 		macdBearishRule,
 		highFormedRule,
+		volVs3AvgRule,
+		relStrengthRule,
 		rules.VWAPDiffMin, rules.VWAPDiffMax,
 		rules.BidAskRatioMin,
 		rules.RSIBuyMin, rules.RSIBuyMax,
@@ -379,6 +395,8 @@ var allowedSettingsKeys = map[string]bool{
 	"min_expected_profit_pct":         true,
 	"momentum_score_min":              true,
 	"stagnation_partial_exit_enabled": true, "stagnation_bid_ask_sell_threshold": true,
+	"hard_vol_vs_3avg_ratio_min":  true,
+	"hard_relative_strength_min":  true,
 }
 
 // AnalyzeDailyReport sends the daily report and current settings to Claude for optimization suggestions.

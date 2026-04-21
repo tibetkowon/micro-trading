@@ -85,8 +85,10 @@ type TradingSettings struct {
 	HardStrengthMin        float64 // 체결강도 하한 (이하 → 매수세 소멸 스킵). 기본 100.0
 	HardRSIMax             float64 // RSI 상한 (이상 → 과매수 스킵). 기본 70.0
 	HardOpenPriceDiffMax   float64 // 시가 대비 상승률 상한 (이상 → 상한가권 스킵). 기본 15.0
-	HardMACDBearishEnabled bool    // true이면 macd_line < macd_signal 진입 차단. 기본 false
-	HardHighFormedMinsMax  float64 // 고점 형성 후 경과 시간 상한(분). 초과 시 모멘텀 소진으로 스킵. 0=비활성
+	HardMACDBearishEnabled  bool    // true이면 macd_line < macd_signal 진입 차단. 기본 false
+	HardHighFormedMinsMax   float64 // 고점 형성 후 경과 시간 상한(분). 초과 시 모멘텀 소진으로 스킵. 0=비활성
+	HardVolVs3AvgRatioMin   float64 // 거래량 회복 비율 최솟값. 현재봉/직전3봉 평균 거래량. 0=비활성
+	HardRelativeStrengthMin float64 // 시장 대비 상대강도 최솟값(%). 종목등락률-시장등락률. 0=비활성
 	// AI 매수 구간 기준값
 	VWAPDiffMin    float64 // VWAP 대비 이격도 하한 (%). 기본 0.0
 	VWAPDiffMax    float64 // VWAP 대비 이격도 상한 (%). 기본 1.5
@@ -400,6 +402,8 @@ func (db *DB) migrate() error {
 		{"hard_open_price_diff_max", "15.0"},
 		{"hard_macd_bearish_enabled", "false"},
 		{"hard_high_formed_mins_max", "0"},
+		{"hard_vol_vs_3avg_ratio_min", "0"},
+		{"hard_relative_strength_min", "0"},
 		{"vwap_diff_min", "0.0"},
 		{"vwap_diff_max", "1.5"},
 		{"rsi_buy_min", "40.0"},
@@ -470,6 +474,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'hard_high_price_diff_max','hard_high_price_diff_min',`+
 			`'hard_prev_vol_ratio_max','hard_strength_min','hard_rsi_max','hard_open_price_diff_max',`+
 			`'hard_macd_bearish_enabled','hard_high_formed_mins_max',`+
+			`'hard_vol_vs_3avg_ratio_min','hard_relative_strength_min',`+
 			`'vwap_diff_min','vwap_diff_max','rsi_buy_min','rsi_buy_max','bid_ask_ratio_min',`+
 			`'min_market_cap','min_expected_profit_pct',`+
 			`'max_claude_candidates',`+
@@ -658,6 +663,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		HardOpenPriceDiffMax:          hardOpenPriceDiffMax,
 		HardMACDBearishEnabled:        vals["hard_macd_bearish_enabled"] == "true",
 		HardHighFormedMinsMax:         f64("hard_high_formed_mins_max"),
+		HardVolVs3AvgRatioMin:         f64("hard_vol_vs_3avg_ratio_min"),
+		HardRelativeStrengthMin:       f64("hard_relative_strength_min"),
 		VWAPDiffMin:                   f64("vwap_diff_min"),
 		VWAPDiffMax:                   vwapDiffMax,
 		RSIBuyMin:                     rsiBuyMin,

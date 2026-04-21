@@ -326,6 +326,8 @@ export default function Settings() {
   const [hardOpenPriceDiffMax, setHardOpenPriceDiffMax] = useState('15.0')
   const [hardMacdBearishEnabled, setHardMacdBearishEnabled] = useState(false)
   const [hardHighFormedMinsMax, setHardHighFormedMinsMax] = useState('0')
+  const [hardVolVs3AvgRatioMin, setHardVolVs3AvgRatioMin] = useState('0')
+  const [hardRelativeStrengthMin, setHardRelativeStrengthMin] = useState('0')
 
   // ── AI 매매 기준값 — 랭킹 기준 ──
   const [vwapDiffMin, setVwapDiffMin] = useState('0.0')
@@ -427,6 +429,8 @@ export default function Settings() {
     if (data.hard_open_price_diff_max != null) setHardOpenPriceDiffMax(String(data.hard_open_price_diff_max))
     if (data.hard_macd_bearish_enabled != null) setHardMacdBearishEnabled(data.hard_macd_bearish_enabled)
     if (data.hard_high_formed_mins_max != null) setHardHighFormedMinsMax(String(data.hard_high_formed_mins_max))
+    if (data.hard_vol_vs_3avg_ratio_min != null) setHardVolVs3AvgRatioMin(String(data.hard_vol_vs_3avg_ratio_min))
+    if (data.hard_relative_strength_min != null) setHardRelativeStrengthMin(String(data.hard_relative_strength_min))
     if (data.vwap_diff_min != null) setVwapDiffMin(String(data.vwap_diff_min))
     if (data.vwap_diff_max != null) setVwapDiffMax(String(data.vwap_diff_max))
     if (data.rsi_buy_min != null) setRsiBuyMin(String(data.rsi_buy_min))
@@ -549,6 +553,8 @@ export default function Settings() {
       hard_open_price_diff_max: parseFloat(hardOpenPriceDiffMax),
       hard_macd_bearish_enabled: hardMacdBearishEnabled,
       hard_high_formed_mins_max: parseFloat(hardHighFormedMinsMax),
+      hard_vol_vs_3avg_ratio_min: parseFloat(hardVolVs3AvgRatioMin),
+      hard_relative_strength_min: parseFloat(hardRelativeStrengthMin),
       vwap_diff_min: parseFloat(vwapDiffMin),
       vwap_diff_max: parseFloat(vwapDiffMax),
       rsi_buy_min: parseFloat(rsiBuyMin),
@@ -1299,6 +1305,16 @@ export default function Settings() {
                 <span className={labelText}>고점 경과 시간 상한 (분)</span>
                 <input type="number" step="1" min="0" value={hardHighFormedMinsMax} onChange={(e) => setHardHighFormedMinsMax(e.target.value)} className={inputCls} />
                 <p className={hintText}>0 = 비활성. 고점 형성 후 이 시간 초과 시 제외 (예: 60)</p>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>거래량 회복 비율 최솟값</span>
+                <input type="number" step="0.1" min="0" value={hardVolVs3AvgRatioMin} onChange={(e) => setHardVolVs3AvgRatioMin(e.target.value)} className={inputCls} />
+                <p className={hintText}>0 = 비활성. 현재봉/직전 3봉 평균 거래량. 이 미만이면 제외 (예: 0.5)</p>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>시장 대비 상대강도 최솟값 (%)</span>
+                <input type="number" step="0.5" value={hardRelativeStrengthMin} onChange={(e) => setHardRelativeStrengthMin(e.target.value)} className={inputCls} />
+                <p className={hintText}>0 = 비활성. 종목 등락률 − 시장 등락률. 이 미만이면 제외 (예: -2.0)</p>
               </label>
             </div>
 
