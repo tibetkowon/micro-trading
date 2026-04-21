@@ -377,7 +377,7 @@ func (c *ClaudeClient) AnalyzeNoTradeDay(
 	settingsJSON, _ := json.MarshalIndent(currentSettings, "", "  ")
 
 	prompt := fmt.Sprintf(`You are an expert algorithmic trading analyst. Today the Korean day-trading system executed 0 completed trades.
-Analyze why no trades occurred and suggest specific filter adjustments to enable more opportunities.
+Analyze why no trades occurred and suggest specific settings adjustments to enable more trading opportunities.
 
 ## No-Trade Day Summary
 %s
@@ -385,28 +385,33 @@ Analyze why no trades occurred and suggest specific filter adjustments to enable
 ## Current System Settings
 %s
 
-## Your Task
-Identify which filters are most likely blocking trades and suggest conservative relaxations.
+## Context — How to interpret the summary fields
+- filter_rejection_reasons: server-side pre-filters that blocked stocks BEFORE Claude's own selection step.
+  - "현금 부족" → insufficient cash. Fix: lower max_positions or order_amount_pct.
+  - "거래대금 미달" → min_trading_value too high. Fix: lower min_trading_value.
+  - "Hard Rule" fields (hard_*) → Claude prompt hard rejection rules. Fix: relax the relevant hard_* setting.
+- selection_fail_reasons: why Claude's own stock-selection calls failed.
+  - "조건에 맞는 종목 없음" → Claude found no stock passing its Hard Rejection Rules in the prompt.
+    Fix: relax hard_strength_min, hard_high_price_diff_max, hard_rsi_max, etc.
 
-Guidelines:
-- For "settings" category: suggest changes to keys from the Current System Settings. At most 4 changes.
-- Prioritize filters that appear frequently in filter_rejection_reasons.
-- Each suggestion MUST include specific evidence from the summary data above.
-- If ranking_attempts is 0 (market holiday or system offline), return [].
+## Your Task
+1. Identify the top 1-2 root causes from the summary.
+2. Suggest 2-4 conservative settings changes. Each change must map to a key in Current System Settings.
+3. Always output at least 1 suggestion when ranking_attempts > 0.
 
 Respond with ONLY valid JSON — no markdown, no explanation:
 {
-  "overall_assessment": "2-3 sentence summary of why no trades occurred and which filters to loosen",
+  "overall_assessment": "2-3 sentence summary in Korean of why no trades occurred and key bottlenecks",
   "suggestions": [
     {
       "id": "1",
       "category": "settings",
-      "key": "settings_key_name",
+      "key": "exact_settings_key",
       "name": "",
       "type": "",
-      "current_value": "current value string",
-      "suggested_value": "new value string",
-      "comment": "specific rejection evidence from today's summary"
+      "current_value": "current value from settings",
+      "suggested_value": "new value",
+      "comment": "evidence from summary (Korean ok)"
     }
   ]
 }`, summaryJSON, string(settingsJSON))
@@ -416,7 +421,7 @@ Respond with ONLY valid JSON — no markdown, no explanation:
 		var e error
 		msg, e = c.client.Messages.New(ctx, anthropic.MessageNewParams{
 			Model:     anthropic.Model(c.model),
-			MaxTokens: 1024,
+			MaxTokens: 2048,
 			Messages: []anthropic.MessageParam{
 				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 			},

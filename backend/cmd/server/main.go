@@ -134,6 +134,35 @@ func main() {
 		go runMarketScheduler(ctx, db, kisClient, wsClient, mon, tokenManager, tradingEngine, claudeClient, mstStore)
 	}
 
+	// --- 서버 시작 시 당일 optimization report 누락 여부 확인 ---
+	// 15:20 이후 서버 재시작 등으로 스케줄러가 리포트를 생성하지 못한 경우 자동 보완.
+	if claudeClient != nil {
+		go func() {
+			kst, _ := time.LoadLocation("Asia/Seoul")
+			now := time.Now().In(kst)
+			hhmm := now.Hour()*100 + now.Minute()
+			// 15:20 이후 ~ 다음날 09:00 전까지만 체크 (장 중 재시작은 스케줄러가 처리)
+			if hhmm >= 1520 || hhmm < 900 {
+				date := now.Format("2006-01-02")
+				// 자정 이후이면 어제 날짜로
+				if hhmm < 900 {
+					date = now.AddDate(0, 0, -1).Format("2006-01-02")
+				}
+				existing, err := db.GetOptimizationReportByDate(ctx, date)
+				if err != nil || existing == nil {
+					logger.Info("server startup: no optimization report found, generating now",
+						map[string]any{"date": date})
+					if genErr := report.GenerateOptimizationSuggestions(ctx, db, claudeClient, date); genErr != nil {
+						logger.Error("server startup: optimization generation failed",
+							map[string]any{"error": genErr.Error()})
+					} else {
+						logger.Info("server startup: optimization report generated", map[string]any{"date": date})
+					}
+				}
+			}
+		}()
+	}
+
 	// --- Price consumer ---
 	if wsClient != nil {
 		go mon.StartPriceConsumer(ctx)
