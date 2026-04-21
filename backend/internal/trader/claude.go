@@ -87,15 +87,15 @@ type RankItem struct {
 	TradingValue      float64 `json:"trading_value,omitempty"`       // 당일 거래대금 (원)
 	ApplicableTaxRate float64 `json:"applicable_tax_rate,omitempty"` // 0.0=ETF비과세, 0.002=주식
 	// 데이터 품질 개선 필드 (1~5순위)
-	RecentCandles     []agent.CandleSnap `json:"recent_candles,omitempty"`       // 최근 5개 5분봉 (구→신), dir: U/D/=
-	HighFormedMinsAgo int                `json:"high_formed_mins_ago,omitempty"` // 당일 고점 형성 후 경과 시간(분)
-	VolTrend3         float64            `json:"vol_trend_3,omitempty"`          // 최근 3봉 거래량 기울기 (-1~1, 음수=감소)
-	VolAtHigh         int64              `json:"vol_at_high,omitempty"`          // 고점 형성 봉 거래량
-	NearBidAskRatio   float64            `json:"near_bid_ask_ratio,omitempty"`   // 현재가 ±2% 범위 내 매수/매도 비율
-	TopAskWall        float64            `json:"top_ask_wall,omitempty"`         // 가장 큰 매도 벽 위치 (현재가 대비 %)
-	TopAskWallSize    int64              `json:"top_ask_wall_size,omitempty"`    // 가장 큰 매도 벽 잔량
-	VolVs3AvgRatio        float64 `json:"vol_vs_3avg_ratio,omitempty"`         // 현재봉 거래량 / 직전 3봉 평균 거래량 (거래량 회복 비율)
-	RelativeStrengthVsMkt float64 `json:"relative_strength_vs_market,omitempty"` // 개별 종목 등락률 - 시장 지수 등락률
+	RecentCandles         []agent.CandleSnap `json:"recent_candles,omitempty"`              // 최근 5개 5분봉 (구→신), dir: U/D/=
+	HighFormedMinsAgo     int                `json:"high_formed_mins_ago,omitempty"`        // 당일 고점 형성 후 경과 시간(분)
+	VolTrend3             float64            `json:"vol_trend_3,omitempty"`                 // 최근 3봉 거래량 기울기 (-1~1, 음수=감소)
+	VolAtHigh             int64              `json:"vol_at_high,omitempty"`                 // 고점 형성 봉 거래량
+	NearBidAskRatio       float64            `json:"near_bid_ask_ratio,omitempty"`          // 현재가 ±2% 범위 내 매수/매도 비율
+	TopAskWall            float64            `json:"top_ask_wall,omitempty"`                // 가장 큰 매도 벽 위치 (현재가 대비 %)
+	TopAskWallSize        int64              `json:"top_ask_wall_size,omitempty"`           // 가장 큰 매도 벽 잔량
+	VolVs3AvgRatio        float64            `json:"vol_vs_3avg_ratio,omitempty"`           // 현재봉 거래량 / 직전 3봉 평균 거래량 (거래량 회복 비율)
+	RelativeStrengthVsMkt float64            `json:"relative_strength_vs_market,omitempty"` // 개별 종목 등락률 - 시장 지수 등락률
 }
 
 // TradingRules holds parameterized hard rejection and ranking criteria for Claude prompts.
@@ -103,17 +103,17 @@ type TradingRules struct {
 	// 런타임 시장 상태
 	MarketIndexDrop float64 // 현재 지수 등락률 (%) — 음수=하락
 	// 하드 거부 기준값
-	HardDisparityM5Min     float64
-	HardDisparityM5Max     float64
-	HardHighPriceDiffMax   float64
-	HardHighPriceDiffMin   float64
-	HardPrevVolRatioMax    float64
-	HardStrengthMin        float64
-	HardRSIMax             float64
-	HardOpenPriceDiffMax   float64
-	HardMACDBearishEnabled bool    // true이면 macd_line < macd_signal 진입 차단
-	HardHighFormedMinsMax  float64 // 고점 형성 후 경과 시간 상한(분). 0=비활성
-	HardVolVs3AvgRatioMin  float64 // 거래량 회복 비율 하한. 0=비활성
+	HardDisparityM5Min      float64
+	HardDisparityM5Max      float64
+	HardHighPriceDiffMax    float64
+	HardHighPriceDiffMin    float64
+	HardPrevVolRatioMax     float64
+	HardStrengthMin         float64
+	HardRSIMax              float64
+	HardOpenPriceDiffMax    float64
+	HardMACDBearishEnabled  bool    // true이면 macd_line < macd_signal 진입 차단
+	HardHighFormedMinsMax   float64 // 고점 형성 후 경과 시간 상한(분). 0=비활성
+	HardVolVs3AvgRatioMin   float64 // 거래량 회복 비율 하한. 0=비활성
 	HardRelativeStrengthMin float64 // 시장 대비 상대강도 하한(%). 0=비활성
 	// 매수 구간 기준값
 	VWAPDiffMin    float64
@@ -395,8 +395,8 @@ var allowedSettingsKeys = map[string]bool{
 	"min_expected_profit_pct":         true,
 	"momentum_score_min":              true,
 	"stagnation_partial_exit_enabled": true, "stagnation_bid_ask_sell_threshold": true,
-	"hard_vol_vs_3avg_ratio_min":  true,
-	"hard_relative_strength_min":  true,
+	"hard_vol_vs_3avg_ratio_min": true,
+	"hard_relative_strength_min": true,
 }
 
 // AnalyzeDailyReport sends the daily report and current settings to Claude for optimization suggestions.
