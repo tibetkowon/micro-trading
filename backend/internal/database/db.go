@@ -793,6 +793,62 @@ func (db *DB) GetServiceLogs(ctx context.Context, source string, limit int) ([]m
 	return logs, nil
 }
 
+// GetTodaySelectionLogs returns today's (KST) selection log entries.
+// candidates and llm_result columns are omitted to minimize memory usage.
+func (db *DB) GetTodaySelectionLogs(ctx context.Context) ([]models.TraderSelectionLog, error) {
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	today := time.Now().In(kst).Format("2006-01-02")
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, timestamp, sent_count, selected_code, fail_reason, market
+		 FROM trader_selection_logs
+		 WHERE date(timestamp) = date(?)
+		 ORDER BY id ASC`, today)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var logs []models.TraderSelectionLog
+	for rows.Next() {
+		var l models.TraderSelectionLog
+		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.SelectedCode, &l.FailReason, &l.Market); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	if logs == nil {
+		logs = []models.TraderSelectionLog{}
+	}
+	return logs, nil
+}
+
+// GetTodayRankingLogs returns today's (KST) ranking log entries.
+// result_stocks column is omitted to minimize memory usage.
+func (db *DB) GetTodayRankingLogs(ctx context.Context) ([]models.TraderRankingLog, error) {
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	today := time.Now().In(kst).Format("2006-01-02")
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, timestamp, ranking_condition, intersection_count, filtered_stocks, error_message, market
+		 FROM trader_ranking_logs
+		 WHERE date(timestamp) = date(?)
+		 ORDER BY id ASC`, today)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var logs []models.TraderRankingLog
+	for rows.Next() {
+		var l models.TraderRankingLog
+		if err := rows.Scan(&l.ID, &l.Timestamp, &l.RankingCondition, &l.IntersectionCount, &l.FilteredStocks, &l.ErrorMessage, &l.Market); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	if logs == nil {
+		logs = []models.TraderRankingLog{}
+	}
+	return logs, nil
+}
+
 // GetTodayRealizedPnLByMarket returns today's realized P&L for AGENT SELL orders
 // filtered by market ("KR" or "US"). Returns 0 on error or no qualifying orders.
 func (db *DB) GetTodayRealizedPnLByMarket(ctx context.Context, market string) float64 {

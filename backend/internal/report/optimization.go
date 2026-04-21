@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
@@ -297,8 +298,8 @@ func GenerateOptimizationSuggestions(ctx context.Context, db *database.DB, claud
 	dr := reports[0]
 
 	if dr.TotalTrades == 0 {
-		logger.Info("optimization: no completed trades today, skipping analysis", map[string]any{"date": date})
-		return nil
+		logger.Info("optimization: no completed trades today, running no-trade analysis", map[string]any{"date": date})
+		return generateNoTradeReport(ctx, db, claude, date)
 	}
 
 	applyMode := db.GetSetting(ctx, "optimization_apply_mode")
@@ -380,4 +381,116 @@ func GenerateOptimizationSuggestions(ctx context.Context, db *database.DB, claud
 	}
 
 	return nil
+}
+
+// filteredEntry is used to parse the filter_reason field from filtered_stocks JSON.
+type filteredEntry struct {
+	FilterReason string `json:"filter_reason"`
+}
+
+// generateNoTradeReport collects today's ranking/selection log summaries and calls Claude
+// for filter-loosening suggestions on a 0-trade day.
+func generateNoTradeReport(ctx context.Context, db *database.DB, claude *trader.ClaudeClient, date string) error {
+	rankLogs, _ := db.GetTodayRankingLogs(ctx)
+	selLogs, _ := db.GetTodaySelectionLogs(ctx)
+
+	// No activity at all → market holiday or system offline
+	if len(rankLogs) == 0 && len(selLogs) == 0 {
+		logger.Info("optimization: no activity logs today, skipping no-trade analysis", map[string]any{"date": date})
+		return nil
+	}
+
+	type noTradeSummary struct {
+		Date              string         `json:"date"`
+		RankingAttempts   int            `json:"ranking_attempts"`
+		AvgCandidates     float64        `json:"avg_candidates_passed"`
+		FilterReasons     map[string]int `json:"filter_rejection_reasons"`
+		SelectionAttempts int            `json:"selection_attempts"`
+		FailReasons       []string       `json:"selection_fail_reasons"`
+	}
+	summary := noTradeSummary{
+		Date:            date,
+		RankingAttempts: len(rankLogs),
+		FilterReasons:   map[string]int{},
+	}
+
+	// Aggregate filter rejection reasons from ranking logs
+	var totalCandidates int
+	for _, rl := range rankLogs {
+		totalCandidates += rl.IntersectionCount
+		var entries []filteredEntry
+		if rl.FilteredStocks != "" {
+			_ = json.Unmarshal([]byte(rl.FilteredStocks), &entries)
+		}
+		for _, e := range entries {
+			reason := normalizeFilterReason(e.FilterReason)
+			if reason != "" {
+				summary.FilterReasons[reason]++
+			}
+		}
+	}
+	if len(rankLogs) > 0 {
+		summary.AvgCandidates = float64(totalCandidates) / float64(len(rankLogs))
+	}
+
+	// Collect unique fail reasons from selection logs
+	seen := map[string]bool{}
+	for _, sl := range selLogs {
+		summary.SelectionAttempts++
+		if sl.FailReason != "" && !seen[sl.FailReason] {
+			summary.FailReasons = append(summary.FailReasons, sl.FailReason)
+			seen[sl.FailReason] = true
+		}
+	}
+
+	summaryJSON, _ := json.MarshalIndent(summary, "", "  ")
+	currentSettings := collectCurrentSettings(ctx, db)
+
+	logger.Info("optimization: starting no-trade Claude analysis", map[string]any{
+		"date": date, "ranking_attempts": summary.RankingAttempts,
+	})
+
+	result, err := claude.AnalyzeNoTradeDay(ctx, string(summaryJSON), currentSettings)
+	if err != nil {
+		return fmt.Errorf("Claude no-trade analysis: %w", err)
+	}
+
+	for i := range result.Suggestions {
+		result.Suggestions[i].ID = strconv.Itoa(i + 1)
+		result.Suggestions[i].Status = "PENDING"
+	}
+
+	applyMode := db.GetSetting(ctx, "optimization_apply_mode")
+	if applyMode == "" {
+		applyMode = "all_manual"
+	}
+
+	suggestionsJSON, _ := json.Marshal(result.Suggestions)
+	optReport := models.OptimizationReport{
+		Date:              date,
+		OverallAssessment: result.OverallAssessment,
+		Suggestions:       string(suggestionsJSON),
+		ApplyModeSnapshot: applyMode,
+	}
+
+	if err := db.UpsertOptimizationReport(ctx, optReport); err != nil {
+		return fmt.Errorf("UpsertOptimizationReport (no-trade): %w", err)
+	}
+
+	logger.Info("optimization: no-trade report saved", map[string]any{
+		"date": date, "suggestions": len(result.Suggestions),
+	})
+	return nil
+}
+
+// normalizeFilterReason extracts the core filter category from a detailed rejection reason string.
+// e.g., "RSI 과열 (85.3 >= 80.0)" → "RSI 과열"
+func normalizeFilterReason(reason string) string {
+	if idx := strings.Index(reason, "("); idx > 0 {
+		return strings.TrimSpace(reason[:idx])
+	}
+	if len(reason) > 30 {
+		return reason[:30]
+	}
+	return strings.TrimSpace(reason)
 }

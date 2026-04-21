@@ -364,6 +364,98 @@ Best entry first:
 }
 
 // ─────────────────────────────────────────────────────────
+// No-Trade Day Analysis
+// ─────────────────────────────────────────────────────────
+
+// AnalyzeNoTradeDay sends a compact no-trade summary to Claude and returns filter-loosening suggestions.
+// summaryJSON is a small JSON built from today's ranking/selection logs (no candidates data).
+func (c *ClaudeClient) AnalyzeNoTradeDay(
+	ctx context.Context,
+	summaryJSON string,
+	currentSettings map[string]string,
+) (*analysisResponse, error) {
+	settingsJSON, _ := json.MarshalIndent(currentSettings, "", "  ")
+
+	prompt := fmt.Sprintf(`You are an expert algorithmic trading analyst. Today the Korean day-trading system executed 0 completed trades.
+Analyze why no trades occurred and suggest specific filter adjustments to enable more opportunities.
+
+## No-Trade Day Summary
+%s
+
+## Current System Settings
+%s
+
+## Your Task
+Identify which filters are most likely blocking trades and suggest conservative relaxations.
+
+Guidelines:
+- For "settings" category: suggest changes to keys from the Current System Settings. At most 4 changes.
+- Prioritize filters that appear frequently in filter_rejection_reasons.
+- Each suggestion MUST include specific evidence from the summary data above.
+- If ranking_attempts is 0 (market holiday or system offline), return [].
+
+Respond with ONLY valid JSON — no markdown, no explanation:
+{
+  "overall_assessment": "2-3 sentence summary of why no trades occurred and which filters to loosen",
+  "suggestions": [
+    {
+      "id": "1",
+      "category": "settings",
+      "key": "settings_key_name",
+      "name": "",
+      "type": "",
+      "current_value": "current value string",
+      "suggested_value": "new value string",
+      "comment": "specific rejection evidence from today's summary"
+    }
+  ]
+}`, summaryJSON, string(settingsJSON))
+
+	var msg *anthropic.Message
+	if retryErr := callWithRetry(ctx, 3, func() error {
+		var e error
+		msg, e = c.client.Messages.New(ctx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(c.model),
+			MaxTokens: 1024,
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			},
+		})
+		return e
+	}); retryErr != nil {
+		return nil, fmt.Errorf("claude AnalyzeNoTradeDay API error: %w", retryErr)
+	}
+	if len(msg.Content) == 0 {
+		return nil, fmt.Errorf("claude returned empty response")
+	}
+
+	raw := strings.TrimSpace(msg.Content[0].AsText().Text)
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start == -1 || end == -1 || end <= start {
+		return nil, fmt.Errorf("claude no-trade response has no JSON (raw: %s)", raw)
+	}
+	raw = raw[start : end+1]
+
+	var result analysisResponse
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return nil, fmt.Errorf("claude no-trade response parse error: %w (raw: %s)", err, raw)
+	}
+
+	// Filter unknown settings keys (same safety as AnalyzeDailyReport)
+	filtered := result.Suggestions[:0]
+	for _, s := range result.Suggestions {
+		if s.Category == "settings" && !allowedSettingsKeys[s.Key] {
+			continue
+		}
+		filtered = append(filtered, s)
+	}
+	result.Suggestions = filtered
+
+	return &result, nil
+}
+
+// ─────────────────────────────────────────────────────────
 // Daily Report Analysis
 // ─────────────────────────────────────────────────────────
 
