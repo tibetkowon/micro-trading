@@ -257,8 +257,9 @@ func (c *Client) GetIndexPrice(ctx context.Context, indexCode string) (*StockPri
 	// KIS 업종지수 응답 필드는 stock과 다른 접두사를 사용함.
 	var result struct {
 		Output struct {
-			CurrentPrice string `json:"bstp_nmix_prpr"` // 업종지수 현재가
-			DayOpen      string `json:"bstp_nmix_oprc"` // 업종지수 시가
+			CurrentPrice      string `json:"bstp_nmix_prpr"`    // 업종지수 현재가
+			DayOpen           string `json:"bstp_nmix_oprc"`    // 업종지수 시가
+			PrevDayChangeRate string `json:"bstp_nmix_prdy_ctrt"` // 전일대비율(%)
 		} `json:"output"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
@@ -268,6 +269,7 @@ func (c *Client) GetIndexPrice(ctx context.Context, indexCode string) (*StockPri
 		StockCode:    indexCode,
 		CurrentPrice: result.Output.CurrentPrice,
 		DayOpen:      result.Output.DayOpen,
+		ChangeRate:   result.Output.PrevDayChangeRate,
 	}, nil
 }
 

@@ -122,6 +122,11 @@ type TradingSettings struct {
 	AdaptiveThresholdTrigger int     // 완화 발동 연속 실패 횟수 (기본 10)
 	AdaptiveRelaxPct         float64 // hard rule 완화 비율 % (기본 20.0)
 	AdaptiveRelaxActive      bool    // 런타임 플래그 — 현재 완화 적용 중 (DB에 저장 안 함)
+	// Market Phase Detection — 시장 국면 감지 자동 완화
+	MarketPhaseRelaxEnabled     bool    // 약세장 감지 시 hard rule 완화 활성화 (기본 false)
+	MarketPhaseIndexDropTrigger float64 // 완화 발동 전일 대비 하락률 기준 % (기본 -1.0)
+	MarketPhaseRelaxPct         float64 // hard rule 완화 비율 % (기본 15.0)
+	MarketPhaseRelaxActive      bool    // 런타임 플래그 — DB에 저장 안 함
 }
 
 // DB wraps the sql.DB connection.
@@ -437,6 +442,10 @@ func (db *DB) migrate() error {
 		{"adaptive_threshold_enabled", "false"},
 		{"adaptive_threshold_trigger", "10"},
 		{"adaptive_relax_pct", "20"},
+		// Market Phase Detection
+		{"market_phase_relax_enabled", "false"},
+		{"market_phase_index_drop_trigger", "-1.0"},
+		{"market_phase_relax_pct", "15"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -491,7 +500,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'stagnation_partial_exit_enabled','stagnation_bid_ask_sell_threshold',`+
 			`'partial_tp_enabled','partial_tp_pct','partial_tp_ratio','partial_tp_raise_stop',`+
 			`'scoring_bidask_weight','scoring_strength_weight','scoring_macd_weight','scoring_rsi_weight','scoring_vwap_weight',`+
-			`'adaptive_threshold_enabled','adaptive_threshold_trigger','adaptive_relax_pct'`+
+			`'adaptive_threshold_enabled','adaptive_threshold_trigger','adaptive_relax_pct',`+
+			`'market_phase_relax_enabled','market_phase_index_drop_trigger','market_phase_relax_pct'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -701,6 +711,10 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		AdaptiveThresholdEnabled: vals["adaptive_threshold_enabled"] == "true",
 		AdaptiveThresholdTrigger: i64Default("adaptive_threshold_trigger", 10),
 		AdaptiveRelaxPct:         f64Default("adaptive_relax_pct", 20.0),
+		// Market Phase Detection
+		MarketPhaseRelaxEnabled:     vals["market_phase_relax_enabled"] == "true",
+		MarketPhaseIndexDropTrigger: f64Default("market_phase_index_drop_trigger", -1.0),
+		MarketPhaseRelaxPct:         f64Default("market_phase_relax_pct", 15.0),
 	}, nil
 }
 

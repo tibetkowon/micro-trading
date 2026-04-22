@@ -130,6 +130,9 @@ type TradingRules struct {
 	AdaptiveRelaxActive bool    // true이면 완화 중 — 프롬프트에 경고 메모 삽입
 	AdaptiveRelaxPct    float64 // 현재 완화 비율 (로그용)
 	AdaptiveFailures    int     // 현재 연속 실패 횟수 (로그용)
+	// Market Phase Detection
+	MarketPhaseRelaxActive bool    // true이면 약세장 완화 중 — 프롬프트에 경고 메모 삽입
+	MarketPhaseRelaxPct    float64 // 시장 국면 완화 비율 (로그용)
 }
 
 // DefaultTradingRules returns safe default values (matches the hard-coded prompt values).
@@ -224,6 +227,11 @@ func (c *ClaudeClient) SelectStocks(
 		adaptiveNote = fmt.Sprintf(
 			"⚠️ ADAPTIVE MODE: Hard rules have been relaxed by %.0f%% after %d consecutive failures. Be more lenient than usual.\n\n",
 			rules.AdaptiveRelaxPct, rules.AdaptiveFailures)
+	}
+	if rules.MarketPhaseRelaxActive {
+		adaptiveNote += fmt.Sprintf(
+			"⚠️ BEAR MARKET DETECTED: Hard rules relaxed %.0f%% (market phase — 전일 대비 지수 하락). Apply loosened thresholds above.\n\n",
+			rules.MarketPhaseRelaxPct)
 	}
 
 	// Hard Rejection Rule 9·10 조건부 생성

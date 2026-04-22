@@ -154,30 +154,35 @@ func (e *Engine) SoldCh() chan<- string {
 	return e.soldCh
 }
 
-// relaxTradingSettings returns a copy of settings with hard rules relaxed by AdaptiveRelaxPct%.
+// relaxTradingSettings returns a copy of settings with hard rules relaxed by pct%.
 // Thresholds that are 0 (disabled) are left unchanged.
 // HardMACDBearishEnabled is turned off during relaxation.
-func relaxTradingSettings(s database.TradingSettings) database.TradingSettings {
-	pct := s.AdaptiveRelaxPct / 100.0
+// setAdaptiveActive=true sets AdaptiveRelaxActive (연속 실패 완화); false sets MarketPhaseRelaxActive (시장 국면 완화).
+func relaxTradingSettings(s database.TradingSettings, pct float64, setAdaptiveActive bool) database.TradingSettings {
+	rate := pct / 100.0
 	// 하한값 → 낮추기 (더 관대)
 	if s.HardStrengthMin > 0 {
-		s.HardStrengthMin *= (1 - pct)
+		s.HardStrengthMin *= (1 - rate)
 	}
 	if s.HardDisparityM5Min != 0 {
-		s.HardDisparityM5Min *= (1 + pct) // 음수이므로 절대값이 커짐
+		s.HardDisparityM5Min *= (1 + rate) // 음수이므로 절대값이 커짐
 	}
 	// 상한값 → 높이기 (더 관대)
-	s.HardDisparityM5Max *= (1 + pct)
+	s.HardDisparityM5Max *= (1 + rate)
 	if s.HardHighPriceDiffMax != 0 {
-		s.HardHighPriceDiffMax *= (1 - pct) // 음수이므로 절대값이 작아짐
+		s.HardHighPriceDiffMax *= (1 - rate) // 음수이므로 절대값이 작아짐
 	}
 	if s.HardRSIMax > 0 {
-		s.HardRSIMax *= (1 + pct)
+		s.HardRSIMax *= (1 + rate)
 	}
 	// MACD 차단 해제
 	s.HardMACDBearishEnabled = false
 	// 런타임 플래그
-	s.AdaptiveRelaxActive = true
+	if setAdaptiveActive {
+		s.AdaptiveRelaxActive = true
+	} else {
+		s.MarketPhaseRelaxActive = true
+	}
 	return s
 }
 
@@ -253,7 +258,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 				"failures":  consecutiveFailures,
 				"relax_pct": settings.AdaptiveRelaxPct,
 			})
-			settings = relaxTradingSettings(settings)
+			settings = relaxTradingSettings(settings, settings.AdaptiveRelaxPct, true)
 		}
 
 		if err := e.selectAndBuy(ctx, settings, false); err != nil {
@@ -317,6 +322,12 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		indexDropThreshold = -1.0
 	}
 	var marketIndexDrop float64
+	// 시장 국면 감지: 전일 대비 하락률 수집 (MarketPhaseRelaxEnabled 시 활용)
+	mpTrigger := settings.MarketPhaseIndexDropTrigger
+	if mpTrigger == 0 {
+		mpTrigger = -1.0
+	}
+	worstPrevDayDrop := 0.0
 	if len(settings.IndexCodes) > 0 {
 		// 기본 거래소 목록: 비어 있으면 getRankings 기본값과 동일하게 초기화
 		activeExchanges := settings.RankingExchanges
@@ -337,6 +348,14 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 					if !force && drop <= indexDropThreshold {
 						droppedExchanges[code] = true
 						droppedInfo = append(droppedInfo, fmt.Sprintf("%s(%.2f%%)", code, drop))
+					}
+				}
+				// 시장 국면 감지용 전일 대비 등락률 수집 (ChangeRate = bstp_nmix_prdy_ctrt)
+				if settings.MarketPhaseRelaxEnabled {
+					if prevRate, parseErr := strconv.ParseFloat(idx.ChangeRate, 64); parseErr == nil {
+						if prevRate < worstPrevDayDrop {
+							worstPrevDayDrop = prevRate
+						}
 					}
 				}
 			}
@@ -360,6 +379,15 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 				})
 			settings.RankingExchanges = remaining
 		}
+	}
+	// 시장 국면 감지: 약세장이면 hard rule 완화
+	if settings.MarketPhaseRelaxEnabled && worstPrevDayDrop <= mpTrigger {
+		logger.Info("engine: bear market detected — relaxing hard rules (market phase)", map[string]any{
+			"worst_prev_day_drop": worstPrevDayDrop,
+			"trigger":             mpTrigger,
+			"relax_pct":           settings.MarketPhaseRelaxPct,
+		})
+		settings = relaxTradingSettings(settings, settings.MarketPhaseRelaxPct, false)
 	}
 
 	// Build today's exclusion list from DB orders.
@@ -883,6 +911,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	rules.AdaptiveRelaxActive = settings.AdaptiveRelaxActive
 	rules.AdaptiveRelaxPct = settings.AdaptiveRelaxPct
 	rules.AdaptiveFailures = settings.AdaptiveThresholdTrigger
+	rules.MarketPhaseRelaxActive = settings.MarketPhaseRelaxActive
+	rules.MarketPhaseRelaxPct = settings.MarketPhaseRelaxPct
 
 	// Ask Claude to rank all viable candidates (single API call).
 	// excludedCodes are already filtered server-side above; pass nil here.

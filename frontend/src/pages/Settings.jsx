@@ -334,6 +334,11 @@ export default function Settings() {
   const [adaptiveThresholdTrigger, setAdaptiveThresholdTrigger] = useState('10')
   const [adaptiveRelaxPct, setAdaptiveRelaxPct] = useState('20')
 
+  // ── Market Phase Detection ──
+  const [marketPhaseRelaxEnabled, setMarketPhaseRelaxEnabled] = useState(false)
+  const [marketPhaseIndexDropTrigger, setMarketPhaseIndexDropTrigger] = useState('-1.0')
+  const [marketPhaseRelaxPct, setMarketPhaseRelaxPct] = useState('15')
+
   // ── AI 매매 기준값 — 랭킹 기준 ──
   const [vwapDiffMin, setVwapDiffMin] = useState('0.0')
   const [vwapDiffMax, setVwapDiffMax] = useState('1.5')
@@ -438,6 +443,9 @@ export default function Settings() {
     if (data.hard_relative_strength_min != null) setHardRelativeStrengthMin(String(data.hard_relative_strength_min))
     if (data.adaptive_threshold_enabled != null) setAdaptiveThresholdEnabled(data.adaptive_threshold_enabled)
     if (data.adaptive_threshold_trigger != null) setAdaptiveThresholdTrigger(String(data.adaptive_threshold_trigger))
+    if (data.market_phase_relax_enabled != null) setMarketPhaseRelaxEnabled(data.market_phase_relax_enabled)
+    if (data.market_phase_index_drop_trigger != null) setMarketPhaseIndexDropTrigger(String(data.market_phase_index_drop_trigger))
+    if (data.market_phase_relax_pct != null) setMarketPhaseRelaxPct(String(data.market_phase_relax_pct))
     if (data.adaptive_relax_pct != null) setAdaptiveRelaxPct(String(data.adaptive_relax_pct))
     if (data.vwap_diff_min != null) setVwapDiffMin(String(data.vwap_diff_min))
     if (data.vwap_diff_max != null) setVwapDiffMax(String(data.vwap_diff_max))
@@ -565,6 +573,9 @@ export default function Settings() {
       hard_relative_strength_min: parseFloat(hardRelativeStrengthMin),
       adaptive_threshold_enabled: adaptiveThresholdEnabled,
       adaptive_threshold_trigger: parseInt(adaptiveThresholdTrigger),
+      market_phase_relax_enabled: marketPhaseRelaxEnabled,
+      market_phase_index_drop_trigger: parseFloat(marketPhaseIndexDropTrigger),
+      market_phase_relax_pct: parseFloat(marketPhaseRelaxPct),
       adaptive_relax_pct: parseFloat(adaptiveRelaxPct),
       vwap_diff_min: parseFloat(vwapDiffMin),
       vwap_diff_max: parseFloat(vwapDiffMax),
@@ -1349,6 +1360,29 @@ export default function Settings() {
                 <span className={labelText}>완화 비율 (%)</span>
                 <input type="number" step="5" min="5" max="50" value={adaptiveRelaxPct} onChange={(e) => setAdaptiveRelaxPct(e.target.value)} className={inputCls} />
                 <p className={hintText}>hard rule 임계값을 이 비율만큼 완화 (기본 20%)</p>
+              </label>
+            </div>
+
+            <div className={`space-y-1 ${divider}`}>
+              <p className="text-xs font-semibold text-th-on-muted uppercase tracking-widest">Market Phase Detection (시장 국면 감지 완화)</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <label className="flex items-center gap-3 space-y-0">
+                <input type="checkbox" checked={marketPhaseRelaxEnabled} onChange={(e) => setMarketPhaseRelaxEnabled(e.target.checked)} className="w-4 h-4" />
+                <div>
+                  <span className={labelText}>약세장 감지 시 Hard Rule 자동 완화</span>
+                  <p className={hintText}>지수 전일 대비 하락률이 기준 이하이면 hard rule을 완화 (강세장에서는 엄격한 기준 유지)</p>
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>전일 대비 하락률 기준 (%)</span>
+                <input type="number" step="0.5" value={marketPhaseIndexDropTrigger} onChange={(e) => setMarketPhaseIndexDropTrigger(e.target.value)} className={inputCls} />
+                <p className={hintText}>KOSPI/KOSDAQ 중 어느 하나라도 이 이하이면 약세장 판정 (기본 -1.0%)</p>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>완화 비율 (%)</span>
+                <input type="number" step="5" min="5" max="50" value={marketPhaseRelaxPct} onChange={(e) => setMarketPhaseRelaxPct(e.target.value)} className={inputCls} />
+                <p className={hintText}>약세장 판정 시 hard rule 임계값을 이 비율만큼 완화 (기본 15%)</p>
               </label>
             </div>
 

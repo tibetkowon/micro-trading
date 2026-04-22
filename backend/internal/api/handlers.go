@@ -648,6 +648,10 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"adaptive_threshold_enabled": ts.AdaptiveThresholdEnabled,
 		"adaptive_threshold_trigger": ts.AdaptiveThresholdTrigger,
 		"adaptive_relax_pct":         ts.AdaptiveRelaxPct,
+		// Market Phase Detection
+		"market_phase_relax_enabled":      ts.MarketPhaseRelaxEnabled,
+		"market_phase_index_drop_trigger": ts.MarketPhaseIndexDropTrigger,
+		"market_phase_relax_pct":          ts.MarketPhaseRelaxPct,
 		// 하드 감시 종목 / 순위 유지 시간
 		"hard_watch_symbols":      ts.HardWatchSymbols,
 		"rank_lease_duration_min": ts.RankLeaseDurationMin,
@@ -758,6 +762,10 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		AdaptiveThresholdEnabled *bool    `json:"adaptive_threshold_enabled"`
 		AdaptiveThresholdTrigger *int     `json:"adaptive_threshold_trigger"`
 		AdaptiveRelaxPct         *float64 `json:"adaptive_relax_pct"`
+		// Market Phase Detection
+		MarketPhaseRelaxEnabled     *bool    `json:"market_phase_relax_enabled"`
+		MarketPhaseIndexDropTrigger *float64 `json:"market_phase_index_drop_trigger"`
+		MarketPhaseRelaxPct         *float64 `json:"market_phase_relax_pct"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1294,6 +1302,26 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.AdaptiveRelaxPct != nil {
 		if !save("adaptive_relax_pct", strconv.FormatFloat(*req.AdaptiveRelaxPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	// Market Phase Detection
+	if req.MarketPhaseRelaxEnabled != nil {
+		val := "false"
+		if *req.MarketPhaseRelaxEnabled {
+			val = "true"
+		}
+		if !save("market_phase_relax_enabled", val) {
+			return
+		}
+	}
+	if req.MarketPhaseIndexDropTrigger != nil {
+		if !save("market_phase_index_drop_trigger", strconv.FormatFloat(*req.MarketPhaseIndexDropTrigger, 'f', 2, 64)) {
+			return
+		}
+	}
+	if req.MarketPhaseRelaxPct != nil {
+		if !save("market_phase_relax_pct", strconv.FormatFloat(*req.MarketPhaseRelaxPct, 'f', 1, 64)) {
 			return
 		}
 	}
