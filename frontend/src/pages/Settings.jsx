@@ -1417,7 +1417,7 @@ export default function Settings() {
               </label>
               <label className="space-y-1">
                 <span className={labelText}>단계당 완화 비율 (%)</span>
-                <input type="number" step="5" min="1" max="50" value={escalationStepPct} onChange={(e) => setEscalationStepPct(e.target.value)} className={inputCls} />
+                <input type="number" step="5" min="5" max="50" value={escalationStepPct} onChange={(e) => setEscalationStepPct(e.target.value)} className={inputCls} />
                 <p className={hintText}>1단계당 hard rule 임계값 완화 비율 (기본 10%). 5단계 시 최대 50% 완화</p>
               </label>
               <label className="space-y-1">
