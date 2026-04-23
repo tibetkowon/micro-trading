@@ -133,6 +133,9 @@ type TradingRules struct {
 	// Market Phase Detection
 	MarketPhaseRelaxActive bool    // true이면 약세장 완화 중 — 프롬프트에 경고 메모 삽입
 	MarketPhaseRelaxPct    float64 // 시장 국면 완화 비율 (로그용)
+	// Hard Rule Escalation
+	EscalationStage   int     // 현재 에스컬레이션 단계 (0=비활성)
+	EscalationStepPct float64 // 단계당 완화 비율 (로그용)
 }
 
 // DefaultTradingRules returns safe default values (matches the hard-coded prompt values).
@@ -232,6 +235,12 @@ func (c *ClaudeClient) SelectStocks(
 		adaptiveNote += fmt.Sprintf(
 			"⚠️ BEAR MARKET DETECTED: Hard rules relaxed %.0f%% (market phase — 전일 대비 지수 하락). Apply loosened thresholds above.\n\n",
 			rules.MarketPhaseRelaxPct)
+	}
+	if rules.EscalationStage > 0 {
+		totalRelaxPct := float64(rules.EscalationStage) * rules.EscalationStepPct
+		adaptiveNote += fmt.Sprintf(
+			"⚠️ ESCALATION STAGE %d: Hard rules progressively relaxed by %.0f%% (%d stages × %.0f%% per stage). Apply loosened thresholds above.\n\n",
+			rules.EscalationStage, totalRelaxPct, rules.EscalationStage, rules.EscalationStepPct)
 	}
 
 	// Hard Rejection Rule 9·10 조건부 생성

@@ -652,6 +652,11 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"market_phase_relax_enabled":      ts.MarketPhaseRelaxEnabled,
 		"market_phase_index_drop_trigger": ts.MarketPhaseIndexDropTrigger,
 		"market_phase_relax_pct":          ts.MarketPhaseRelaxPct,
+		// Hard Rule Escalation
+		"escalation_enabled":    ts.EscalationEnabled,
+		"escalation_trigger":    ts.EscalationTrigger,
+		"escalation_step_pct":   ts.EscalationStepPct,
+		"escalation_max_stages": ts.EscalationMaxStages,
 		// 하드 감시 종목 / 순위 유지 시간
 		"hard_watch_symbols":      ts.HardWatchSymbols,
 		"rank_lease_duration_min": ts.RankLeaseDurationMin,
@@ -766,6 +771,11 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		MarketPhaseRelaxEnabled     *bool    `json:"market_phase_relax_enabled"`
 		MarketPhaseIndexDropTrigger *float64 `json:"market_phase_index_drop_trigger"`
 		MarketPhaseRelaxPct         *float64 `json:"market_phase_relax_pct"`
+		// Hard Rule Escalation
+		EscalationEnabled   *bool    `json:"escalation_enabled"`
+		EscalationTrigger   *int     `json:"escalation_trigger"`
+		EscalationStepPct   *float64 `json:"escalation_step_pct"`
+		EscalationMaxStages *int     `json:"escalation_max_stages"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1322,6 +1332,39 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.MarketPhaseRelaxPct != nil {
 		if !save("market_phase_relax_pct", strconv.FormatFloat(*req.MarketPhaseRelaxPct, 'f', 1, 64)) {
+			return
+		}
+	}
+	// Hard Rule Escalation
+	if req.EscalationEnabled != nil {
+		val := "false"
+		if *req.EscalationEnabled {
+			val = "true"
+		}
+		if !save("escalation_enabled", val) {
+			return
+		}
+	}
+	if req.EscalationTrigger != nil {
+		if *req.EscalationTrigger < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "escalation_trigger는 1 이상이어야 합니다"})
+			return
+		}
+		if !save("escalation_trigger", strconv.Itoa(*req.EscalationTrigger)) {
+			return
+		}
+	}
+	if req.EscalationStepPct != nil {
+		if !save("escalation_step_pct", strconv.FormatFloat(*req.EscalationStepPct, 'f', 1, 64)) {
+			return
+		}
+	}
+	if req.EscalationMaxStages != nil {
+		if *req.EscalationMaxStages < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "escalation_max_stages는 1 이상이어야 합니다"})
+			return
+		}
+		if !save("escalation_max_stages", strconv.Itoa(*req.EscalationMaxStages)) {
 			return
 		}
 	}

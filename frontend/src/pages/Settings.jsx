@@ -338,6 +338,11 @@ export default function Settings() {
   const [marketPhaseRelaxEnabled, setMarketPhaseRelaxEnabled] = useState(false)
   const [marketPhaseIndexDropTrigger, setMarketPhaseIndexDropTrigger] = useState('-1.0')
   const [marketPhaseRelaxPct, setMarketPhaseRelaxPct] = useState('15')
+  // ── Hard Rule Escalation ──
+  const [escalationEnabled, setEscalationEnabled] = useState(false)
+  const [escalationTrigger, setEscalationTrigger] = useState('20')
+  const [escalationStepPct, setEscalationStepPct] = useState('10')
+  const [escalationMaxStages, setEscalationMaxStages] = useState('5')
 
   // ── AI 매매 기준값 — 랭킹 기준 ──
   const [vwapDiffMin, setVwapDiffMin] = useState('0.0')
@@ -446,6 +451,10 @@ export default function Settings() {
     if (data.market_phase_relax_enabled != null) setMarketPhaseRelaxEnabled(data.market_phase_relax_enabled)
     if (data.market_phase_index_drop_trigger != null) setMarketPhaseIndexDropTrigger(String(data.market_phase_index_drop_trigger))
     if (data.market_phase_relax_pct != null) setMarketPhaseRelaxPct(String(data.market_phase_relax_pct))
+    if (data.escalation_enabled != null) setEscalationEnabled(data.escalation_enabled)
+    if (data.escalation_trigger != null) setEscalationTrigger(String(data.escalation_trigger))
+    if (data.escalation_step_pct != null) setEscalationStepPct(String(data.escalation_step_pct))
+    if (data.escalation_max_stages != null) setEscalationMaxStages(String(data.escalation_max_stages))
     if (data.adaptive_relax_pct != null) setAdaptiveRelaxPct(String(data.adaptive_relax_pct))
     if (data.vwap_diff_min != null) setVwapDiffMin(String(data.vwap_diff_min))
     if (data.vwap_diff_max != null) setVwapDiffMax(String(data.vwap_diff_max))
@@ -576,6 +585,10 @@ export default function Settings() {
       market_phase_relax_enabled: marketPhaseRelaxEnabled,
       market_phase_index_drop_trigger: parseFloat(marketPhaseIndexDropTrigger),
       market_phase_relax_pct: parseFloat(marketPhaseRelaxPct),
+      escalation_enabled: escalationEnabled,
+      escalation_trigger: parseInt(escalationTrigger),
+      escalation_step_pct: parseFloat(escalationStepPct),
+      escalation_max_stages: parseInt(escalationMaxStages),
       adaptive_relax_pct: parseFloat(adaptiveRelaxPct),
       vwap_diff_min: parseFloat(vwapDiffMin),
       vwap_diff_max: parseFloat(vwapDiffMax),
@@ -1383,6 +1396,34 @@ export default function Settings() {
                 <span className={labelText}>완화 비율 (%)</span>
                 <input type="number" step="5" min="5" max="50" value={marketPhaseRelaxPct} onChange={(e) => setMarketPhaseRelaxPct(e.target.value)} className={inputCls} />
                 <p className={hintText}>약세장 판정 시 hard rule 임계값을 이 비율만큼 완화 (기본 15%)</p>
+              </label>
+            </div>
+
+            <div className={`space-y-1 ${divider}`}>
+              <p className="text-xs font-semibold text-th-on-muted uppercase tracking-widest">Hard Rule Escalation (단계적 자동 완화)</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <label className="flex items-center gap-3 space-y-0">
+                <input type="checkbox" checked={escalationEnabled} onChange={(e) => setEscalationEnabled(e.target.checked)} className="w-4 h-4" />
+                <div>
+                  <span className={labelText}>단계적 완화 활성</span>
+                  <p className={hintText}>연속 실패 횟수에 비례해 단계적으로 hard rule을 완화. AdaptiveThreshold와 동시 활성 시 더 큰 완화 비율(max-wins)이 적용됩니다.</p>
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>단계당 실패 횟수</span>
+                <input type="number" step="1" min="1" value={escalationTrigger} onChange={(e) => setEscalationTrigger(e.target.value)} className={inputCls} />
+                <p className={hintText}>이 횟수마다 1단계씩 상승 (기본 20). 예: 20회=1단계, 40회=2단계</p>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>단계당 완화 비율 (%)</span>
+                <input type="number" step="5" min="1" max="50" value={escalationStepPct} onChange={(e) => setEscalationStepPct(e.target.value)} className={inputCls} />
+                <p className={hintText}>1단계당 hard rule 임계값 완화 비율 (기본 10%). 5단계 시 최대 50% 완화</p>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>최대 단계</span>
+                <input type="number" step="1" min="1" max="10" value={escalationMaxStages} onChange={(e) => setEscalationMaxStages(e.target.value)} className={inputCls} />
+                <p className={hintText}>완화 상한 단계 (기본 5). 이 단계 이상은 더 이상 완화하지 않음</p>
               </label>
             </div>
 

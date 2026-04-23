@@ -252,13 +252,44 @@ func (e *Engine) runCycle(ctx context.Context) {
 			continue
 		}
 
-		if settings.AdaptiveThresholdEnabled &&
-			consecutiveFailures >= settings.AdaptiveThresholdTrigger {
-			logger.Info("engine: adaptive threshold active — relaxing hard rules", map[string]any{
-				"failures":  consecutiveFailures,
-				"relax_pct": settings.AdaptiveRelaxPct,
-			})
-			settings = relaxTradingSettings(settings, settings.AdaptiveRelaxPct, true)
+		// ─── Hard Rule 완화 통합 블록 ────────────────────────────────────────────
+		// AdaptiveThreshold와 Escalation은 각각 완화 비율을 계산한 뒤,
+		// 더 큰 값(max-wins)을 단 1회 적용하여 누적 완화를 방지한다.
+		{
+			adaptivePct := 0.0
+			if settings.AdaptiveThresholdEnabled &&
+				consecutiveFailures >= settings.AdaptiveThresholdTrigger {
+				adaptivePct = settings.AdaptiveRelaxPct
+			}
+
+			escalationPct := 0.0
+			escalationStage := 0
+			if settings.EscalationEnabled && settings.EscalationTrigger > 0 {
+				stage := consecutiveFailures / settings.EscalationTrigger
+				if stage > settings.EscalationMaxStages {
+					stage = settings.EscalationMaxStages
+				}
+				if stage > 0 {
+					escalationPct = float64(stage) * settings.EscalationStepPct
+					escalationStage = stage
+				}
+			}
+			settings.EscalationStage = escalationStage
+
+			if adaptivePct > 0 || escalationPct > 0 {
+				finalPct := adaptivePct
+				if escalationPct > finalPct {
+					finalPct = escalationPct
+				}
+				logger.Info("engine: hard rule relax applied", map[string]any{
+					"failures":         consecutiveFailures,
+					"adaptive_pct":     adaptivePct,
+					"escalation_stage": escalationStage,
+					"escalation_pct":   escalationPct,
+					"final_relax_pct":  finalPct,
+				})
+				settings = relaxTradingSettings(settings, finalPct, true)
+			}
 		}
 
 		if err := e.selectAndBuy(ctx, settings, false); err != nil {
@@ -913,6 +944,8 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	rules.AdaptiveFailures = settings.AdaptiveThresholdTrigger
 	rules.MarketPhaseRelaxActive = settings.MarketPhaseRelaxActive
 	rules.MarketPhaseRelaxPct = settings.MarketPhaseRelaxPct
+	rules.EscalationStage = settings.EscalationStage
+	rules.EscalationStepPct = settings.EscalationStepPct
 
 	// Ask Claude to rank all viable candidates (single API call).
 	// excludedCodes are already filtered server-side above; pass nil here.

@@ -127,6 +127,12 @@ type TradingSettings struct {
 	MarketPhaseIndexDropTrigger float64 // 완화 발동 전일 대비 하락률 기준 % (기본 -1.0)
 	MarketPhaseRelaxPct         float64 // hard rule 완화 비율 % (기본 15.0)
 	MarketPhaseRelaxActive      bool    // 런타임 플래그 — DB에 저장 안 함
+	// Hard Rule Escalation — 단계적 자동 완화
+	EscalationEnabled   bool    // N회 연속 실패마다 단계적으로 hard rule 완화 활성화
+	EscalationTrigger   int     // 단계당 실패 횟수 (기본 20)
+	EscalationStepPct   float64 // 단계당 완화 비율 % (기본 10.0)
+	EscalationMaxStages int     // 최대 단계 수 (기본 5)
+	EscalationStage     int     // 런타임 전용 — 현재 단계 (DB에 저장 안 함)
 }
 
 // DB wraps the sql.DB connection.
@@ -446,6 +452,11 @@ func (db *DB) migrate() error {
 		{"market_phase_relax_enabled", "false"},
 		{"market_phase_index_drop_trigger", "-1.0"},
 		{"market_phase_relax_pct", "15"},
+		// Hard Rule Escalation
+		{"escalation_enabled", "false"},
+		{"escalation_trigger", "20"},
+		{"escalation_step_pct", "10.0"},
+		{"escalation_max_stages", "5"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -501,7 +512,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'partial_tp_enabled','partial_tp_pct','partial_tp_ratio','partial_tp_raise_stop',`+
 			`'scoring_bidask_weight','scoring_strength_weight','scoring_macd_weight','scoring_rsi_weight','scoring_vwap_weight',`+
 			`'adaptive_threshold_enabled','adaptive_threshold_trigger','adaptive_relax_pct',`+
-			`'market_phase_relax_enabled','market_phase_index_drop_trigger','market_phase_relax_pct'`+
+			`'market_phase_relax_enabled','market_phase_index_drop_trigger','market_phase_relax_pct',`+
+			`'escalation_enabled','escalation_trigger','escalation_step_pct','escalation_max_stages'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -715,6 +727,11 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		MarketPhaseRelaxEnabled:     vals["market_phase_relax_enabled"] == "true",
 		MarketPhaseIndexDropTrigger: f64Default("market_phase_index_drop_trigger", -1.0),
 		MarketPhaseRelaxPct:         f64Default("market_phase_relax_pct", 15.0),
+		// Hard Rule Escalation
+		EscalationEnabled:   vals["escalation_enabled"] == "true",
+		EscalationTrigger:   i64Default("escalation_trigger", 20),
+		EscalationStepPct:   f64Default("escalation_step_pct", 10.0),
+		EscalationMaxStages: i64Default("escalation_max_stages", 5),
 	}, nil
 }
 
