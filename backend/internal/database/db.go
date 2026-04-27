@@ -133,6 +133,10 @@ type TradingSettings struct {
 	EscalationStepPct   float64 // 단계당 완화 비율 % (기본 10.0)
 	EscalationMaxStages int     // 최대 단계 수 (기본 5)
 	EscalationStage     int     // 런타임 전용 — 현재 단계 (DB에 저장 안 함)
+	// Hard Rule Feedback — 룰별 거부 빈도 기반 자동 완화
+	HardRuleFeedbackEnabled      bool    // 특정 룰이 window 내 80%+ 사이클에서 발동 시 해당 룰만 선택 완화
+	HardRuleFeedbackWindow       int     // 분석 대상 최근 사이클 수 (기본 5)
+	HardRuleFeedbackThresholdPct float64 // 발동 임계 비율 % (기본 80.0)
 }
 
 // DB wraps the sql.DB connection.
@@ -355,6 +359,7 @@ func (db *DB) migrate() error {
 		`ALTER TABLE trader_selection_logs ADD COLUMN ranking_log_id INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE settings_presets ADD COLUMN market TEXT NOT NULL DEFAULT 'KR'`,
 		`ALTER TABLE stock_masters ADD COLUMN listed_shares INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE trader_selection_logs ADD COLUMN hard_rule_stats TEXT NOT NULL DEFAULT '{}'`,
 	}
 	for _, s := range alterStmts {
 		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시
@@ -457,6 +462,10 @@ func (db *DB) migrate() error {
 		{"escalation_trigger", "20"},
 		{"escalation_step_pct", "10.0"},
 		{"escalation_max_stages", "5"},
+		// Hard Rule Feedback
+		{"hard_rule_feedback_enabled", "false"},
+		{"hard_rule_feedback_window", "5"},
+		{"hard_rule_feedback_threshold_pct", "80"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -732,6 +741,10 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		EscalationTrigger:   i64Default("escalation_trigger", 20),
 		EscalationStepPct:   f64Default("escalation_step_pct", 10.0),
 		EscalationMaxStages: i64Default("escalation_max_stages", 5),
+		// Hard Rule Feedback
+		HardRuleFeedbackEnabled:      vals["hard_rule_feedback_enabled"] == "true",
+		HardRuleFeedbackWindow:       i64Default("hard_rule_feedback_window", 5),
+		HardRuleFeedbackThresholdPct: f64Default("hard_rule_feedback_threshold_pct", 80.0),
 	}, nil
 }
 
@@ -844,7 +857,7 @@ func (db *DB) GetTodaySelectionLogs(ctx context.Context) ([]models.TraderSelecti
 	kst, _ := time.LoadLocation("Asia/Seoul")
 	today := time.Now().In(kst).Format("2006-01-02")
 	rows, err := db.QueryContext(ctx,
-		`SELECT id, timestamp, sent_count, selected_code, fail_reason, market
+		`SELECT id, timestamp, sent_count, selected_code, fail_reason, market, hard_rule_stats
 		 FROM trader_selection_logs
 		 WHERE date(timestamp) = date(?)
 		 ORDER BY id ASC`, today)
@@ -855,7 +868,7 @@ func (db *DB) GetTodaySelectionLogs(ctx context.Context) ([]models.TraderSelecti
 	var logs []models.TraderSelectionLog
 	for rows.Next() {
 		var l models.TraderSelectionLog
-		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.SelectedCode, &l.FailReason, &l.Market); err != nil {
+		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.SelectedCode, &l.FailReason, &l.Market, &l.HardRuleStats); err != nil {
 			return nil, err
 		}
 		logs = append(logs, l)

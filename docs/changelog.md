@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-04-27 — Hard Rule 거부 사유 상세 로깅 및 룰별 자동 완화 피드백 루프
+
+- **trader/engine.go**: `evaluateHardRules()` 추가 — Claude 호출 전 후보 종목 전체에 대해 12개 Hard Rejection Rule 위반 여부를 서버 사이드에서 사전 집계
+- **trader/engine.go**: LLM 선택 실패 시 `fail_reason`에 상위 위반 룰 상세 포함 (e.g. `hard_strength_min:7/8, hard_rsi_max:3/8`)
+- **trader/engine.go**: `ruleHitRecord` 링 버퍼 추가 — 최근 N 사이클(기본 5) Hard Rule 통계 누적
+- **trader/engine.go**: `detectBottleneckRule()` — 링 버퍼에서 threshold%(기본 80%) 이상 사이클에서 발동한 룰 감지
+- **trader/engine.go**: `relaxSpecificRule()` — bottleneck 룰의 임계값만 선택적 완화 (전체 완화가 아닌 targeted)
+- **trader/engine.go**: 선택 성공 시 링 버퍼 리셋
+- **database/db.go**: `trader_selection_logs` 테이블에 `hard_rule_stats TEXT` 컬럼 추가
+- **database/db.go**: `TradingSettings`에 `HardRuleFeedbackEnabled`, `HardRuleFeedbackWindow`, `HardRuleFeedbackThresholdPct` 필드 추가 (기본값: false / 5 / 80)
+- **models/models.go**: `TraderSelectionLog`에 `HardRuleStats` 필드 추가
+- **report/optimization.go**: no-trade 분석 summary에 `hard_rule_stats` 누적 집계 포함 — Claude가 구체적 룰 완화 제안 가능
+- **trader/claude.go**: `AnalyzeNoTradeDay` 프롬프트에 `hard_rule_stats` 해석 가이드 추가
+
 ## 2026-04-21 — KIS TPS 에러 방지 강화 (속도 감소 + 지수 백오프 + 일시 스로틀)
 
 - **kis/ratelimiter.go**: `Throttle(slowRPS, duration)` 메서드 추가 — TPS 에러 발생 시 3 RPS로 3초간 일시 감속 후 자동 복원 (`sync.Mutex` 안전, 중복 호출 시 타이머 연장)

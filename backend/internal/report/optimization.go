@@ -410,11 +410,13 @@ func generateNoTradeReport(ctx context.Context, db *database.DB, claude *trader.
 		RankingErrors     []string       `json:"ranking_errors"`
 		SelectionAttempts int            `json:"selection_attempts"`
 		FailReasons       []string       `json:"selection_fail_reasons"`
+		HardRuleStats     map[string]int `json:"hard_rule_stats"` // 누적 Hard Rule별 위반 종목 수
 	}
 	summary := noTradeSummary{
 		Date:            date,
 		RankingAttempts: len(rankLogs),
 		FilterReasons:   map[string]int{},
+		HardRuleStats:   map[string]int{},
 	}
 
 	// Aggregate filter rejection reasons from ranking logs
@@ -460,13 +462,22 @@ func generateNoTradeReport(ctx context.Context, db *database.DB, claude *trader.
 		summary.AvgCandidates = float64(totalCandidates) / float64(len(rankLogs))
 	}
 
-	// Collect unique fail reasons from selection logs
+	// Collect unique fail reasons and aggregate hard rule stats from selection logs
 	seen := map[string]bool{}
 	for _, sl := range selLogs {
 		summary.SelectionAttempts++
 		if sl.FailReason != "" && !seen[sl.FailReason] {
 			summary.FailReasons = append(summary.FailReasons, sl.FailReason)
 			seen[sl.FailReason] = true
+		}
+		// hard_rule_stats 집계 (JSON map[string]int 파싱)
+		if sl.HardRuleStats != "" && sl.HardRuleStats != "{}" {
+			var ruleStats map[string]int
+			if err := json.Unmarshal([]byte(sl.HardRuleStats), &ruleStats); err == nil {
+				for rule, cnt := range ruleStats {
+					summary.HardRuleStats[rule] += cnt
+				}
+			}
 		}
 	}
 

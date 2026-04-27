@@ -423,6 +423,9 @@ Analyze why no trades occurred and provide concrete, actionable improvement sugg
 - selection_fail_reasons: why the LLM's own stock-selection calls returned no candidates.
   - "조건에 맞는 종목 없음" → LLM hard rejection rules blocked every candidate.
     Fix: relax hard_strength_min, hard_high_price_diff_max, hard_rsi_max, etc.
+- hard_rule_stats: cumulative per-rule violation counts across all selection cycles today.
+  The key is the rule name (e.g. "hard_strength_min"), the value is total violation count.
+  High counts indicate the bottleneck rule. Suggest relaxing the top 1-2 rules.
 
 ## Your Task
 1. Identify the PRIMARY root cause (the filter/setting that caused the most rejections).

@@ -105,9 +105,10 @@ type TraderSelectionLog struct {
 	LLMResult      string `json:"llm_result"`    // JSON string — ordered StockCandidate list
 	SelectedCode   string `json:"selected_code"` // empty if no fill occurred
 	SelectedReason string `json:"selected_reason"`
-	FailReason     string `json:"fail_reason"`    // LLM 오류 또는 주문 실패 사유
-	Market         string `json:"market"`         // "KR" | "US"
-	RankingLogID   int64  `json:"ranking_log_id"` // 연결된 TraderRankingLog.ID (0=연결없음)
+	FailReason     string `json:"fail_reason"`     // LLM 오류 또는 주문 실패 사유
+	Market         string `json:"market"`          // "KR" | "US"
+	RankingLogID   int64  `json:"ranking_log_id"`  // 연결된 TraderRankingLog.ID (0=연결없음)
+	HardRuleStats  string `json:"hard_rule_stats"` // JSON map[string]int — Hard Rule별 위반 종목 수
 }
 
 // TraderRankingLog records each getRankings() attempt for UI display.

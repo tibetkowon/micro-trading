@@ -45,6 +45,12 @@ const (
 	StateSearching   EngineState = "SEARCHING" // 포지션 없음 — 매수 종목 탐색 중
 )
 
+// ruleHitRecord holds per-cycle Hard Rule violation statistics for the feedback loop.
+type ruleHitRecord struct {
+	candidateCount int            // Claude에 전달된 후보 수
+	hitByRule      map[string]int // rule_name → 위반 종목 수
+}
+
 // Engine runs autonomous trading cycles: select → order → monitor → repeat.
 type Engine struct {
 	db        *database.DB
@@ -62,6 +68,15 @@ type Engine struct {
 
 	leaseMu     sync.Mutex
 	leaseExpiry map[string]time.Time // stockCode → lease 만료 시각 (순위에서 사라져도 유지)
+
+	// Hard Rule Feedback 링 버퍼 (선택 실패 사이클 통계)
+	ruleHitMu      sync.Mutex
+	ruleHitHistory []ruleHitRecord // 최근 N 사이클 (window 크기만큼 유지)
+
+	// lastRuleStats: selectAndBuy가 평가한 직전 사이클의 Hard Rule 통계 (runCycle에서 읽음)
+	lastRuleStatsMu    sync.Mutex
+	lastRuleStats      map[string]int
+	lastCandidateCount int
 }
 
 // NewEngine creates a new Engine with all required dependencies.
@@ -292,6 +307,22 @@ func (e *Engine) runCycle(ctx context.Context) {
 			}
 		}
 
+		// ─── Hard Rule Feedback 피드백 완화 ──────────────────────────────────────
+		// 링 버퍼에서 특정 룰이 window 내 thresholdPct% 이상 발동했으면 해당 룰만 완화한다.
+		// Adaptive/Escalation 완화와 독립적으로 적용된다.
+		if settings.HardRuleFeedbackEnabled {
+			if bottleneck, ok := e.detectBottleneckRule(settings.HardRuleFeedbackThresholdPct); ok {
+				settings = relaxSpecificRule(settings, bottleneck, settings.EscalationStepPct)
+				logger.Warn("engine: hard rule feedback — bottleneck rule relaxed", map[string]any{
+					"rule":          bottleneck,
+					"relax_pct":     settings.EscalationStepPct,
+					"window":        settings.HardRuleFeedbackWindow,
+					"threshold_pct": settings.HardRuleFeedbackThresholdPct,
+					"failures":      consecutiveFailures,
+				})
+			}
+		}
+
 		if err := e.selectAndBuy(ctx, settings, false); err != nil {
 			consecutiveFailures++
 			wait := retryBackoff(consecutiveFailures)
@@ -301,6 +332,20 @@ func (e *Engine) runCycle(ctx context.Context) {
 			e.haltReason = err.Error()
 			e.mu.Unlock()
 			e.setState(StateSearching)
+
+			// Hard Rule Feedback: 이번 사이클 통계를 링 버퍼에 push
+			if settings.HardRuleFeedbackEnabled {
+				e.lastRuleStatsMu.Lock()
+				rec := ruleHitRecord{
+					candidateCount: e.lastCandidateCount,
+					hitByRule:      e.lastRuleStats,
+				}
+				e.lastRuleStatsMu.Unlock()
+				if rec.candidateCount > 0 {
+					e.pushRuleHit(rec, settings.HardRuleFeedbackWindow)
+				}
+			}
+
 			select {
 			case <-ctx.Done():
 				return
@@ -311,6 +356,12 @@ func (e *Engine) runCycle(ctx context.Context) {
 			e.haltReason = ""
 			e.mu.Unlock()
 			consecutiveFailures = 0
+			// 성공 시 링 버퍼 초기화 (완화 기준 리셋)
+			if settings.HardRuleFeedbackEnabled {
+				e.ruleHitMu.Lock()
+				e.ruleHitHistory = e.ruleHitHistory[:0]
+				e.ruleHitMu.Unlock()
+			}
 		}
 	}
 }
@@ -947,27 +998,46 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	rules.EscalationStage = settings.EscalationStage
 	rules.EscalationStepPct = settings.EscalationStepPct
 
+	// Hard Rule 사전 평가: Claude 호출 전 각 종목의 룰 위반 현황 집계
+	ruleStats := evaluateHardRules(rankings, rules)
+	ruleStatsJSON, _ := json.Marshal(ruleStats)
+
+	// runCycle의 피드백 루프에서 읽을 수 있도록 Engine 필드에 저장
+	e.lastRuleStatsMu.Lock()
+	e.lastRuleStats = ruleStats
+	e.lastCandidateCount = len(rankings)
+	e.lastRuleStatsMu.Unlock()
+
 	// Ask Claude to rank all viable candidates (single API call).
 	// excludedCodes are already filtered server-side above; pass nil here.
 	candidates, err := e.claude.SelectStocks(ctx, rankings, availableCash, nil, rules)
 	if err != nil {
+		detail := hardRuleStatsDetail(ruleStats, len(rankings))
+		failMsg := "LLM 오류: " + err.Error()
+		if detail != "" {
+			failMsg += " — " + detail
+		}
 		if selectionLogID > 0 {
 			e.db.ExecContext(ctx, //nolint:errcheck
-				`UPDATE trader_selection_logs SET fail_reason=? WHERE id=?`,
-				"LLM 오류: "+err.Error(), selectionLogID)
+				`UPDATE trader_selection_logs SET fail_reason=?, hard_rule_stats=? WHERE id=?`,
+				failMsg, string(ruleStatsJSON), selectionLogID)
 		}
+		logger.Warn("engine: LLM selection failed — hard rule breakdown", map[string]any{
+			"total_candidates": len(rankings),
+			"hard_rule_stats":  ruleStats,
+		})
 		e.setState(StateMonitoring)
 		return fmt.Errorf("SelectStocks: %w", err)
 	}
 	logger.Info("engine: Claude ranked candidates",
 		map[string]any{"count": len(candidates)})
 
-	// LLM 응답 저장.
+	// LLM 응답 저장 (hard_rule_stats도 함께 기록 — 참고용).
 	if selectionLogID > 0 {
 		llmResultJSON, _ := json.Marshal(candidates)
 		e.db.ExecContext(ctx, //nolint:errcheck
-			`UPDATE trader_selection_logs SET llm_result=? WHERE id=?`,
-			string(llmResultJSON), selectionLogID)
+			`UPDATE trader_selection_logs SET llm_result=?, hard_rule_stats=? WHERE id=?`,
+			string(llmResultJSON), string(ruleStatsJSON), selectionLogID)
 	}
 
 	// Try candidates in order until one succeeds.
@@ -1692,6 +1762,180 @@ func (e *Engine) lookupStockName(ctx context.Context, stockCode string) string {
 		return ""
 	}
 	return m.StockName
+}
+
+// evaluateHardRules checks each item in the candidate list against the LLM prompt's
+// Hard Rejection Rules (Rules 2–12) and returns a map of rule_name → violation count.
+// Rule 1 (market_index_drop) is already enforced server-side before this function is called.
+func evaluateHardRules(items []RankItem, rules TradingRules) map[string]int {
+	counts := make(map[string]int, 12)
+	for _, item := range items {
+		// Rule 2: disparity_m5 out of [min, max]
+		if item.DisparityM5 > rules.HardDisparityM5Max || item.DisparityM5 < rules.HardDisparityM5Min {
+			counts["hard_disparity_m5"]++
+		}
+		// Rule 3: high_price_diff too close to day high (> max, i.e. less negative)
+		if item.HighPriceDiff != 0 && item.HighPriceDiff > rules.HardHighPriceDiffMax {
+			counts["hard_high_price_diff_max"]++
+		}
+		// Rule 4: large drop with high volume
+		if item.HighPriceDiff != 0 && item.HighPriceDiff < rules.HardHighPriceDiffMin && item.PrevVolumeRatio > rules.HardPrevVolRatioMax {
+			counts["hard_high_price_diff_vol"]++
+		}
+		// Rule 5: ma5 < ma20 (bearish alignment)
+		if item.MA5 > 0 && item.MA20 > 0 && item.MA5 < item.MA20 {
+			counts["hard_ma_bearish"]++
+		}
+		// Rule 6: strength below minimum
+		var strPct float64
+		fmt.Sscanf(item.Strength, "%f", &strPct)
+		if strPct > 0 && strPct < rules.HardStrengthMin {
+			counts["hard_strength_min"]++
+		}
+		// Rule 7: RSI over-bought
+		if item.RSI14 > 0 && item.RSI14 > rules.HardRSIMax {
+			counts["hard_rsi_max"]++
+		}
+		// Rule 8: already risen too much from open
+		if item.OpenPriceDiff > rules.HardOpenPriceDiffMax {
+			counts["hard_open_price_diff_max"]++
+		}
+		// Rule 9: MACD bearish cross (only when enabled)
+		if rules.HardMACDBearishEnabled && item.MACDLine < item.MACDSignal {
+			counts["hard_macd_bearish"]++
+		}
+		// Rule 10: day high formed too long ago
+		if rules.HardHighFormedMinsMax > 0 && float64(item.HighFormedMinsAgo) > rules.HardHighFormedMinsMax {
+			counts["hard_high_formed_mins"]++
+		}
+		// Rule 11: volume not recovered vs recent average
+		if rules.HardVolVs3AvgRatioMin > 0 && item.VolVs3AvgRatio > 0 && item.VolVs3AvgRatio < rules.HardVolVs3AvgRatioMin {
+			counts["hard_vol_vs_3avg"]++
+		}
+		// Rule 12: relative strength vs market
+		if rules.HardRelativeStrengthMin != 0 && item.RelativeStrengthVsMkt < rules.HardRelativeStrengthMin {
+			counts["hard_relative_strength"]++
+		}
+	}
+	return counts
+}
+
+// hardRuleStatsDetail builds a human-readable summary of the top violated rules.
+// e.g. "hard_strength_min:7/8, hard_rsi_max:3/8"
+func hardRuleStatsDetail(stats map[string]int, total int) string {
+	if len(stats) == 0 || total == 0 {
+		return ""
+	}
+	// Sort by count descending, pick top 3
+	type kv struct {
+		key string
+		val int
+	}
+	pairs := make([]kv, 0, len(stats))
+	for k, v := range stats {
+		pairs = append(pairs, kv{k, v})
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].val > pairs[j].val })
+	if len(pairs) > 3 {
+		pairs = pairs[:3]
+	}
+	parts := make([]string, len(pairs))
+	for i, p := range pairs {
+		parts[i] = fmt.Sprintf("%s:%d/%d", p.key, p.val, total)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// pushRuleHit appends a ruleHitRecord to the engine's ring buffer,
+// discarding the oldest entry when the buffer exceeds window size.
+func (e *Engine) pushRuleHit(r ruleHitRecord, window int) {
+	if window <= 0 {
+		window = 5
+	}
+	e.ruleHitMu.Lock()
+	defer e.ruleHitMu.Unlock()
+	e.ruleHitHistory = append(e.ruleHitHistory, r)
+	if len(e.ruleHitHistory) > window {
+		e.ruleHitHistory = e.ruleHitHistory[len(e.ruleHitHistory)-window:]
+	}
+}
+
+// detectBottleneckRule scans the ring buffer and returns the first rule that
+// triggered in ≥ thresholdPct% of recorded cycles. Returns ("", false) if none.
+func (e *Engine) detectBottleneckRule(thresholdPct float64) (string, bool) {
+	e.ruleHitMu.Lock()
+	defer e.ruleHitMu.Unlock()
+	n := len(e.ruleHitHistory)
+	if n == 0 {
+		return "", false
+	}
+	// Count cycles in which each rule fired at least once
+	cycleCounts := make(map[string]int)
+	for _, rec := range e.ruleHitHistory {
+		for rule, cnt := range rec.hitByRule {
+			if cnt > 0 {
+				cycleCounts[rule]++
+			}
+		}
+	}
+	// Stable iteration order: sort rules for determinism
+	rules := make([]string, 0, len(cycleCounts))
+	for r := range cycleCounts {
+		rules = append(rules, r)
+	}
+	sort.Strings(rules)
+	for _, rule := range rules {
+		if float64(cycleCounts[rule])/float64(n)*100 >= thresholdPct {
+			return rule, true
+		}
+	}
+	return "", false
+}
+
+// relaxSpecificRule returns a copy of settings with only the bottleneck rule's threshold relaxed.
+// hard_ma_bearish cannot be numerically relaxed — it is skipped (no change).
+func relaxSpecificRule(s database.TradingSettings, ruleName string, pct float64) database.TradingSettings {
+	rate := pct / 100.0
+	switch ruleName {
+	case "hard_strength_min":
+		if s.HardStrengthMin > 0 {
+			s.HardStrengthMin *= (1 - rate)
+		}
+	case "hard_rsi_max":
+		if s.HardRSIMax > 0 {
+			s.HardRSIMax *= (1 + rate)
+		}
+	case "hard_disparity_m5":
+		s.HardDisparityM5Max *= (1 + rate)
+		if s.HardDisparityM5Min != 0 {
+			s.HardDisparityM5Min *= (1 + rate) // 음수이므로 절대값이 커짐
+		}
+	case "hard_high_price_diff_max":
+		if s.HardHighPriceDiffMax != 0 {
+			s.HardHighPriceDiffMax *= (1 - rate) // 음수, 절대값 축소 → 더 관대
+		}
+	case "hard_high_price_diff_vol":
+		if s.HardHighPriceDiffMin != 0 {
+			s.HardHighPriceDiffMin *= (1 + rate) // 음수, 절대값 커짐 → 더 관대
+		}
+		if s.HardPrevVolRatioMax > 0 {
+			s.HardPrevVolRatioMax *= (1 + rate)
+		}
+	case "hard_open_price_diff_max":
+		if s.HardOpenPriceDiffMax > 0 {
+			s.HardOpenPriceDiffMax *= (1 + rate)
+		}
+	case "hard_macd_bearish":
+		s.HardMACDBearishEnabled = false
+	case "hard_high_formed_mins":
+		s.HardHighFormedMinsMax = 0 // 비활성화
+	case "hard_vol_vs_3avg":
+		s.HardVolVs3AvgRatioMin = 0 // 비활성화
+	case "hard_relative_strength":
+		s.HardRelativeStrengthMin = 0 // 비활성화
+		// hard_ma_bearish: MA 역배열은 시장 구조 조건이므로 수치 완화 불가 — 변경 없음
+	}
+	return s
 }
 
 // resolveAssetType looks up the stock in stock_masters and returns one of:
