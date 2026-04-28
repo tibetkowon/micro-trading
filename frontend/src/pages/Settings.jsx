@@ -343,6 +343,10 @@ export default function Settings() {
   const [escalationTrigger, setEscalationTrigger] = useState('20')
   const [escalationStepPct, setEscalationStepPct] = useState('10')
   const [escalationMaxStages, setEscalationMaxStages] = useState('5')
+  // ── Hard Rule Feedback (룰별 자동 완화) ──
+  const [hardRuleFeedbackEnabled, setHardRuleFeedbackEnabled] = useState(false)
+  const [hardRuleFeedbackWindow, setHardRuleFeedbackWindow] = useState('10')
+  const [hardRuleFeedbackThresholdPct, setHardRuleFeedbackThresholdPct] = useState('70')
 
   // ── AI 매매 기준값 — 랭킹 기준 ──
   const [vwapDiffMin, setVwapDiffMin] = useState('0.0')
@@ -455,6 +459,9 @@ export default function Settings() {
     if (data.escalation_trigger != null) setEscalationTrigger(String(data.escalation_trigger))
     if (data.escalation_step_pct != null) setEscalationStepPct(String(data.escalation_step_pct))
     if (data.escalation_max_stages != null) setEscalationMaxStages(String(data.escalation_max_stages))
+    if (data.hard_rule_feedback_enabled != null) setHardRuleFeedbackEnabled(data.hard_rule_feedback_enabled)
+    if (data.hard_rule_feedback_window != null) setHardRuleFeedbackWindow(String(data.hard_rule_feedback_window))
+    if (data.hard_rule_feedback_threshold_pct != null) setHardRuleFeedbackThresholdPct(String(data.hard_rule_feedback_threshold_pct))
     if (data.adaptive_relax_pct != null) setAdaptiveRelaxPct(String(data.adaptive_relax_pct))
     if (data.vwap_diff_min != null) setVwapDiffMin(String(data.vwap_diff_min))
     if (data.vwap_diff_max != null) setVwapDiffMax(String(data.vwap_diff_max))
@@ -589,6 +596,9 @@ export default function Settings() {
       escalation_trigger: parseInt(escalationTrigger),
       escalation_step_pct: parseFloat(escalationStepPct),
       escalation_max_stages: parseInt(escalationMaxStages),
+      hard_rule_feedback_enabled: hardRuleFeedbackEnabled,
+      hard_rule_feedback_window: parseInt(hardRuleFeedbackWindow),
+      hard_rule_feedback_threshold_pct: parseFloat(hardRuleFeedbackThresholdPct),
       adaptive_relax_pct: parseFloat(adaptiveRelaxPct),
       vwap_diff_min: parseFloat(vwapDiffMin),
       vwap_diff_max: parseFloat(vwapDiffMax),
@@ -1424,6 +1434,29 @@ export default function Settings() {
                 <span className={labelText}>최대 단계</span>
                 <input type="number" step="1" min="1" max="10" value={escalationMaxStages} onChange={(e) => setEscalationMaxStages(e.target.value)} className={inputCls} />
                 <p className={hintText}>완화 상한 단계 (기본 5). 이 단계 이상은 더 이상 완화하지 않음</p>
+              </label>
+            </div>
+
+            <div className={`space-y-1 ${divider}`}>
+              <p className="text-xs font-semibold text-th-on-muted uppercase tracking-widest">룰별 자동 완화 (Hard Rule Feedback)</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <label className="flex items-center gap-3 space-y-0">
+                <input type="checkbox" checked={hardRuleFeedbackEnabled} onChange={(e) => setHardRuleFeedbackEnabled(e.target.checked)} className="w-4 h-4" />
+                <div>
+                  <span className={labelText}>룰별 자동 완화 활성</span>
+                  <p className={hintText}>특정 Hard Rule이 최근 N사이클에서 임계 비율 이상 후보를 차단하면 해당 룰의 임계값을 단계적으로 완화합니다.</p>
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>분석 사이클 수 (Window)</span>
+                <input type="number" step="1" min="3" max="20" value={hardRuleFeedbackWindow} onChange={(e) => setHardRuleFeedbackWindow(e.target.value)} className={inputCls} />
+                <p className={hintText}>최근 몇 사이클을 분석할지 (기본 10). 클수록 완화 기준이 엄격해집니다.</p>
+              </label>
+              <label className="space-y-1">
+                <span className={labelText}>완화 발동 임계 비율 (%)</span>
+                <input type="number" step="5" min="50" max="100" value={hardRuleFeedbackThresholdPct} onChange={(e) => setHardRuleFeedbackThresholdPct(e.target.value)} className={inputCls} />
+                <p className={hintText}>Window 내 이 비율 이상 사이클에서 차단 발생 시 완화 (기본 70%)</p>
               </label>
             </div>
 

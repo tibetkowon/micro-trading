@@ -312,9 +312,13 @@ func (e *Engine) runCycle(ctx context.Context) {
 		// Adaptive/Escalation 완화와 독립적으로 적용된다.
 		if settings.HardRuleFeedbackEnabled {
 			if bottleneck, ok := e.detectBottleneckRule(settings.HardRuleFeedbackThresholdPct); ok {
+				before := ruleCurrentValue(settings, bottleneck)
 				settings = relaxSpecificRule(settings, bottleneck, settings.EscalationStepPct)
+				after := ruleCurrentValue(settings, bottleneck)
 				logger.Warn("engine: hard rule feedback — bottleneck rule relaxed", map[string]any{
 					"rule":          bottleneck,
+					"before":        before,
+					"after":         after,
 					"relax_pct":     settings.EscalationStepPct,
 					"window":        settings.HardRuleFeedbackWindow,
 					"threshold_pct": settings.HardRuleFeedbackThresholdPct,
@@ -1892,6 +1896,31 @@ func (e *Engine) detectBottleneckRule(thresholdPct float64) (string, bool) {
 	return "", false
 }
 
+// ruleCurrentValue returns the primary threshold value for a given rule name (used for before/after logging).
+func ruleCurrentValue(s database.TradingSettings, ruleName string) float64 {
+	switch ruleName {
+	case "hard_strength_min":
+		return s.HardStrengthMin
+	case "hard_rsi_max":
+		return s.HardRSIMax
+	case "hard_disparity_m5":
+		return s.HardDisparityM5Max
+	case "hard_high_price_diff_max":
+		return s.HardHighPriceDiffMax
+	case "hard_high_price_diff_vol":
+		return s.HardHighPriceDiffMin
+	case "hard_open_price_diff_max":
+		return s.HardOpenPriceDiffMax
+	case "hard_high_formed_mins":
+		return s.HardHighFormedMinsMax
+	case "hard_vol_vs_3avg":
+		return s.HardVolVs3AvgRatioMin
+	case "hard_relative_strength":
+		return s.HardRelativeStrengthMin
+	}
+	return 0
+}
+
 // relaxSpecificRule returns a copy of settings with only the bottleneck rule's threshold relaxed.
 // hard_ma_bearish cannot be numerically relaxed — it is skipped (no change).
 func relaxSpecificRule(s database.TradingSettings, ruleName string, pct float64) database.TradingSettings {
@@ -1928,9 +1957,19 @@ func relaxSpecificRule(s database.TradingSettings, ruleName string, pct float64)
 	case "hard_macd_bearish":
 		s.HardMACDBearishEnabled = false
 	case "hard_high_formed_mins":
-		s.HardHighFormedMinsMax = 0 // 비활성화
+		if s.HardHighFormedMinsMax > 0 {
+			s.HardHighFormedMinsMax += 15
+			if s.HardHighFormedMinsMax > 180 {
+				s.HardHighFormedMinsMax = 0 // 180분 초과 시 비활성화
+			}
+		}
 	case "hard_vol_vs_3avg":
-		s.HardVolVs3AvgRatioMin = 0 // 비활성화
+		if s.HardVolVs3AvgRatioMin > 0 {
+			s.HardVolVs3AvgRatioMin *= (1 - rate)
+			if s.HardVolVs3AvgRatioMin < 0.1 {
+				s.HardVolVs3AvgRatioMin = 0.1
+			}
+		}
 	case "hard_relative_strength":
 		s.HardRelativeStrengthMin = 0 // 비활성화
 		// hard_ma_bearish: MA 역배열은 시장 구조 조건이므로 수치 완화 불가 — 변경 없음

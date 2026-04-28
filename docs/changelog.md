@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-04-28 — Intraday Adaptive Hard Rule Relaxation 점진적 완화 개선
+
+- **trader/engine.go**: `relaxSpecificRule` — `hard_high_formed_mins` 완전 비활성화 대신 +15분 점진적 완화(상한 180분), `hard_vol_vs_3avg` 0 비활성화 대신 ×(1-rate) 점진적 완화(하한 0.1)로 변경
+- **trader/engine.go**: `ruleCurrentValue()` 헬퍼 추가 — 완화 로그에 before/after 값 포함
+- **database/db.go**: `hard_rule_feedback_window` 기본값 5→10, `hard_rule_feedback_threshold_pct` 기본값 80→70으로 조정
+- **Settings.jsx**: Hard Rule Feedback 설정 섹션(활성 토글·Window·임계 비율) UI 노출
+
 ## 2026-04-27 — Hard Rule 거부 사유 상세 로깅 및 룰별 자동 완화 피드백 루프
 
 - **trader/engine.go**: `evaluateHardRules()` 추가 — Claude 호출 전 후보 종목 전체에 대해 12개 Hard Rejection Rule 위반 여부를 서버 사이드에서 사전 집계

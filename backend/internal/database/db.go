@@ -134,9 +134,9 @@ type TradingSettings struct {
 	EscalationMaxStages int     // 최대 단계 수 (기본 5)
 	EscalationStage     int     // 런타임 전용 — 현재 단계 (DB에 저장 안 함)
 	// Hard Rule Feedback — 룰별 거부 빈도 기반 자동 완화
-	HardRuleFeedbackEnabled      bool    // 특정 룰이 window 내 80%+ 사이클에서 발동 시 해당 룰만 선택 완화
-	HardRuleFeedbackWindow       int     // 분석 대상 최근 사이클 수 (기본 5)
-	HardRuleFeedbackThresholdPct float64 // 발동 임계 비율 % (기본 80.0)
+	HardRuleFeedbackEnabled      bool    // 특정 룰이 window 내 70%+ 사이클에서 발동 시 해당 룰만 선택 완화
+	HardRuleFeedbackWindow       int     // 분석 대상 최근 사이클 수 (기본 10)
+	HardRuleFeedbackThresholdPct float64 // 발동 임계 비율 % (기본 70.0)
 }
 
 // DB wraps the sql.DB connection.
@@ -464,8 +464,8 @@ func (db *DB) migrate() error {
 		{"escalation_max_stages", "5"},
 		// Hard Rule Feedback
 		{"hard_rule_feedback_enabled", "false"},
-		{"hard_rule_feedback_window", "5"},
-		{"hard_rule_feedback_threshold_pct", "80"},
+		{"hard_rule_feedback_window", "10"},
+		{"hard_rule_feedback_threshold_pct", "70"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -743,8 +743,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 		EscalationMaxStages: i64Default("escalation_max_stages", 5),
 		// Hard Rule Feedback
 		HardRuleFeedbackEnabled:      vals["hard_rule_feedback_enabled"] == "true",
-		HardRuleFeedbackWindow:       i64Default("hard_rule_feedback_window", 5),
-		HardRuleFeedbackThresholdPct: f64Default("hard_rule_feedback_threshold_pct", 80.0),
+		HardRuleFeedbackWindow:       i64Default("hard_rule_feedback_window", 10),
+		HardRuleFeedbackThresholdPct: f64Default("hard_rule_feedback_threshold_pct", 70.0),
 	}, nil
 }
 
