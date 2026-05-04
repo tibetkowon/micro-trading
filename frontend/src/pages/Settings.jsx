@@ -173,8 +173,9 @@ export default function Settings() {
       await setDoc(doc(db, 'settings', 'config'), flat, { merge: true })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
-    } catch {
-      alert('저장 실패. 다시 시도하세요.')
+    } catch (err) {
+      console.error('settings save error:', err)
+      alert('저장 실패: ' + (err?.message || String(err)))
     } finally {
       setSaving(false)
     }
