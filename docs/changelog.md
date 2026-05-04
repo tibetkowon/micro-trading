@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-04 — fix: Settings 저장 Firestore 직접 쓰기로 전환 (VM API 우회)
+
+- **Settings.jsx**: `save()` 함수를 `apiFetch` → `setDoc(doc(db,'settings','config'), flat, {merge:true})` 로 교체
+  - 중첩 UI 상태를 Firestore flat string map으로 역변환하는 인라인 로직 추가
+  - `indicator_rsi_sell_enabled`, `indicator_macd_bearish_sell` 등 boolean도 string 직렬화
+- **firestore.rules**: `settings/config` 문서에 대해 `allow write: if true` 허용 (이미 적용됨)
+
 ## 2026-05-04 — feat: Settings 화면 Firestore 직접 읽기 + 저장 버튼 UX 개선
 
 - **Settings.jsx**: `useApi('/api/settings')` 제거 → Firestore `settings/config` 직접 읽기
@@ -7,7 +14,6 @@
   - `daily_max_loss_pct`→`daily_loss_limit_pct`, `min_score_threshold`→`min_score` 등 필드명 매핑
   - `weight_*`, `filter_*_enabled/value`, `schedule.*` 키 일괄 변환
 - **Settings.jsx**: 저장 버튼 UX 개선 — 저장 중 스피너, 성공/실패 명확한 피드백
-- 저장(PATCH)은 VM API 유지 — 백엔드에서 역변환 처리
 
 ## 2026-05-04 — feat: 프론트엔드 Firebase SDK 직접 연동 (대시보드 제외)
 

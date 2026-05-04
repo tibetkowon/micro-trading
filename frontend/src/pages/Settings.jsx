@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { doc, getDoc } from 'firebase/firestore'
-import { apiFetch } from '../utils/api'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { Toggle } from '../components/shared'
 import { db } from '../lib/firebase'
 
@@ -140,16 +139,42 @@ export default function Settings() {
   async function save() {
     setSaving(true)
     try {
-      const res = await apiFetch('/api/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const flat = {}
+      flat.max_positions = String(settings.max_positions ?? 1)
+      flat.order_amount_pct = String(settings.order_amount_pct ?? 95)
+      flat.take_profit_pct = String(settings.take_profit_pct ?? 3)
+      flat.stop_loss_pct = String(settings.stop_loss_pct ?? 2)
+      flat.etf_take_profit_pct = String(settings.etf_take_profit_pct ?? 2)
+      flat.etf_stop_loss_pct = String(settings.etf_stop_loss_pct ?? 1)
+      flat.daily_max_loss_pct = String(settings.daily_loss_limit_pct ?? 3)
+      flat.indicator_rsi_sell_enabled = String(settings.indicator_rsi_sell_enabled ?? false)
+      flat.indicator_macd_bearish_sell = String(settings.indicator_macd_bearish_sell ?? false)
+      flat.buy_pause_start = settings.buy_pause_start || ''
+      flat.buy_pause_end = settings.buy_pause_end || ''
+      flat.ranking_types = JSON.stringify(settings.ranking_types ?? [])
+      flat.ranking_condition = settings.ranking_condition || 'OR'
+      flat.ranking_top_n = String(settings.ranking_top_n ?? 30)
+      flat.ranking_price_min = String(settings.ranking_price_min ?? '5000')
+      flat.ranking_price_max = String(settings.ranking_price_max ?? '200000')
+      flat.ranking_exchanges = JSON.stringify(settings.ranking_exchanges ?? [])
+      flat.ranking_exclude_cls = settings.ranking_exclude_cls || '1111111111'
+      flat.min_score_threshold = String(settings.min_score ?? 0)
+      flat.trading_start_time = settings.schedule?.trade_start || '09:15'
+      flat.trading_end_time = settings.schedule?.trade_end || '15:15'
+      flat.scan_interval = String(settings.schedule?.scan_interval ?? 60)
+      flat.indicator_check_interval_min = String(settings.schedule?.indicator_check_interval ?? 5)
+      for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume'])
+        flat[`weight_${k}`] = String(settings.weights?.[k] ?? 0)
+      for (const k of ['rsi_upper_limit', 'strength_lower', 'vwap_min', 'vwap_max',
+          'high_disparity', 'open_rise_limit', 'high_elapsed_min', 'volume_ratio_lower']) {
+        flat[`filter_${k}_enabled`] = String(settings.filters?.[k]?.enabled ?? false)
+        flat[`filter_${k}_value`] = String(settings.filters?.[k]?.value ?? 0)
+      }
+      await setDoc(doc(db, 'settings', 'config'), flat, { merge: true })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch {
-      alert('저장 실패. 서버 연결을 확인하세요.')
+      alert('저장 실패. 다시 시도하세요.')
     } finally {
       setSaving(false)
     }
