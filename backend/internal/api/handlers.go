@@ -567,15 +567,43 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 	}
 	views := make([]scanLogView, len(logs))
 	for i, l := range logs {
-		// Build stock list from top_stocks (comma-separated names)
+		// top_stocks 형식: "code(score),code(score),..."
 		stocks := []gin.H{}
 		if l.TopStocks != "" {
-			for _, name := range splitTrimmed(l.TopStocks, ",") {
-				if name != "" {
-					stocks = append(stocks, gin.H{"stock_name": name})
+			for _, entry := range splitTrimmed(l.TopStocks, ",") {
+				code := entry
+				var score *float64
+				if idx := strings.Index(entry, "("); idx > 0 && strings.HasSuffix(entry, ")") {
+					code = strings.TrimSpace(entry[:idx])
+					scoreStr := entry[idx+1 : len(entry)-1]
+					if v, err := strconv.ParseFloat(scoreStr, 64); err == nil {
+						score = &v
+					}
 				}
+				if code == "" {
+					continue
+				}
+				stockName := code
+				if h.mstStore != nil {
+					if sm, err := h.mstStore.GetByCode(c.Request.Context(), code); err == nil && sm != nil {
+						stockName = sm.StockName
+					}
+				}
+				stocks = append(stocks, gin.H{
+					"stock_code":  code,
+					"stock_name":  stockName,
+					"total_score": score,
+				})
 			}
 		}
+
+		selectedName := l.OrderedCode
+		if h.mstStore != nil && l.OrderedCode != "" {
+			if sm, err := h.mstStore.GetByCode(c.Request.Context(), l.OrderedCode); err == nil && sm != nil {
+				selectedName = sm.StockName
+			}
+		}
+
 		views[i] = scanLogView{
 			ID:                l.ID,
 			ScannedAt:         l.Timestamp,
@@ -584,7 +612,7 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 			PassedHardFilter:  l.StocksFound,
 			ScoredCount:       len(stocks),
 			SelectedStockCode: l.OrderedCode,
-			SelectedStockName: l.OrderedCode,
+			SelectedStockName: selectedName,
 			RejectionSummary:  l.SkipReason,
 			Stocks:            stocks,
 		}
