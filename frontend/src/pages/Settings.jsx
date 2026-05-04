@@ -102,7 +102,7 @@ export default function Settings() {
   return (
     <div>
       <div className="tab-bar">
-        {['거래조건', '하드필터', '점수시스템', '스케줄'].map(t => (
+        {['거래조건', '순위조회', '하드필터', '점수시스템', '스케줄'].map(t => (
           <div key={t} className={`tab-item ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>{t}</div>
         ))}
       </div>
@@ -158,18 +158,6 @@ export default function Settings() {
                 value={settings.daily_loss_limit_pct ?? 3}
                 onChange={e => set('daily_loss_limit_pct', +e.target.value)} />
             </div>
-            <div className="form-group">
-              <label className="form-label">종목 선정 조건</label>
-              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                {['AND', 'OR'].map(m => (
-                  <button key={m}
-                    className={`btn ${settings.ranking_condition === m ? 'btn-primary' : 'btn-outline'} btn-sm`}
-                    onClick={() => set('ranking_condition', m)}>
-                    {m === 'AND' ? '교집합(AND)' : '합집합(OR)'}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
           <div className="filter-row">
             <span className="filter-label">RSI 과매수 자동 매도</span>
@@ -182,6 +170,125 @@ export default function Settings() {
             <Toggle
               checked={settings.indicator_macd_bearish_sell ?? false}
               onChange={v => set('indicator_macd_bearish_sell', v)} />
+          </div>
+        </div>
+      )}
+
+      {tab === '순위조회' && (
+        <div style={{ maxWidth: 600 }}>
+          {/* 순위 타입 */}
+          <div className="form-group" style={{ marginBottom: 16 }}>
+            <label className="form-label">순위 타입 (복수 선택 가능)</label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+              {[['volume', '거래량'], ['strength', '체결강도'], ['fluctuation', '등락률']].map(([val, label]) => {
+                const types = settings.ranking_types || []
+                const active = types.includes(val)
+                return (
+                  <button key={val}
+                    className={`btn ${active ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                    onClick={() => {
+                      const next = active ? types.filter(t => t !== val) : [...types, val]
+                      set('ranking_types', next)
+                    }}>
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 선정 조건 */}
+          <div className="form-group" style={{ marginBottom: 16 }}>
+            <label className="form-label">종목 선정 조건</label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+              {['OR', 'AND'].map(m => (
+                <button key={m}
+                  className={`btn ${settings.ranking_condition === m ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                  onClick={() => set('ranking_condition', m)}>
+                  {m === 'OR' ? '합집합 (OR)' : '교집합 (AND)'}
+                </button>
+              ))}
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              OR: 어느 한 순위에라도 등장한 종목 / AND: 모든 순위에 동시 등장한 종목만
+            </div>
+          </div>
+
+          {/* 상위 N개 + 가격 범위 */}
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">상위 N개 (최대 30)</label>
+              <input className="form-input" type="number" min="5" max="30"
+                value={settings.ranking_top_n ?? 30}
+                onChange={e => set('ranking_top_n', +e.target.value)} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">최소 가격 (원)</label>
+              <input className="form-input" type="number" step="1000"
+                value={settings.ranking_price_min ?? 5000}
+                onChange={e => set('ranking_price_min', String(e.target.value))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">최대 가격 (원)</label>
+              <input className="form-input" type="number" step="10000"
+                value={settings.ranking_price_max ?? 200000}
+                onChange={e => set('ranking_price_max', String(e.target.value))} />
+            </div>
+          </div>
+
+          {/* 거래소 */}
+          <div className="form-group" style={{ marginBottom: 16 }}>
+            <label className="form-label">거래소</label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+              {[['0001', 'KOSPI'], ['1001', 'KOSDAQ']].map(([val, label]) => {
+                const exs = settings.ranking_exchanges || []
+                const active = exs.includes(val)
+                return (
+                  <button key={val}
+                    className={`btn ${active ? 'btn-primary' : 'btn-outline'} btn-sm`}
+                    onClick={() => {
+                      const next = active ? exs.filter(e => e !== val) : [...exs, val]
+                      set('ranking_exchanges', next)
+                    }}>
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 제외 종목 유형 */}
+          <div className="form-group" style={{ marginBottom: 16 }}>
+            <label className="form-label">제외 종목 유형 (10자리)</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', marginTop: 8 }}>
+              {[
+                [0, '투자위험종목'],
+                [1, '투자경고종목'],
+                [2, '투자주의종목'],
+                [3, '관리종목'],
+                [4, '정리매매종목'],
+                [5, '불성실공시'],
+                [6, '우선주'],
+                [7, '거래정지'],
+                [8, 'ETF'],
+                [9, 'ETN'],
+              ].map(([idx, label]) => {
+                const cls = (settings.ranking_exclude_cls ?? '1111111111').split('')
+                const excluded = cls[idx] === '1'
+                return (
+                  <label key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={excluded} onChange={e => {
+                      const arr = (settings.ranking_exclude_cls ?? '1111111111').split('')
+                      arr[idx] = e.target.checked ? '1' : '0'
+                      set('ranking_exclude_cls', arr.join(''))
+                    }} />
+                    {label}
+                  </label>
+                )
+              })}
+            </div>
           </div>
         </div>
       )}

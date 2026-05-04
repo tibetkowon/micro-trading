@@ -63,6 +63,7 @@ type StockPriceResponse struct {
 	DayOpen      string `json:"stck_oprc"`      // 당일 시가
 	DayHigh      string `json:"stck_hgpr"`      // 당일 고가
 	DayLow       string `json:"stck_lwpr"`      // 당일 저가
+	Strength     string `json:"tday_rltv"`      // 체결강도 (당일)
 }
 
 // AvailableOrderResponse holds response from inquire-psbl-order (매수가능조회 TTTC8908R).

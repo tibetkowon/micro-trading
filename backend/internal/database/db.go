@@ -59,6 +59,7 @@ type TradingSettings struct {
 	RankingVIKindCode         string
 	RankingExchanges          []string
 	RankingVolumeBlngClsCodes []string
+	RankingExcludeCls         string
 	HardWatchSymbols          []string
 	RankLeaseDurationMin      int
 	// 매도 조건
@@ -245,7 +246,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.RankingPriceMin = ps(m, "ranking_price_min", "5000")
 	s.RankingPriceMax = ps(m, "ranking_price_max", "200000")
 	s.RankingCondition = ps(m, "ranking_condition", "OR")
-	s.RankingTopN = pi(m, "ranking_top_n", 0)
+	s.RankingTopN = pi(m, "ranking_top_n", 30)
 	s.RankingVolumeMinIncrRate = pf(m, "ranking_volume_min_incr_rate", 0.0)
 	s.RankingStrengthMin = pf(m, "ranking_strength_min", 0.0)
 	s.RankingFluctuationMinRate = pf(m, "ranking_fluctuation_min_rate", 0.0)
@@ -253,6 +254,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.RankingVIKindCode = ps(m, "ranking_vi_kind_code", "")
 	s.RankingExchanges = pjsonStrSlice(m, "ranking_exchanges", []string{"0001", "1001"})
 	s.RankingVolumeBlngClsCodes = pjsonStrSlice(m, "ranking_volume_blng_cls_codes", []string{"0"})
+	s.RankingExcludeCls = ps(m, "ranking_exclude_cls", "1111111111")
 	s.HardWatchSymbols = pjsonStrSlice(m, "hard_watch_symbols", nil)
 	s.RankLeaseDurationMin = pi(m, "rank_lease_duration_min", 0)
 	s.SellConditions = pjsonStrSlice(m, "sell_conditions", []string{"take_profit", "stop_loss"})
@@ -975,7 +977,7 @@ var defaultSettings = map[string]any{
 	"ranking_price_min":                "5000",
 	"ranking_price_max":                "200000",
 	"ranking_condition":                "OR",
-	"ranking_top_n":                    "0",
+	"ranking_top_n":                    "30",
 	"ranking_exchanges":                `["0001","1001"]`,
 	"ranking_volume_blng_cls_codes":    `["0"]`,
 	"ranking_volume_min_incr_rate":     "0",
@@ -983,6 +985,7 @@ var defaultSettings = map[string]any{
 	"ranking_fluctuation_min_rate":     "0",
 	"ranking_fluctuation_max_rate":     "0",
 	"ranking_vi_kind_code":             "",
+	"ranking_exclude_cls":              "1111111111",
 	"hard_watch_symbols":               `[]`,
 	"rank_lease_duration_min":          "0",
 	"sell_conditions":                  `["take_profit","stop_loss"]`,

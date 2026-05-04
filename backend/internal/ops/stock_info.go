@@ -24,6 +24,7 @@ type StockInfo struct {
 	ChangeRate      string  `json:"change_rate"`
 	Volume          string  `json:"volume"`
 	TradingValue    float64 `json:"trading_value"`   // 거래대금 (volume × price, KRW); 0 = unavailable
+	Strength        float64 `json:"strength"`        // 체결강도 (당일); 0 = unavailable
 	DayOpen         string  `json:"day_open"`        // 당일 시가
 	DayHigh         string  `json:"day_high"`        // 당일 고가
 	DayLow          string  `json:"day_low"`         // 당일 저가
@@ -83,6 +84,11 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 	vol, _ := strconv.ParseFloat(resp.Volume, 64)
 	if price > 0 && vol > 0 {
 		info.TradingValue = math.Round(price * vol)
+	}
+
+	// --- Strength: 체결강도 from inquire-price response ---
+	if s, err := strconv.ParseFloat(resp.Strength, 64); err == nil && s > 0 {
+		info.Strength = math.Round(s*10) / 10
 	}
 
 	// --- HighPriceDiff / OpenPriceDiff ---

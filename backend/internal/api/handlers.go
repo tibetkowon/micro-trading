@@ -645,7 +645,7 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 			ID:                l.ID,
 			ScannedAt:         l.Timestamp,
 			CreatedAt:         l.Timestamp,
-			EvaluatedCount:    l.StocksFound,
+			EvaluatedCount:    l.TotalCandidates,
 			PassedHardFilter:  l.StocksFound,
 			ScoredCount:       len(stocks),
 			SelectedStockCode: l.OrderedCode,
@@ -732,7 +732,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 	}
 
 	tradingEnabled := h.db.GetSetting(c.Request.Context(), "trading_enabled") != "false"
-	rankingExclCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
+	rankingExclCls := h.db.GetSetting(c.Request.Context(), "ranking_exclude_cls")
 	if rankingExclCls == "" {
 		rankingExclCls = "1111111111"
 	}
@@ -789,6 +789,8 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"etf_stop_loss_pct":           ts.ETFStopLossPct,
 		"daily_loss_limit_pct":        ts.DailyMaxLossPct,
 		"ranking_condition":           ts.RankingCondition,
+		"ranking_top_n":               ts.RankingTopN,
+		"ranking_exclude_cls":         rankingExclCls,
 		"indicator_rsi_sell_enabled":  indicatorRSISellEnabled,
 		"indicator_macd_bearish_sell": ts.IndicatorMACDBearishSell,
 		"buy_pause_start":             ts.BuyPauseStart,
@@ -815,7 +817,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 func (h *Handler) UpdateSettings(c *gin.Context) {
 	var req struct {
 		TradingEnabled *bool  `json:"trading_enabled"`
-		RankingExclCls string `json:"ranking_excl_cls"`
+		RankingExclCls string `json:"ranking_exclude_cls"`
 		// Autonomous trading settings (all optional)
 		TakeProfitPct             *float64 `json:"take_profit_pct"`
 		StopLossPct               *float64 `json:"stop_loss_pct"`
@@ -953,10 +955,10 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 
 	if req.RankingExclCls != "" {
 		if len(req.RankingExclCls) != 10 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "ranking_excl_cls는 10자리 문자열이어야 합니다"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ranking_exclude_cls는 10자리 문자열이어야 합니다"})
 			return
 		}
-		if !save("ranking_excl_cls", req.RankingExclCls) {
+		if !save("ranking_exclude_cls", req.RankingExclCls) {
 			return
 		}
 	}
@@ -1546,7 +1548,7 @@ func (h *Handler) GetVolumeRank(c *gin.Context) {
 	inputIscd := c.DefaultQuery("input_iscd", "0000")
 	sort := c.DefaultQuery("sort", "0")
 	priceMin, priceMax := h.resolvePriceFilter(c)
-	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
+	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_exclude_cls")
 	items, err := ops.GetVolumeRank(c.Request.Context(), h.client, market, inputIscd, sort, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
@@ -1562,7 +1564,7 @@ func (h *Handler) GetVolumeRank(c *gin.Context) {
 func (h *Handler) GetStrengthRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "0000")
 	priceMin, priceMax := h.resolvePriceFilter(c)
-	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
+	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_exclude_cls")
 	items, err := ops.GetStrengthRank(c.Request.Context(), h.client, market, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
@@ -1578,7 +1580,7 @@ func (h *Handler) GetStrengthRank(c *gin.Context) {
 func (h *Handler) GetFluctuationRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "0000")
 	priceMin, priceMax := h.resolvePriceFilter(c)
-	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
+	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_exclude_cls")
 	items, err := ops.GetFluctuationRank(c.Request.Context(), h.client, market, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})

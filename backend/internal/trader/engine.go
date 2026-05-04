@@ -234,11 +234,16 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			}
 		}
 
+		// StockInfo.Strength(inquire-price 체결강도)를 우선 사용; 없으면 랭킹 API 값 fallback
+		strength := info.Strength
+		if strength <= 0 {
+			strength = c.Strength
+		}
 		cinfo := scorer.CandidateInfo{
 			StockCode: c.StockCode,
 			StockName: c.StockName,
 			Info:      info,
-			Strength:  c.Strength,
+			Strength:  strength,
 		}
 
 		fr := scorer.ApplyHardFilter(cinfo, settings)
@@ -298,9 +303,10 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 	topJSON, _ := json.Marshal(topEntries)
 
 	scanLog := &models.ScanLog{
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
-		StocksFound: len(passed),
-		TopStocks:   string(topJSON),
+		Timestamp:       time.Now().UTC().Format(time.RFC3339),
+		TotalCandidates: len(candidates),
+		StocksFound:     len(passed),
+		TopStocks:       string(topJSON),
 	}
 
 	logger.Info("engine: scan complete", map[string]any{
@@ -379,7 +385,11 @@ func (e *Engine) fetchCandidates(ctx context.Context, settings database.TradingS
 	priceMax := settings.RankingPriceMax
 	topN := settings.RankingTopN
 	if topN <= 0 {
-		topN = 20
+		topN = 30
+	}
+	excludeCls := settings.RankingExcludeCls
+	if excludeCls == "" {
+		excludeCls = "1111111111"
 	}
 
 	// Determine exchange code for ranking APIs.
@@ -391,7 +401,7 @@ func (e *Engine) fetchCandidates(ctx context.Context, settings database.TradingS
 
 		switch name {
 		case "volume":
-			items, err := ops.GetVolumeRank(ctx, e.kisClient, "J", exchangeCode, "1", priceMin, priceMax, "")
+			items, err := ops.GetVolumeRank(ctx, e.kisClient, "J", exchangeCode, "1", priceMin, priceMax, excludeCls)
 			if err != nil {
 				logger.Warn("engine: GetVolumeRank failed", map[string]any{"error": err.Error()})
 				continue
@@ -404,7 +414,7 @@ func (e *Engine) fetchCandidates(ctx context.Context, settings database.TradingS
 			}
 
 		case "strength":
-			items, err := ops.GetStrengthRank(ctx, e.kisClient, exchangeCode, priceMin, priceMax, "")
+			items, err := ops.GetStrengthRank(ctx, e.kisClient, exchangeCode, priceMin, priceMax, excludeCls)
 			if err != nil {
 				logger.Warn("engine: GetStrengthRank failed", map[string]any{"error": err.Error()})
 				continue
@@ -418,7 +428,7 @@ func (e *Engine) fetchCandidates(ctx context.Context, settings database.TradingS
 			}
 
 		case "fluctuation":
-			items, err := ops.GetFluctuationRank(ctx, e.kisClient, exchangeCode, priceMin, priceMax, "")
+			items, err := ops.GetFluctuationRank(ctx, e.kisClient, exchangeCode, priceMin, priceMax, excludeCls)
 			if err != nil {
 				logger.Warn("engine: GetFluctuationRank failed", map[string]any{"error": err.Error()})
 				continue
