@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-04 — 버그 수정: 포지션 수량·설정 키 불일치·스캔 로그 지표 데이터
+
+- **api/handlers.go**: 포지션 수량 0주 버그 수정 — `GetOrderByID`로 실제 주문 수량 조회
+- **api/handlers.go**: `min_score` → `min_score_threshold`, `ranking_volume_min_incrrate` → `ranking_volume_min_incr_rate`, `hard_vol_vs_3avg_ratio_min` → `hard_vol_vs3_avg_ratio_min`, `stagnation_bid_ask_sell_threshold` → `stagnation_bidask_sell_threshold` 키 불일치 수정
+- **trader/engine.go**: `TopStocks` 필드를 `code(score)` CSV → JSON 배열 형식으로 변경, 지표값(체결강도/RSI/MACD/호가비율/VWAP/거래량비율) 포함
+- **api/handlers.go**: `GetScanLogs` — JSON/CSV 양 형식 파싱 지원, 종목명 `mstStore` 조회 추가
+- **kis/token.go**: 토큰 오류 시 `db.CreateKISAPILog()` 호출 추가 — UI 로그 탭 표시
+- **kis/websocket.go**: KIS PINGPONG keepalive JSON 에코백 처리 추가
+
 ## 2026-05-04 — CI/CD 워크플로우 v2 재작성 (GCP/Firebase 인프라 대응)
 
 - **백엔드 배포 전략 변경**: NCP SSH 직접 배포 → GCS 업로드 방식
