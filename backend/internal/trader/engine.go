@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"encoding/json"
+
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
@@ -264,18 +266,41 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 	})
 
 	// Build summary for scan log
-	var topNames []string
+	type topStockEntry struct {
+		Code        string  `json:"code"`
+		Name        string  `json:"name"`
+		Strength    float64 `json:"strength"`
+		RSI         float64 `json:"rsi"`
+		MACDBullish bool    `json:"macd_bullish"`
+		BidAsk      float64 `json:"bid_ask"`
+		VWAPDiff    float64 `json:"vwap_diff"`
+		VolRatio    float64 `json:"vol_ratio"`
+		Total       float64 `json:"total"`
+	}
+	topEntries := make([]topStockEntry, 0, 5)
 	for i, p := range passed {
-		if i >= 3 {
+		if i >= 5 {
 			break
 		}
-		topNames = append(topNames, fmt.Sprintf("%s(%.1f)", p.cinfo.StockCode, p.detail.Total))
+		info := p.cinfo.Info
+		topEntries = append(topEntries, topStockEntry{
+			Code:        p.cinfo.StockCode,
+			Name:        p.cinfo.StockName,
+			Strength:    p.cinfo.Strength,
+			RSI:         info.RSI14,
+			MACDBullish: info.MACDLine > info.MACDSignal,
+			BidAsk:      info.BidAskRatio,
+			VWAPDiff:    info.VWAPDiff,
+			VolRatio:    info.VolVs3AvgRatio,
+			Total:       p.detail.Total,
+		})
 	}
+	topJSON, _ := json.Marshal(topEntries)
 
 	scanLog := &models.ScanLog{
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		StocksFound: len(passed),
-		TopStocks:   strings.Join(topNames, ", "),
+		TopStocks:   string(topJSON),
 	}
 
 	logger.Info("engine: scan complete", map[string]any{

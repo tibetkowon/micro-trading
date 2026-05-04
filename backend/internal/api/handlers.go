@@ -565,35 +565,66 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 		RejectionSummary  string  `json:"rejection_summary"`
 		Stocks            []gin.H `json:"stocks"`
 	}
+	type topStockEntry struct {
+		Code        string  `json:"code"`
+		Name        string  `json:"name"`
+		Strength    float64 `json:"strength"`
+		RSI         float64 `json:"rsi"`
+		MACDBullish bool    `json:"macd_bullish"`
+		BidAsk      float64 `json:"bid_ask"`
+		VWAPDiff    float64 `json:"vwap_diff"`
+		VolRatio    float64 `json:"vol_ratio"`
+		Total       float64 `json:"total"`
+	}
+
 	views := make([]scanLogView, len(logs))
 	for i, l := range logs {
-		// top_stocks 형식: "code(score),code(score),..."
 		stocks := []gin.H{}
 		if l.TopStocks != "" {
-			for _, entry := range splitTrimmed(l.TopStocks, ",") {
-				code := entry
-				var score *float64
-				if idx := strings.Index(entry, "("); idx > 0 && strings.HasSuffix(entry, ")") {
-					code = strings.TrimSpace(entry[:idx])
-					scoreStr := entry[idx+1 : len(entry)-1]
-					if v, err := strconv.ParseFloat(scoreStr, 64); err == nil {
-						score = &v
+			// JSON 형식 (신규) vs code(score) 형식 (구버전) 하위 호환
+			var entries []topStockEntry
+			if err := json.Unmarshal([]byte(l.TopStocks), &entries); err == nil {
+				for _, e := range entries {
+					stockName := e.Name
+					if h.mstStore != nil && e.Code != "" {
+						if sm, err2 := h.mstStore.GetByCode(c.Request.Context(), e.Code); err2 == nil && sm != nil {
+							stockName = sm.StockName
+						}
 					}
+					stocks = append(stocks, gin.H{
+						"stock_code":   e.Code,
+						"stock_name":   stockName,
+						"strength":     e.Strength,
+						"rsi":          e.RSI,
+						"macd_bullish": e.MACDBullish,
+						"bid_ask_ratio": e.BidAsk,
+						"vwap_disparity": e.VWAPDiff,
+						"volume_ratio": e.VolRatio,
+						"total_score":  e.Total,
+					})
 				}
-				if code == "" {
-					continue
-				}
-				stockName := code
-				if h.mstStore != nil {
-					if sm, err := h.mstStore.GetByCode(c.Request.Context(), code); err == nil && sm != nil {
-						stockName = sm.StockName
+			} else {
+				// 구버전: "code(score), code(score)" 형식
+				for _, entry := range splitTrimmed(l.TopStocks, ",") {
+					code := entry
+					var score *float64
+					if idx := strings.Index(entry, "("); idx > 0 && strings.HasSuffix(entry, ")") {
+						code = strings.TrimSpace(entry[:idx])
+						if v, err2 := strconv.ParseFloat(entry[idx+1:len(entry)-1], 64); err2 == nil {
+							score = &v
+						}
 					}
+					if code == "" {
+						continue
+					}
+					stockName := code
+					if h.mstStore != nil {
+						if sm, err2 := h.mstStore.GetByCode(c.Request.Context(), code); err2 == nil && sm != nil {
+							stockName = sm.StockName
+						}
+					}
+					stocks = append(stocks, gin.H{"stock_code": code, "stock_name": stockName, "total_score": score})
 				}
-				stocks = append(stocks, gin.H{
-					"stock_code":  code,
-					"stock_name":  stockName,
-					"total_score": score,
-				})
 			}
 		}
 
@@ -740,7 +771,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 	}
 
 	indicatorRSISellEnabled := db.GetSetting(ctx, "indicator_rsi_sell_enabled") == "true"
-	minScore := settingFloat(db.GetSetting(ctx, "min_score"), 0)
+	minScore := settingFloat(db.GetSetting(ctx, "min_score_threshold"), 0)
 
 	data := gin.H{
 		// 거래 조건
@@ -1387,7 +1418,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 	if req.MinScore != nil {
-		if !save("min_score", strconv.FormatFloat(*req.MinScore, 'f', -1, 64)) {
+		if !save("min_score_threshold", strconv.FormatFloat(*req.MinScore, 'f', -1, 64)) {
 			return
 		}
 	}

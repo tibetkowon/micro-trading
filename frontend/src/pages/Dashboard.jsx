@@ -164,16 +164,33 @@ export default function Dashboard() {
                           <table>
                             <thead>
                               <tr>
-                                <th>종목코드</th>
-                                <th>종목명</th>
-                                <th>점수</th>
+                                <th>종목</th>
+                                <th>체결강도</th>
+                                <th>RSI</th>
+                                <th>MACD</th>
+                                <th>호가비율</th>
+                                <th>VWAP</th>
+                                <th>거래량비율</th>
+                                <th>총점</th>
                               </tr>
                             </thead>
                             <tbody>
                               {stocks.map(s => (
                                 <tr key={s.stock_code}>
-                                  <td className="mono">{s.stock_code}</td>
-                                  <td>{s.stock_name !== s.stock_code ? s.stock_name : '—'}</td>
+                                  <td>
+                                    <span style={{ fontWeight: 600 }}>{s.stock_name !== s.stock_code ? s.stock_name : s.stock_code}</span>
+                                    {s.stock_name !== s.stock_code && <span className="mono muted" style={{ fontSize: 11, marginLeft: 4 }}>{s.stock_code}</span>}
+                                  </td>
+                                  <td className="mono">{s.strength > 0 ? s.strength.toFixed(1) : '—'}</td>
+                                  <td className="mono">{s.rsi > 0 ? s.rsi.toFixed(1) : '—'}</td>
+                                  <td>
+                                    {s.macd_bullish != null
+                                      ? <Badge color={s.macd_bullish ? 'green' : 'red'}>{s.macd_bullish ? 'BULL' : 'BEAR'}</Badge>
+                                      : '—'}
+                                  </td>
+                                  <td className="mono">{s.bid_ask_ratio > 0 ? s.bid_ask_ratio.toFixed(2) : '—'}</td>
+                                  <td className="mono">{s.vwap_disparity != null ? s.vwap_disparity.toFixed(2) + '%' : '—'}</td>
+                                  <td className="mono">{s.volume_ratio > 0 ? s.volume_ratio.toFixed(2) : '—'}</td>
                                   <td className="mono accent" style={{ fontWeight: 700 }}>{s.total_score?.toFixed(1) ?? '—'}</td>
                                 </tr>
                               ))}
