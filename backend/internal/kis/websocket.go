@@ -429,6 +429,17 @@ func (c *WebSocketClient) handleJSONMessage(raw []byte) {
 		return
 	}
 
+	// KIS application-level keepalive: echo the message back as-is.
+	if resp.Header.TrID == "PINGPONG" {
+		c.mu.RLock()
+		conn := c.conn
+		c.mu.RUnlock()
+		if conn != nil {
+			conn.WriteMessage(websocket.TextMessage, raw) //nolint:errcheck
+		}
+		return
+	}
+
 	if resp.Body.RtCd != "0" {
 		logger.Error("KIS WebSocket subscribe failed",
 			map[string]any{"tr_id": resp.Header.TrID, "msg": resp.Body.Msg1})
