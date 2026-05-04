@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import useApi from '../hooks/useApi'
+import { useState, useEffect } from 'react'
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore'
 import { fmt, fmtPct, fmtSigned, Badge } from '../components/shared'
+import { db } from '../lib/firebase'
 
 const SELL_REASON_COLOR = {
   '목표가 도달': 'green',
@@ -15,18 +16,71 @@ function SellReasonBadge({ reason }) {
   return <Badge color={SELL_REASON_COLOR[reason] || 'gray'}>{reason || '—'}</Badge>
 }
 
+function fmtTime(ts) {
+  if (!ts) return '—'
+  const d = ts.toDate ? ts.toDate() : new Date(ts)
+  return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function calcHoldPeriod(start, end) {
+  if (!start || !end) return '—'
+  const s = start.toDate ? start.toDate() : new Date(start)
+  const e = end.toDate ? end.toDate() : new Date(end)
+  const mins = Math.round((e - s) / 60000)
+  if (mins < 60) return `${mins}m`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`
+}
+
+function groupByDate(reports) {
+  const groups = {}
+  for (const r of reports) {
+    const date = r.date || 'unknown'
+    if (!groups[date]) groups[date] = { date, day_pnl: 0, trades: [] }
+    groups[date].day_pnl += r.profit_amount || 0
+    groups[date].trades.push({
+      id: r._docId,
+      stock_code: r.stock_code,
+      stock_name: r.stock_name,
+      buy_price: r.buy_price,
+      sell_price: r.sell_price,
+      pnl_amount: r.profit_amount,
+      pnl_pct: r.profit_pct,
+      sell_reason: r.sell_reason,
+      buy_time: fmtTime(r.created_at),
+      sell_time: fmtTime(r.sold_at),
+      hold_period: calcHoldPeriod(r.created_at, r.sold_at),
+      indicators: (() => { try { return JSON.parse(r.buy_indicators || '{}') } catch { return {} } })(),
+    })
+  }
+  return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date))
+}
+
+const PAGE_SIZE = 20
+
 export default function TradeReports() {
   const [dateFilter, setDateFilter] = useState('')
   const [codeFilter, setCodeFilter] = useState('')
   const [expandedId, setExpandedId] = useState(null)
   const [page, setPage] = useState(1)
+  const [allReports, setAllReports] = useState([])
+  const [loading, setLoading] = useState(true)
 
-  const query = new URLSearchParams({ page, limit: 20 })
-  if (dateFilter) query.set('date', dateFilter)
-  if (codeFilter) query.set('stock_code', codeFilter)
+  useEffect(() => {
+    const q = query(collection(db, 'trade_reports'), orderBy('created_at', 'desc'), limit(500))
+    getDocs(q)
+      .then(snap => setAllReports(snap.docs.map(d => ({ _docId: d.id, ...d.data() }))))
+      .finally(() => setLoading(false))
+  }, [])
 
-  const { data, loading } = useApi(`/api/reports/trades?${query}`)
-  const groups = data?.data || []
+  const filtered = allReports.filter(r => {
+    if (dateFilter && r.date !== dateFilter) return false
+    if (codeFilter && !r.stock_code?.includes(codeFilter.toUpperCase())) return false
+    return true
+  })
+
+  const groups = groupByDate(filtered)
+  const totalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE))
+  const pagedGroups = groups.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div>
@@ -39,12 +93,12 @@ export default function TradeReports() {
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>로딩 중...</div>
-      ) : groups.length === 0 ? (
+      ) : pagedGroups.length === 0 ? (
         <div className="card">
           <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>거래 리포트가 없습니다</div>
         </div>
       ) : (
-        groups.map(group => (
+        pagedGroups.map(group => (
           <div key={group.date} style={{ marginBottom: 24 }}>
             <div className="date-group-header">
               <span className="date-label">{group.date}</span>
@@ -119,7 +173,7 @@ export default function TradeReports() {
       <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 }}>
         <button className="btn btn-outline btn-xs" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← 이전</button>
         <span className="muted" style={{ padding: '2px 8px', fontSize: 12 }}>페이지 {page}</span>
-        <button className="btn btn-outline btn-xs" disabled={groups.length < 20} onClick={() => setPage(p => p + 1)}>다음 →</button>
+        <button className="btn btn-outline btn-xs" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>다음 →</button>
       </div>
     </div>
   )

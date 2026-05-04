@@ -1,21 +1,34 @@
-import { useState } from 'react'
-import useApi from '../hooks/useApi'
+import { useState, useEffect } from 'react'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { apiFetch } from '../utils/api'
-import { fmt, fmtPct, fmtSigned, Badge, PriceProgressBar, Modal, EmptyState } from '../components/shared'
+import { fmt, Badge, Modal, EmptyState } from '../components/shared'
+import { db, fmtTs } from '../lib/firebase'
+
+function calcHeldDays(createdAt) {
+  if (!createdAt) return 0
+  const start = createdAt.toDate ? createdAt.toDate() : new Date(createdAt)
+  return Math.floor((Date.now() - start.getTime()) / (1000 * 60 * 60 * 24))
+}
 
 export default function Positions() {
-  const { data, loading, refetch } = useApi('/api/monitor/positions')
+  const [positions, setPositions] = useState([])
+  const [loading, setLoading] = useState(true)
   const [confirmAll, setConfirmAll] = useState(false)
   const [confirmSell, setConfirmSell] = useState(null)
   const [acting, setActing] = useState(false)
 
-  const positions = data?.data || []
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'monitored_positions'), snap => {
+      setPositions(snap.docs.map(d => ({ _docId: d.id, ...d.data() })))
+      setLoading(false)
+    })
+    return unsub
+  }, [])
 
   async function forceSell(code) {
     setActing(true)
     try {
       await apiFetch(`/api/monitor/positions/${code}/sell`, { method: 'POST' })
-      refetch()
     } finally {
       setActing(false)
       setConfirmSell(null)
@@ -26,7 +39,6 @@ export default function Positions() {
     setActing(true)
     try {
       await apiFetch('/api/monitor/liquidate-all', { method: 'POST' })
-      refetch()
     } finally {
       setActing(false)
       setConfirmAll(false)
@@ -54,68 +66,34 @@ export default function Positions() {
       ) : (
         <div className="pos-grid">
           {positions.map(p => {
-            const range = (p.target_price ?? 0) - (p.stop_price ?? 0)
-            const pct = range > 0 ? ((p.current_price - p.stop_price) / range) * 100 : 50
-            const nearStop = pct < 15
-            const pnlPct = p.pnl_pct ?? 0
-            const pnlAmt = p.pnl_amount ?? 0
-            const heldDays = p.held_days ?? 0
-
+            const heldDays = calcHeldDays(p.created_at)
             return (
-              <div key={p.stock_code} className={`pos-card ${nearStop ? 'near-stop' : ''}`}>
+              <div key={p._docId} className="pos-card">
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
                   <div>
                     <div style={{ fontSize: 16, fontWeight: 700 }}>{p.stock_name}</div>
                     <div className="mono muted" style={{ fontSize: 12 }}>{p.stock_code}</div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <Badge color={p.status === 'MONITORING' ? 'green' : 'yellow'}>
-                      {p.status === 'MONITORING' ? 'MONITORING' : 'PENDING SELL'}
-                    </Badge>
-                    {nearStop && <Badge color="red">⚠ 손절 근접</Badge>}
-                  </div>
+                  <Badge color="green">MONITORING</Badge>
                 </div>
-
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
-                  <div className="mono" style={{ fontSize: 24, fontWeight: 700 }}>{fmt(p.current_price)}</div>
-                  <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: pnlPct >= 0 ? 'var(--up)' : 'var(--down)' }}>
-                    {fmtPct(pnlPct)}
-                  </div>
-                </div>
-
-                {p.stop_price && p.target_price && (
-                  <div style={{ marginBottom: 12 }}>
-                    <PriceProgressBar
-                      stop={p.stop_price}
-                      avg={p.avg_price}
-                      target={p.target_price}
-                      current={p.current_price}
-                    />
-                  </div>
-                )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
                   {[
-                    ['평균단가', fmt(p.avg_price)],
-                    ['수량', `${p.quantity}주`],
+                    ['매수가', fmt(p.filled_price)],
+                    ['목표가', fmt(p.target_price)],
+                    ['손절가', fmt(p.stop_price)],
                     ['보유일', `${heldDays}일`],
-                    ['손익금', fmtSigned(pnlAmt)],
                   ].map(([label, value]) => (
                     <div key={label}>
                       <div style={{ fontSize: 10, color: 'var(--text-dim)', marginBottom: 2, textTransform: 'uppercase' }}>{label}</div>
-                      <div className="mono" style={{
-                        fontSize: 12, fontWeight: 600,
-                        color: label === '손익금' ? (pnlAmt >= 0 ? 'var(--up)' : 'var(--down)') : 'inherit',
-                      }}>{value}</div>
+                      <div className="mono" style={{ fontSize: 12, fontWeight: 600 }}>{value}</div>
                     </div>
                   ))}
                 </div>
 
-                {p.entry_time && (
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>
-                    기준시각: <span className="mono">{p.entry_time}</span>
-                  </div>
-                )}
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>
+                  진입시각: <span className="mono">{fmtTs(p.created_at)}</span>
+                </div>
 
                 <button className="btn btn-danger" style={{ width: '100%', justifyContent: 'center' }}
                   onClick={() => setConfirmSell(p)}>
@@ -149,7 +127,7 @@ export default function Positions() {
             </button>,
           ]}>
           <p><strong>{confirmSell.stock_name} ({confirmSell.stock_code})</strong>를 시장가로 강제 매도합니다.</p>
-          <p style={{ marginTop: 8 }}>현재가 <span className="mono">{fmt(confirmSell.current_price)}</span> 기준 — 실제 체결가는 다를 수 있습니다.</p>
+          <p style={{ marginTop: 8 }}>매수가 <span className="mono">{fmt(confirmSell.filled_price)}</span> 기준으로 주문합니다.</p>
         </Modal>
       )}
     </div>

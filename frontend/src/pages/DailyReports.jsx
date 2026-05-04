@@ -1,12 +1,36 @@
-import { useState } from 'react'
-import useApi from '../hooks/useApi'
+import { useState, useEffect } from 'react'
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore'
 import { fmtPct, fmtSigned } from '../components/shared'
+import { db } from '../lib/firebase'
+
+function transformReport(d) {
+  const r = { _docId: d.id, ...d.data() }
+  const totalTrades = r.total_trades || 0
+  const winningTrades = r.winning_trades || 0
+  return {
+    _docId: r._docId,
+    date: r.date,
+    trade_count: totalTrades,
+    wins: winningTrades,
+    losses: r.losing_trades || 0,
+    pnl: r.total_profit_amount || 0,
+    pnl_pct: r.avg_profit_pct || 0,
+    win_rate: totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0,
+    report_summary: r.trade_summary || '',
+  }
+}
 
 export default function DailyReports() {
-  const { data, loading } = useApi('/api/reports/daily?limit=50')
+  const [reports, setReports] = useState([])
+  const [loading, setLoading] = useState(true)
   const [expandedDate, setExpandedDate] = useState(null)
 
-  const reports = data?.data || []
+  useEffect(() => {
+    const q = query(collection(db, 'daily_reports'), orderBy('date', 'desc'), limit(50))
+    getDocs(q)
+      .then(snap => setReports(snap.docs.map(d => transformReport(d))))
+      .finally(() => setLoading(false))
+  }, [])
 
   const totalPnl = reports.reduce((s, r) => s + (r.pnl ?? 0), 0)
   const avgWinRate = reports.length > 0
@@ -21,7 +45,6 @@ export default function DailyReports() {
 
   return (
     <div>
-      {/* Summary stat cards */}
       <div className="summary-grid">
         {[
           ['총 누적 손익', fmtSigned(totalPnl), totalPnl >= 0 ? 'var(--up)' : 'var(--down)'],
@@ -36,7 +59,6 @@ export default function DailyReports() {
         ))}
       </div>
 
-      {/* Bar chart */}
       {reports.length > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
@@ -61,7 +83,6 @@ export default function DailyReports() {
         </div>
       )}
 
-      {/* Daily rows */}
       <div className="card">
         {loading ? (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>로딩 중...</div>

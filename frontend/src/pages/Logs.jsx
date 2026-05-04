@@ -1,10 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
-import useApi from '../hooks/useApi'
+import { collection, query, orderBy, limit, onSnapshot, getDocs } from 'firebase/firestore'
 import { apiFetch } from '../utils/api'
 import { Badge, Toggle } from '../components/shared'
+import { db, fmtTs } from '../lib/firebase'
 
 const LEVEL_COLOR = { ERROR: 'var(--accent)', WARN: 'var(--yellow)', INFO: 'var(--text-muted)' }
 const LEVEL_BADGE = { ERROR: 'red', WARN: 'yellow', INFO: 'gray' }
+
+function fetchKisLogs(setKisLogs, setKisLoading) {
+  setKisLoading(true)
+  const q = query(collection(db, 'kis_api_logs'), orderBy('timestamp', 'desc'), limit(100))
+  getDocs(q)
+    .then(snap => setKisLogs(snap.docs.map(d => ({ _docId: d.id, ...d.data() }))))
+    .finally(() => setKisLoading(false))
+}
 
 export default function Logs() {
   const [tab, setTab] = useState('KIS API')
@@ -15,17 +24,32 @@ export default function Logs() {
   const [autoScroll, setAutoScroll] = useState(true)
   const logRef = useRef(null)
 
-  const { data: kisData, loading: kisLoading, refetch: refetchKis } = useApi('/api/logs/kis?limit=100')
-  const { data: svcData, loading: svcLoading } = useApi(`/api/logs/service?limit=200&source=${sourceFilter}`)
+  const [kisLogs, setKisLogs] = useState([])
+  const [kisLoading, setKisLoading] = useState(true)
+  const [serviceLogs, setServiceLogs] = useState([])
+  const [svcLoading, setSvcLoading] = useState(true)
 
-  const kisLogs = kisData?.data || []
-  const serviceLogs = svcData?.data || []
+  useEffect(() => {
+    if (tab !== 'KIS API') return
+    fetchKisLogs(setKisLogs, setKisLoading)
+  }, [tab])
+
+  useEffect(() => {
+    if (tab !== '서비스 로그') return
+    setSvcLoading(true)
+    const q = query(collection(db, 'service_logs'), orderBy('timestamp', 'desc'), limit(200))
+    const unsub = onSnapshot(q, snap => {
+      setServiceLogs(snap.docs.map(d => ({ _docId: d.id, ...d.data() })).reverse())
+      setSvcLoading(false)
+    })
+    return unsub
+  }, [tab])
 
   useEffect(() => {
     if (autoScroll && logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight
     }
-  }, [svcData, autoScroll])
+  }, [serviceLogs, autoScroll])
 
   function toggleSelect(id, e) {
     e.stopPropagation()
@@ -47,11 +71,12 @@ export default function Logs() {
       apiFetch(`/api/logs/kis/${id}`, { method: 'DELETE' })
     ))
     setSelectedIds(new Set())
-    refetchKis()
+    fetchKisLogs(setKisLogs, setKisLoading)
   }
 
   const filteredService = serviceLogs.filter(l => {
     if (levelFilter !== 'ALL' && l.level !== levelFilter) return false
+    if (sourceFilter !== 'ALL' && l.source !== sourceFilter) return false
     return true
   })
 
@@ -66,8 +91,6 @@ export default function Logs() {
       {tab === 'KIS API' && (
         <div>
           <div style={{ display: 'flex', gap: 12, marginBottom: 14, alignItems: 'center' }}>
-            <input className="form-input" type="date" style={{ width: 160 }} />
-            <input className="form-input" placeholder="에러코드 검색..." style={{ width: 180 }} />
             <button className="btn btn-danger btn-sm" style={{ marginLeft: 'auto' }}
               disabled={selectedIds.size === 0}
               onClick={deleteSelected}>
@@ -102,37 +125,37 @@ export default function Logs() {
                         </td>
                       </tr>
                     ) : kisLogs.map(l => (
-                      <tr key={l.id} style={{ cursor: 'pointer', background: selectedIds.has(l.id) ? 'rgba(234,108,16,0.07)' : '' }}>
+                      <tr key={l._docId} style={{ cursor: 'pointer', background: selectedIds.has(l.id) ? 'rgba(234,108,16,0.07)' : '' }}>
                         <td onClick={e => toggleSelect(l.id, e)} style={{ cursor: 'default' }}>
                           <input type="checkbox" checked={selectedIds.has(l.id)} onChange={() => {}}
                             style={{ cursor: 'pointer', accentColor: 'var(--accent)' }} />
                         </td>
                         <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-                          onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}>
-                          {l.created_at}
+                          onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
+                          {fmtTs(l.timestamp)}
                         </td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: 280 }}
-                          onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}>
+                          onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
                           {l.endpoint}
                         </td>
-                        <td onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}>
+                        <td onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
                           {l.error_code
                             ? <Badge color="red">{l.error_code}</Badge>
                             : <span className="muted" style={{ fontSize: 11 }}>—</span>}
                         </td>
                         <td style={{ fontSize: 12, color: l.error_code ? 'var(--red)' : 'var(--text)' }}
-                          onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}>
+                          onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
                           <span style={{ color: 'var(--text-dim)', fontSize: 10, marginRight: 6 }}>
-                            {expandedId === l.id ? '▼' : '▶'}
+                            {expandedId === l._docId ? '▼' : '▶'}
                           </span>
-                          {l.message || l.error_message}
+                          {l.error_msg}
                         </td>
                       </tr>
                     ))}
-                    {kisLogs.map(l => expandedId === l.id ? (
-                      <tr key={`expand-${l.id}`}>
+                    {kisLogs.map(l => expandedId === l._docId ? (
+                      <tr key={`expand-${l._docId}`}>
                         <td colSpan={5} style={{ padding: '0 12px 12px 40px' }}>
-                          <div className="code-block">{l.raw_response || l.response_body || '(응답 없음)'}</div>
+                          <div className="code-block">{l.raw_response || '(응답 없음)'}</div>
                         </td>
                       </tr>
                     ) : null)}
@@ -177,8 +200,8 @@ export default function Logs() {
             ) : filteredService.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>로그가 없습니다</div>
             ) : filteredService.map(l => (
-              <div key={l.id} style={{ display: 'flex', gap: 12, padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{l.created_at}</span>
+              <div key={l._docId} style={{ display: 'flex', gap: 12, padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{fmtTs(l.timestamp)}</span>
                 <span style={{ width: 44, flexShrink: 0 }}><Badge color={LEVEL_BADGE[l.level] || 'gray'}>{l.level}</Badge></span>
                 <span className="muted" style={{ fontSize: 11, width: 60, flexShrink: 0 }}>{l.source}</span>
                 <span style={{ fontSize: 12, color: LEVEL_COLOR[l.level] || 'var(--text)' }}>{l.message}</span>

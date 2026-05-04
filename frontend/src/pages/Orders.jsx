@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import useApi from '../hooks/useApi'
+import { useState, useEffect, useCallback } from 'react'
+import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore'
 import { apiFetch } from '../utils/api'
 import { fmt, Badge, Spinner } from '../components/shared'
+import { db, fmtTs } from '../lib/firebase'
 
 const STATUS_COLOR = { FILLED: 'green', PENDING: 'yellow', CANCELLED: 'gray', FAILED: 'red', PARTIALLY_FILLED: 'yellow' }
 const STATUS_LABEL = { FILLED: '체결', PENDING: '대기', CANCELLED: '취소', FAILED: '실패', PARTIALLY_FILLED: '부분체결' }
@@ -13,15 +14,35 @@ export default function Orders() {
   const [statusFilter, setStatusFilter] = useState('전체')
   const [page, setPage] = useState(1)
   const [syncing, setSyncing] = useState(false)
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
 
-  const limit = 50
-  const offset = (page - 1) * limit
+  const PAGE_SIZE = 50
   const days = RANGE_DAYS[range] || 1
 
-  const { data, loading, refetch } = useApi(`/api/orders?limit=${limit}&offset=${offset}&days=${days}`)
-  const orders = data?.orders || []
-  const total = data?.total || orders.length
-  const totalPages = Math.max(1, Math.ceil(total / limit))
+  const fetchOrders = useCallback(async () => {
+    setLoading(true)
+    try {
+      const since = new Date()
+      since.setDate(since.getDate() - days)
+      since.setHours(0, 0, 0, 0)
+      const q = query(
+        collection(db, 'orders'),
+        where('created_at', '>=', Timestamp.fromDate(since)),
+        orderBy('created_at', 'desc'),
+        limit(500)
+      )
+      const snap = await getDocs(q)
+      setOrders(snap.docs.map(d => ({ _docId: d.id, ...d.data() })))
+    } finally {
+      setLoading(false)
+    }
+  }, [days])
+
+  useEffect(() => {
+    fetchOrders()
+    setPage(1)
+  }, [fetchOrders])
 
   const filtered = orders.filter(o => {
     const type = o.order_type === 'BUY' ? '매수' : '매도'
@@ -30,11 +51,14 @@ export default function Orders() {
     return true
   })
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
   async function syncKIS() {
     setSyncing(true)
     try {
       await apiFetch(`/api/orders?sync=true&days=${days}&limit=1`)
-      refetch()
+      await fetchOrders()
     } finally {
       setSyncing(false)
     }
@@ -87,17 +111,17 @@ export default function Orders() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {paged.length === 0 ? (
                   <tr>
                     <td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
                       주문 내역이 없습니다
                     </td>
                   </tr>
-                ) : filtered.map(o => {
+                ) : paged.map(o => {
                   const isBuy = o.order_type === 'BUY'
                   return (
-                    <tr key={o.id}>
-                      <td className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{o.created_at}</td>
+                    <tr key={o._docId}>
+                      <td className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtTs(o.created_at)}</td>
                       <td>
                         <div style={{ fontWeight: 600 }}>{o.stock_name}</div>
                         <div className="mono muted" style={{ fontSize: 11 }}>{o.stock_code}</div>

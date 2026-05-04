@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-05-04 — feat: 프론트엔드 Firebase SDK 직접 연동 (대시보드 제외)
+
+- **firestore.rules**: 신규 생성 — 클라이언트 읽기 허용(public read), 쓰기 차단
+- **firebase.json**: `firestore.rules` 참조 설정 추가
+- **frontend**: `firebase` npm 패키지 설치
+- **frontend/src/lib/firebase.js**: Firebase 앱 초기화 및 `db`, `fmtTs` 유틸 export
+- **Orders.jsx**: Firestore `orders` 컬렉션 직접 조회 (created_at 범위 쿼리, 클라이언트 페이지네이션)
+- **Logs.jsx**: KIS API 로그 — Firestore `kis_api_logs` 1회 조회, 서비스 로그 — `service_logs` 실시간 스트리밍(`onSnapshot`)
+- **Positions.jsx**: Firestore `monitored_positions` 실시간 구독, 강제매도·전체청산은 VM API 유지
+- **TradeReports.jsx**: Firestore `trade_reports` 조회 후 날짜별 그룹핑·지표 파싱 클라이언트 처리
+- **DailyReports.jsx**: Firestore `daily_reports` 조회 후 필드 변환(total_profit_amount→pnl 등)
+- **deploy-frontend.yml**: Firestore 보안 규칙 자동 배포 단계 추가
+- **Settings.jsx**: VM API 유지 (설정 저장은 백엔드 처리 필요)
+
 ## 2026-05-04 — 버그 수정: 포지션 수량·설정 키 불일치·스캔 로그 지표 데이터
 
 - **api/handlers.go**: 포지션 수량 0주 버그 수정 — `GetOrderByID`로 실제 주문 수량 조회
