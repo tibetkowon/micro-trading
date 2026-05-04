@@ -70,9 +70,9 @@ type TradingSettings struct {
 	TradingStartTime string
 	TradingEndTime   string
 	// 횡보 감지
-	StagnationThresholdPct       float64
-	StagnationDurationMin        int
-	StagnationPartialExitEnabled bool
+	StagnationThresholdPct        float64
+	StagnationDurationMin         int
+	StagnationPartialExitEnabled  bool
 	StagnationBidAskSellThreshold float64
 	// 트레일링 스탑
 	TrailingTriggerPct float64
@@ -83,8 +83,8 @@ type TradingSettings struct {
 	PartialTPRatio     float64
 	PartialTPRaiseStop bool
 	// 일일 손익 한도
-	DailyMaxLossPct        float64
-	DailyTargetProfitPct   float64
+	DailyMaxLossPct      float64
+	DailyTargetProfitPct float64
 	// 하드 필터
 	FilterRsiMax           float64
 	FilterDisparityM5Max   float64
@@ -99,19 +99,19 @@ type TradingSettings struct {
 	ScoreWeightVWAP     int
 	ScoreWeightVolume   int
 	// 기타
-	MinTradingValue      float64
-	BuyPauseStart        string
-	BuyPauseEnd          string
-	IndexCodes           []string
+	MinTradingValue       float64
+	BuyPauseStart         string
+	BuyPauseEnd           string
+	IndexCodes            []string
 	IndexDropThresholdPct float64
-	TradingDays          []int
-	MinMarketCap         float64
-	MinExpectedProfitPct float64
-	VWAPDiffMin          float64
-	VWAPDiffMax          float64
-	RSIBuyMin            float64
-	RSIBuyMax            float64
-	BidAskRatioMin       float64
+	TradingDays           []int
+	MinMarketCap          float64
+	MinExpectedProfitPct  float64
+	VWAPDiffMin           float64
+	VWAPDiffMax           float64
+	RSIBuyMin             float64
+	RSIBuyMax             float64
+	BidAskRatioMin        float64
 	// Hard Rule 상세 기준
 	HardDisparityM5Min      float64
 	HardDisparityM5Max      float64
@@ -953,84 +953,84 @@ func (db *DB) ListDailyReports(ctx context.Context, limit int) ([]models.DailyRe
 
 // defaultSettings contains the v2 baseline settings inserted on first run.
 var defaultSettings = map[string]any{
-	"trading_enabled":                    "true",
-	"max_positions":                      "1",
-	"order_amount_pct":                   "95",
-	"daily_max_loss_pct":                 "0",
-	"daily_target_profit_pct":            "0",
-	"stock_take_profit_pct":              "1.5",
-	"stock_stop_loss_pct":                "1.0",
-	"etf_take_profit_pct":                "0.5",
-	"etf_stop_loss_pct":                  "1.0",
-	"take_profit_pct":                    "3.0",
-	"stop_loss_pct":                      "2.0",
-	"stock_tax_rate":                     "0",
-	"trailing_trigger_pct":               "0",
-	"trailing_stop_pct":                  "0",
-	"partial_tp_enabled":                 "false",
-	"partial_tp_pct":                     "1.0",
-	"partial_tp_ratio":                   "0.5",
-	"partial_tp_raise_stop":              "false",
-	"ranking_types":                      `["volume","strength"]`,
-	"ranking_price_min":                  "5000",
-	"ranking_price_max":                  "200000",
-	"ranking_condition":                  "OR",
-	"ranking_top_n":                      "0",
-	"ranking_exchanges":                  `["0001","1001"]`,
-	"ranking_volume_blng_cls_codes":      `["0"]`,
-	"ranking_volume_min_incr_rate":       "0",
-	"ranking_strength_min":               "0",
-	"ranking_fluctuation_min_rate":       "0",
-	"ranking_fluctuation_max_rate":       "0",
-	"ranking_vi_kind_code":               "",
-	"hard_watch_symbols":                 `[]`,
-	"rank_lease_duration_min":            "0",
-	"sell_conditions":                    `["take_profit","stop_loss"]`,
-	"indicator_check_interval_min":       "5",
-	"indicator_rsi_sell_threshold":       "70",
-	"indicator_macd_bearish_sell":        "false",
-	"trading_start_time":                 "09:15",
-	"trading_end_time":                   "15:15",
-	"trading_days":                       `[]`,
-	"stagnation_threshold_pct":           "0",
-	"stagnation_duration_min":            "0",
-	"stagnation_partial_exit_enabled":    "false",
-	"stagnation_bidask_sell_threshold":   "1.0",
-	"min_trading_value":                  "0",
-	"buy_pause_start":                    "",
-	"buy_pause_end":                      "",
-	"index_codes":                        `[]`,
-	"index_drop_threshold_pct":           "-1.0",
-	"filter_rsi_max":                     "80",
-	"filter_disparity_m5_max":            "3.0",
-	"filter_high_price_diff_min":         "-5.0",
-	"filter_open_price_diff_max":         "20.0",
-	"min_score_threshold":                "0",
-	"score_weight_strength":              "30",
-	"score_weight_rsi":                   "20",
-	"score_weight_macd":                  "20",
-	"score_weight_bidask":                "15",
-	"score_weight_vwap":                  "10",
-	"score_weight_volume":                "5",
-	"min_market_cap":                     "0",
-	"min_expected_profit_pct":            "0",
-	"vwap_diff_min":                      "0",
-	"vwap_diff_max":                      "1.5",
-	"rsi_buy_min":                        "40",
-	"rsi_buy_max":                        "60",
-	"bid_ask_ratio_min":                  "1.2",
-	"hard_disparity_m5_min":              "-1.5",
-	"hard_disparity_m5_max":              "3.0",
-	"hard_high_price_diff_max":           "-0.5",
-	"hard_high_price_diff_min":           "-5.0",
-	"hard_prev_vol_ratio_max":            "1.2",
-	"hard_strength_min":                  "100",
-	"hard_rsi_max":                       "70",
-	"hard_open_price_diff_max":           "15",
-	"hard_macd_bearish_enabled":          "false",
-	"hard_high_formed_mins_max":          "0",
-	"hard_vol_vs3_avg_ratio_min":         "0",
-	"hard_relative_strength_min":         "0",
+	"trading_enabled":                  "true",
+	"max_positions":                    "1",
+	"order_amount_pct":                 "95",
+	"daily_max_loss_pct":               "0",
+	"daily_target_profit_pct":          "0",
+	"stock_take_profit_pct":            "1.5",
+	"stock_stop_loss_pct":              "1.0",
+	"etf_take_profit_pct":              "0.5",
+	"etf_stop_loss_pct":                "1.0",
+	"take_profit_pct":                  "3.0",
+	"stop_loss_pct":                    "2.0",
+	"stock_tax_rate":                   "0",
+	"trailing_trigger_pct":             "0",
+	"trailing_stop_pct":                "0",
+	"partial_tp_enabled":               "false",
+	"partial_tp_pct":                   "1.0",
+	"partial_tp_ratio":                 "0.5",
+	"partial_tp_raise_stop":            "false",
+	"ranking_types":                    `["volume","strength"]`,
+	"ranking_price_min":                "5000",
+	"ranking_price_max":                "200000",
+	"ranking_condition":                "OR",
+	"ranking_top_n":                    "0",
+	"ranking_exchanges":                `["0001","1001"]`,
+	"ranking_volume_blng_cls_codes":    `["0"]`,
+	"ranking_volume_min_incr_rate":     "0",
+	"ranking_strength_min":             "0",
+	"ranking_fluctuation_min_rate":     "0",
+	"ranking_fluctuation_max_rate":     "0",
+	"ranking_vi_kind_code":             "",
+	"hard_watch_symbols":               `[]`,
+	"rank_lease_duration_min":          "0",
+	"sell_conditions":                  `["take_profit","stop_loss"]`,
+	"indicator_check_interval_min":     "5",
+	"indicator_rsi_sell_threshold":     "70",
+	"indicator_macd_bearish_sell":      "false",
+	"trading_start_time":               "09:15",
+	"trading_end_time":                 "15:15",
+	"trading_days":                     `[]`,
+	"stagnation_threshold_pct":         "0",
+	"stagnation_duration_min":          "0",
+	"stagnation_partial_exit_enabled":  "false",
+	"stagnation_bidask_sell_threshold": "1.0",
+	"min_trading_value":                "0",
+	"buy_pause_start":                  "",
+	"buy_pause_end":                    "",
+	"index_codes":                      `[]`,
+	"index_drop_threshold_pct":         "-1.0",
+	"filter_rsi_max":                   "80",
+	"filter_disparity_m5_max":          "3.0",
+	"filter_high_price_diff_min":       "-5.0",
+	"filter_open_price_diff_max":       "20.0",
+	"min_score_threshold":              "0",
+	"score_weight_strength":            "30",
+	"score_weight_rsi":                 "20",
+	"score_weight_macd":                "20",
+	"score_weight_bidask":              "15",
+	"score_weight_vwap":                "10",
+	"score_weight_volume":              "5",
+	"min_market_cap":                   "0",
+	"min_expected_profit_pct":          "0",
+	"vwap_diff_min":                    "0",
+	"vwap_diff_max":                    "1.5",
+	"rsi_buy_min":                      "40",
+	"rsi_buy_max":                      "60",
+	"bid_ask_ratio_min":                "1.2",
+	"hard_disparity_m5_min":            "-1.5",
+	"hard_disparity_m5_max":            "3.0",
+	"hard_high_price_diff_max":         "-0.5",
+	"hard_high_price_diff_min":         "-5.0",
+	"hard_prev_vol_ratio_max":          "1.2",
+	"hard_strength_min":                "100",
+	"hard_rsi_max":                     "70",
+	"hard_open_price_diff_max":         "15",
+	"hard_macd_bearish_enabled":        "false",
+	"hard_high_formed_mins_max":        "0",
+	"hard_vol_vs3_avg_ratio_min":       "0",
+	"hard_relative_strength_min":       "0",
 }
 
 // initDefaults writes default settings on first run (using Set with MergeAll so existing values are preserved).

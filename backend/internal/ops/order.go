@@ -24,7 +24,7 @@ type PlaceOrderRequest struct {
 	OrderType models.OrderType
 	Qty       int
 	Price     float64
-	OrderDivn string  // "00"=지정가, "01"=시장가
+	OrderDivn string // "00"=지정가, "01"=시장가
 	TargetPct float64
 	StopPct   float64
 }

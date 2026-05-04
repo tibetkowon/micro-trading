@@ -15,7 +15,7 @@ type Config struct {
 	KISBaseURL     string
 	KISHTSID       string // HTS ID — used as tr_key for 체결통보 (H0STCNI0)
 
-	FirebaseProjectID      string // GCP project ID
+	FirebaseProjectID       string // GCP project ID
 	FirebaseCredentialsJSON string // service account JSON (file path or inline JSON)
 
 	DiscordWebhookURL string // Discord incoming webhook URL for notifications

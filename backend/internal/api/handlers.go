@@ -10,14 +10,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/micro-trading-for-agent/backend/internal/ops"
 	"github.com/micro-trading-for-agent/backend/internal/config"
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
-	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
+	"github.com/micro-trading-for-agent/backend/internal/ops"
 	"github.com/micro-trading-for-agent/backend/internal/report"
+	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
 
@@ -554,16 +554,16 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 		logs = []models.ScanLog{}
 	}
 	type scanLogView struct {
-		ID                  int64  `json:"id"`
-		ScannedAt           string `json:"scanned_at"`
-		CreatedAt           string `json:"created_at"`
-		EvaluatedCount      int    `json:"evaluated_count"`
-		PassedHardFilter    int    `json:"passed_hard_filter"`
-		ScoredCount         int    `json:"scored_count"`
-		SelectedStockCode   string `json:"selected_stock_code"`
-		SelectedStockName   string `json:"selected_stock_name"`
-		RejectionSummary    string `json:"rejection_summary"`
-		Stocks              []gin.H `json:"stocks"`
+		ID                int64   `json:"id"`
+		ScannedAt         string  `json:"scanned_at"`
+		CreatedAt         string  `json:"created_at"`
+		EvaluatedCount    int     `json:"evaluated_count"`
+		PassedHardFilter  int     `json:"passed_hard_filter"`
+		ScoredCount       int     `json:"scored_count"`
+		SelectedStockCode string  `json:"selected_stock_code"`
+		SelectedStockName string  `json:"selected_stock_name"`
+		RejectionSummary  string  `json:"rejection_summary"`
+		Stocks            []gin.H `json:"stocks"`
 	}
 	views := make([]scanLogView, len(logs))
 	for i, l := range logs {
@@ -577,16 +577,16 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 			}
 		}
 		views[i] = scanLogView{
-			ID:               l.ID,
-			ScannedAt:        l.Timestamp,
-			CreatedAt:        l.Timestamp,
-			EvaluatedCount:   l.StocksFound,
-			PassedHardFilter: l.StocksFound,
-			ScoredCount:      len(stocks),
+			ID:                l.ID,
+			ScannedAt:         l.Timestamp,
+			CreatedAt:         l.Timestamp,
+			EvaluatedCount:    l.StocksFound,
+			PassedHardFilter:  l.StocksFound,
+			ScoredCount:       len(stocks),
 			SelectedStockCode: l.OrderedCode,
 			SelectedStockName: l.OrderedCode,
-			RejectionSummary: l.SkipReason,
-			Stocks:           stocks,
+			RejectionSummary:  l.SkipReason,
+			Stocks:            stocks,
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"data": views})
@@ -705,9 +705,9 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		tradeEnd = "15:15"
 	}
 	schedule := gin.H{
-		"trade_start":            tradeStart,
-		"trade_end":              tradeEnd,
-		"scan_interval":          settingInt(db.GetSetting(ctx, "scan_interval"), 60),
+		"trade_start":              tradeStart,
+		"trade_end":                tradeEnd,
+		"scan_interval":            settingInt(db.GetSetting(ctx, "scan_interval"), 60),
 		"indicator_check_interval": ts.IndicatorCheckIntervalMin,
 	}
 
@@ -716,18 +716,18 @@ func (h *Handler) GetSettings(c *gin.Context) {
 
 	data := gin.H{
 		// 거래 조건
-		"max_positions":              ts.MaxPositions,
-		"order_amount_pct":           ts.OrderAmountPct,
-		"take_profit_pct":            ts.TakeProfitPct,
-		"stop_loss_pct":              ts.StopLossPct,
-		"etf_take_profit_pct":        ts.ETFTakeProfitPct,
-		"etf_stop_loss_pct":          ts.ETFStopLossPct,
-		"daily_loss_limit_pct":       ts.DailyMaxLossPct,
-		"ranking_condition":          ts.RankingCondition,
-		"indicator_rsi_sell_enabled": indicatorRSISellEnabled,
+		"max_positions":               ts.MaxPositions,
+		"order_amount_pct":            ts.OrderAmountPct,
+		"take_profit_pct":             ts.TakeProfitPct,
+		"stop_loss_pct":               ts.StopLossPct,
+		"etf_take_profit_pct":         ts.ETFTakeProfitPct,
+		"etf_stop_loss_pct":           ts.ETFStopLossPct,
+		"daily_loss_limit_pct":        ts.DailyMaxLossPct,
+		"ranking_condition":           ts.RankingCondition,
+		"indicator_rsi_sell_enabled":  indicatorRSISellEnabled,
 		"indicator_macd_bearish_sell": ts.IndicatorMACDBearishSell,
-		"buy_pause_start":            ts.BuyPauseStart,
-		"buy_pause_end":              ts.BuyPauseEnd,
+		"buy_pause_start":             ts.BuyPauseStart,
+		"buy_pause_end":               ts.BuyPauseEnd,
 		// 점수 시스템
 		"min_score": minScore,
 		"weights":   weights,
