@@ -126,6 +126,9 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Upload binary to GCS
         run: |
           gsutil cp backend/server gs://${{ vars.GCS_BUCKET }}/micro-trading/server
