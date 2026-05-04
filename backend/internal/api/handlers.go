@@ -385,6 +385,12 @@ func (h *Handler) GetMonitorPositions(c *gin.Context) {
 	views := make([]posView, len(positions))
 	for i, p := range positions {
 		heldDays := int(now.Sub(p.CreatedAt.In(kst)).Hours() / 24)
+		qty := 0
+		if p.OrderID > 0 {
+			if order, err := h.db.GetOrderByID(c.Request.Context(), p.OrderID); err == nil && order != nil {
+				qty = order.Qty
+			}
+		}
 		views[i] = posView{
 			ID:           p.ID,
 			StockCode:    p.StockCode,
@@ -393,7 +399,7 @@ func (h *Handler) GetMonitorPositions(c *gin.Context) {
 			CurrentPrice: p.FilledPrice,
 			TargetPrice:  p.TargetPrice,
 			StopPrice:    p.StopPrice,
-			Quantity:     0,
+			Quantity:     qty,
 			PnlPct:       0,
 			PnlAmount:    0,
 			HeldDays:     heldDays,
@@ -1042,7 +1048,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 	if req.RankingVolumeMinIncrRate != nil {
-		if !save("ranking_volume_min_incrrate", strconv.FormatFloat(*req.RankingVolumeMinIncrRate, 'f', -1, 64)) {
+		if !save("ranking_volume_min_incr_rate", strconv.FormatFloat(*req.RankingVolumeMinIncrRate, 'f', -1, 64)) {
 			return
 		}
 	}
@@ -1295,7 +1301,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 	if req.HardVolVs3AvgRatioMin != nil {
-		if !save("hard_vol_vs_3avg_ratio_min", strconv.FormatFloat(*req.HardVolVs3AvgRatioMin, 'f', -1, 64)) {
+		if !save("hard_vol_vs3_avg_ratio_min", strconv.FormatFloat(*req.HardVolVs3AvgRatioMin, 'f', -1, 64)) {
 			return
 		}
 	}
@@ -1350,7 +1356,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 	if req.StagnationBidAskSellThreshold != nil {
-		if !save("stagnation_bid_ask_sell_threshold", strconv.FormatFloat(*req.StagnationBidAskSellThreshold, 'f', -1, 64)) {
+		if !save("stagnation_bidask_sell_threshold", strconv.FormatFloat(*req.StagnationBidAskSellThreshold, 'f', -1, 64)) {
 			return
 		}
 	}
