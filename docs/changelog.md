@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-04 — feat: Settings 화면 Firestore 직접 읽기 + 저장 버튼 UX 개선
+
+- **Settings.jsx**: `useApi('/api/settings')` 제거 → Firestore `settings/config` 직접 읽기
+  - Firestore flat key→중첩 구조 변환 함수(`transformSettings`) 추가
+  - `daily_max_loss_pct`→`daily_loss_limit_pct`, `min_score_threshold`→`min_score` 등 필드명 매핑
+  - `weight_*`, `filter_*_enabled/value`, `schedule.*` 키 일괄 변환
+- **Settings.jsx**: 저장 버튼 UX 개선 — 저장 중 스피너, 성공/실패 명확한 피드백
+- 저장(PATCH)은 VM API 유지 — 백엔드에서 역변환 처리
+
 ## 2026-05-04 — feat: 프론트엔드 Firebase SDK 직접 연동 (대시보드 제외)
 
 - **firestore.rules**: 신규 생성 — 클라이언트 읽기 허용(public read), 쓰기 차단

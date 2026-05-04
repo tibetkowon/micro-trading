@@ -1,7 +1,61 @@
 import { useState, useEffect } from 'react'
-import useApi from '../hooks/useApi'
+import { doc, getDoc } from 'firebase/firestore'
 import { apiFetch } from '../utils/api'
 import { Toggle } from '../components/shared'
+import { db } from '../lib/firebase'
+
+function pf(v, d) { const n = parseFloat(v); return isNaN(n) ? d : n }
+function pi(v, d) { const n = parseInt(v, 10); return isNaN(n) ? d : n }
+function pb(v, d) { return v == null ? d : v === true || v === 'true' }
+function pj(v, d) { if (!v) return d; if (Array.isArray(v)) return v; try { return JSON.parse(v) } catch { return d } }
+
+function transformSettings(raw) {
+  if (!raw) return null
+  const FILTER_KEYS = ['rsi_upper_limit', 'strength_lower', 'vwap_min', 'vwap_max',
+    'high_disparity', 'open_rise_limit', 'high_elapsed_min', 'volume_ratio_lower']
+  const filters = {}
+  for (const k of FILTER_KEYS) {
+    filters[k] = {
+      enabled: pb(raw[`filter_${k}_enabled`], false),
+      value: pf(raw[`filter_${k}_value`], 0),
+    }
+  }
+  const weights = {}
+  for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume']) {
+    weights[k] = pi(raw[`weight_${k}`], 0)
+  }
+  return {
+    max_positions: pi(raw.max_positions, 1),
+    order_amount_pct: pi(raw.order_amount_pct, 95),
+    take_profit_pct: pf(raw.take_profit_pct, 3),
+    stop_loss_pct: pf(raw.stop_loss_pct, 2),
+    etf_take_profit_pct: pf(raw.etf_take_profit_pct, 2),
+    etf_stop_loss_pct: pf(raw.etf_stop_loss_pct, 1),
+    daily_loss_limit_pct: pf(raw.daily_max_loss_pct, 3),
+    indicator_rsi_sell_enabled: raw.indicator_rsi_sell_enabled != null
+      ? pb(raw.indicator_rsi_sell_enabled, false)
+      : pf(raw.indicator_rsi_sell_threshold, 0) > 0,
+    indicator_macd_bearish_sell: pb(raw.indicator_macd_bearish_sell, false),
+    buy_pause_start: raw.buy_pause_start || '',
+    buy_pause_end: raw.buy_pause_end || '',
+    ranking_types: pj(raw.ranking_types, []),
+    ranking_condition: raw.ranking_condition || 'OR',
+    ranking_top_n: pi(raw.ranking_top_n, 30),
+    ranking_price_min: raw.ranking_price_min || '5000',
+    ranking_price_max: raw.ranking_price_max || '200000',
+    ranking_exchanges: pj(raw.ranking_exchanges, ['0001', '1001']),
+    ranking_exclude_cls: raw.ranking_exclude_cls || '1111111111',
+    min_score: pf(raw.min_score_threshold, 0),
+    weights,
+    filters,
+    schedule: {
+      trade_start: raw.trading_start_time || '09:15',
+      trade_end: raw.trading_end_time || '15:15',
+      scan_interval: pi(raw.scan_interval, 60),
+      indicator_check_interval: pi(raw.indicator_check_interval_min, 5),
+    },
+  }
+}
 
 function DonutChart({ weights }) {
   const entries = Object.entries(weights)
@@ -57,14 +111,17 @@ const WEIGHT_LABELS = [
 ]
 
 export default function Settings() {
-  const { data: raw, loading } = useApi('/api/settings')
   const [tab, setTab] = useState('거래조건')
   const [settings, setSettings] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (raw?.data) setSettings(raw.data)
-  }, [raw])
+    getDoc(doc(db, 'settings', 'config'))
+      .then(snap => setSettings(transformSettings(snap.exists() ? snap.data() : {})))
+      .finally(() => setLoading(false))
+  }, [])
 
   function set(path, val) {
     setSettings(prev => {
@@ -81,13 +138,21 @@ export default function Settings() {
   }
 
   async function save() {
-    await apiFetch('/api/settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
-    })
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setSaving(true)
+    try {
+      const res = await apiFetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch {
+      alert('저장 실패. 서버 연결을 확인하세요.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading || !settings) {
@@ -402,8 +467,8 @@ export default function Settings() {
 
       <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--border)', maxWidth: 600 }}>
         <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
-          onClick={save}>
-          {saved ? '✓ 저장 완료' : '저장'}
+          onClick={save} disabled={saving}>
+          {saving ? '저장 중...' : saved ? '✓ 저장 완료' : '저장'}
         </button>
       </div>
     </div>
