@@ -86,7 +86,7 @@ export function ProgressBar({ value, color = '#EA6C10', height = 4 }) {
   )
 }
 
-export function PriceProgressBar({ stop, avg, target, current }) {
+export function PriceProgressBar({ stop, avg: _avg, target, current }) {
   const range = target - stop
   const curPct = range > 0 ? ((current - stop) / range) * 100 : 50
   const nearStop = curPct < 15

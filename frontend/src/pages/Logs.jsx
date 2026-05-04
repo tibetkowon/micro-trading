@@ -25,7 +25,7 @@ export default function Logs() {
     if (autoScroll && logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight
     }
-  }, [serviceLogs, autoScroll])
+  }, [svcData, autoScroll])
 
   function toggleSelect(id, e) {
     e.stopPropagation()
