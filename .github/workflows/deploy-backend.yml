@@ -1,0 +1,36 @@
+name: Deploy Backend (수동)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & Upload to GCS
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Build Go binary (linux/amd64)
+        working-directory: backend
+        run: |
+          go mod download
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Upload binary to GCS
+        run: |
+          gsutil cp backend/server gs://${{ vars.GCS_BUCKET }}/micro-trading/server
+          echo "✓ Uploaded to gs://${{ vars.GCS_BUCKET }}/micro-trading/server"
+          echo "  GCP VM을 재시작하면 최신 바이너리가 자동 적용됩니다."

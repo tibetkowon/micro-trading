@@ -1,20 +1,48 @@
-name: CI/CD
+name: CI/CD (자동)
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch:
+
+# ─── 필요한 GitHub Secrets / Variables ────────────────────────────────────────
+# Secrets:
+#   GCP_SA_KEY               — GCP 서비스 계정 JSON (Storage Object Admin)
+#   FIREBASE_SERVICE_ACCOUNT — Firebase Hosting 배포용 서비스 계정 JSON
+# Variables:
+#   GCS_BUCKET         — GCS 버킷 이름 (예: my-trading-deploy)
+#   FIREBASE_PROJECT_ID — Firebase 프로젝트 ID
+# ──────────────────────────────────────────────────────────────────────────────
 
 jobs:
-  backend:
+  # ─── 1. 변경 감지 ────────────────────────────────────────────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
+  # ─── 2. CI ───────────────────────────────────────────────────────────────────
+  backend-ci:
     name: Go Build & Test
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
-
     steps:
       - uses: actions/checkout@v4
 
@@ -38,18 +66,19 @@ jobs:
           fi
 
       - name: Build
-        run: CGO_ENABLED=1 go build ./...
+        run: CGO_ENABLED=0 go build ./...
 
       - name: Test
-        run: CGO_ENABLED=1 go test ./...
+        run: CGO_ENABLED=0 go test ./...
 
-  frontend:
+  frontend-ci:
     name: React Lint & Build
+    needs: [changes]
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
-
     steps:
       - uses: actions/checkout@v4
 
@@ -69,17 +98,16 @@ jobs:
       - name: Build
         run: npm run build
 
-  deploy:
-    name: Deploy to NCP
+  # ─── 3. 배포 (main 브랜치 push에서만, PR은 배포 안 함) ──────────────────────
+  deploy-backend:
+    name: Deploy Backend → GCS
+    needs: [backend-ci]
+    # backend-ci가 성공했고, PR이 아닌 main push일 때만 실행
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    needs: [backend, frontend]
-    # PR은 배포하지 않고 main 브랜치 push 시에만 배포
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Go 바이너리 빌드 (linux/amd64 — runner와 동일 플랫폼, CGO 활성화)
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -91,9 +119,27 @@ jobs:
         working-directory: backend
         run: |
           go mod download
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
 
-      # 2. React 빌드
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Upload binary to GCS
+        run: |
+          gsutil cp backend/server gs://${{ vars.GCS_BUCKET }}/micro-trading/server
+          echo "✓ Uploaded to gs://${{ vars.GCS_BUCKET }}/micro-trading/server"
+
+  deploy-frontend:
+    name: Deploy Frontend → Firebase Hosting
+    needs: [frontend-ci]
+    # frontend-ci가 성공했고, PR이 아닌 main push일 때만 실행
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -101,46 +147,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build React
+      - name: Build
         working-directory: frontend
         run: |
           npm ci
           npm run build
 
-      # 3. SSH 키 설정
-      - name: Configure SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.NCP_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.NCP_HOST }} >> ~/.ssh/known_hosts
-
-      # 4. 서비스 중지 후 파일 전송
-      - name: Deploy files to server
-        run: |
-          # 서비스 중지 (바이너리 파일 잠금 해제)
-          ssh ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }} \
-            "systemctl stop micro-trading || true"
-
-          # 디렉토리 구조 생성 (data/: SQLite 파일 경로)
-          ssh ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }} \
-            "mkdir -p /service/micro-trading-for-agent/frontend /service/micro-trading-for-agent/data"
-
-          # Go 바이너리 전송
-          scp backend/server \
-            ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }}:/service/micro-trading-for-agent/server
-
-          # React 빌드 결과물 전송
-          rsync -az --delete frontend/dist/ \
-            ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }}:/service/micro-trading-for-agent/frontend/dist/
-
-      # 5. 서비스 시작 및 기동 확인
-      - name: Start service and verify
-        run: |
-          ssh ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }} \
-            "chmod +x /service/micro-trading-for-agent/server && \
-             systemctl start micro-trading && \
-             sleep 3 && \
-             systemctl is-active --quiet micro-trading && \
-             echo 'Service is running' || \
-             (journalctl -u micro-trading --no-pager -n 30; exit 1)"
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live
+          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
