@@ -1,196 +1,228 @@
-import { useState } from 'react'
-import { Routes, Route, NavLink } from 'react-router-dom'
-import PropTypes from 'prop-types'
-import { ThemeProvider, useTheme } from './contexts/ThemeContext'
+import { useState, useEffect } from 'react'
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
+import Positions from './pages/Positions'
 import Orders from './pages/Orders'
-import Monitor from './pages/Monitor'
-import ErrorLogs from './pages/ErrorLogs'
-import StockLogs from './pages/StockLogs'
-import Settings from './pages/Settings'
-import StockList from './pages/StockList'
 import TradeReports from './pages/TradeReports'
 import DailyReports from './pages/DailyReports'
-import OptimizationReports from './pages/OptimizationReports'
+import Settings from './pages/Settings'
+import Logs from './pages/Logs'
 
-const navItems = [
-  { to: '/', label: '대시보드', end: true, icon: 'dashboard' },
-  { to: '/monitor', label: '모니터', icon: 'monitor_heart' },
-  { to: '/orders', label: '주문 내역', icon: 'receipt_long' },
-  { to: '/reports/trades', label: '거래 리포트', icon: 'analytics' },
-  { to: '/reports/daily', label: '일별 리포트', icon: 'bar_chart' },
-  { to: '/reports/optimization', label: 'AI 개선 제안', icon: 'auto_fix_high' },
-  { to: '/logs', label: '에러 로그', icon: 'report' },
-  { to: '/stock-logs', label: '종목 로그', icon: 'candlestick_chart' },
-  { to: '/stock-list', label: '종목 목록', icon: 'format_list_bulleted' },
-  { to: '/settings', label: '설정', icon: 'settings' },
+const SCREEN_TITLES = {
+  '/':               '대시보드',
+  '/positions':      '포지션',
+  '/orders':         '주문 내역',
+  '/reports/trades': '리포트 › 거래별',
+  '/reports/daily':  '리포트 › 일별',
+  '/settings':       '설정',
+  '/logs':           '로그',
+}
+
+const SIDEBAR_ITEMS = [
+  { path: '/',          icon: '◈', label: '대시보드' },
+  { path: '/positions', icon: '⬡', label: '포지션' },
+  { path: '/orders',    icon: '≡', label: '주문 내역' },
+]
+const SIDEBAR_REPORT_ITEMS = [
+  { path: '/reports/trades', label: '거래별' },
+  { path: '/reports/daily',  label: '일별' },
+]
+const SIDEBAR_BOTTOM_ITEMS = [
+  { path: '/settings', icon: '◎', label: '설정' },
+  { path: '/logs',     icon: '▤', label: '로그' },
 ]
 
-function NavItem({ to, label, end, icon, onClick }) {
-  return (
-    <NavLink
-      to={to}
-      end={end}
-      onClick={onClick}
-      className={({ isActive }) =>
-        `flex items-center gap-3 px-4 py-2.5 rounded-r-xl transition-all duration-150 ${
-          isActive
-            ? 'text-orange-500 bg-th-surface border-l-4 border-orange-500 font-semibold translate-x-0'
-            : 'text-th-on-muted hover:text-th-on-surface hover:bg-th-surface border-l-4 border-transparent'
-        }`
-      }
-    >
-      <span className="material-symbols-outlined text-[20px] shrink-0">{icon}</span>
-      <span className="text-xs uppercase tracking-widest font-medium">{label}</span>
-    </NavLink>
-  )
-}
-NavItem.propTypes = {
-  to: PropTypes.string.isRequired,
-  label: PropTypes.string.isRequired,
-  end: PropTypes.bool,
-  icon: PropTypes.string.isRequired,
-  onClick: PropTypes.func,
-}
+const BOTTOM_TABS = [
+  { path: '/',          icon: '◈', label: '대시보드' },
+  { path: '/positions', icon: '⬡', label: '포지션' },
+  { path: '/orders',    icon: '≡', label: '주문' },
+  { path: '/settings',  icon: '◎', label: '설정' },
+  { id: '__more',       icon: '☰', label: '더보기' },
+]
 
-function Sidebar({ onNavigate }) {
-  return (
-    <aside className="fixed left-0 top-0 h-full w-64 z-40 bg-th-sidebar flex flex-col py-8 px-0">
-      {/* 로고 */}
-      <div className="px-8 mb-10">
-        <span className="text-orange-500 font-bold text-lg tracking-tight">Micro</span>
-        <span className="text-th-on-surface font-bold text-lg tracking-tight"> Trading</span>
-        <p className="text-th-on-subtle text-[10px] uppercase tracking-widest mt-0.5">AI Auto Trader</p>
-      </div>
+const DRAWER_ITEMS = [
+  { path: '/reports/trades', icon: '▦', label: '리포트 — 거래별' },
+  { path: '/reports/daily',  icon: '▦', label: '리포트 — 일별' },
+  { path: '/logs',           icon: '▤', label: '로그' },
+]
 
-      {/* 네비게이션 */}
-      <nav className="flex flex-col gap-0.5 flex-1 pr-4">
-        {navItems.map((item) => (
-          <NavItem
-            key={item.to}
-            to={item.to}
-            label={item.label}
-            end={item.end}
-            icon={item.icon}
-            onClick={onNavigate}
-          />
-        ))}
+const MORE_PATHS = ['/reports/trades', '/reports/daily', '/logs']
+
+export default function App() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [collapsed, setCollapsed] = useState(false)
+  const [lightMode, setLightMode] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [time, setTime] = useState(new Date())
+
+  useEffect(() => {
+    document.body.classList.toggle('light-mode', lightMode)
+  }, [lightMode])
+
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  const path = location.pathname
+  const title = SCREEN_TITLES[path] || '대시보드'
+  const moreActive = MORE_PATHS.includes(path)
+
+  const kstStr = time.toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  })
+
+  function goTo(target) {
+    if (target === '__more') { setDrawerOpen(true); return }
+    navigate(target)
+    setDrawerOpen(false)
+  }
+
+  return (
+    <div className="app">
+      {/* ── Desktop Sidebar ── */}
+      <nav className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+        <div className="sidebar-header">
+          {!collapsed && <div className="sidebar-title">micro<span>-trader</span></div>}
+        </div>
+
+        <div className="sidebar-nav">
+          {!collapsed ? (
+            <>
+              {SIDEBAR_ITEMS.map(item => (
+                <div key={item.path}
+                  className={`nav-item ${path === item.path ? 'active' : ''}`}
+                  onClick={() => navigate(item.path)}>
+                  <span className="nav-icon">{item.icon}</span>
+                  <span className="nav-label">{item.label}</span>
+                </div>
+              ))}
+
+              <div className="nav-section-label">리포트</div>
+              <div className="nav-sub">
+                {SIDEBAR_REPORT_ITEMS.map(item => (
+                  <div key={item.path}
+                    className={`nav-item ${path === item.path ? 'active' : ''}`}
+                    onClick={() => navigate(item.path)}>
+                    <span className="nav-icon" style={{ fontSize: 12 }}>—</span>
+                    <span className="nav-label">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {SIDEBAR_BOTTOM_ITEMS.map(item => (
+                <div key={item.path}
+                  className={`nav-item ${path === item.path ? 'active' : ''}`}
+                  onClick={() => navigate(item.path)}>
+                  <span className="nav-icon">{item.icon}</span>
+                  <span className="nav-label">{item.label}</span>
+                </div>
+              ))}
+            </>
+          ) : (
+            [...SIDEBAR_ITEMS,
+             ...SIDEBAR_REPORT_ITEMS.map(i => ({ ...i, icon: '▦' })),
+             ...SIDEBAR_BOTTOM_ITEMS,
+            ].map(item => (
+              <div key={item.path}
+                className={`nav-item ${path === item.path ? 'active' : ''}`}
+                style={{ justifyContent: 'center', padding: '12px' }}
+                onClick={() => navigate(item.path)}>
+                <span className="nav-icon" style={{ fontSize: 18 }}>{item.icon}</span>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="sidebar-footer">
+          <button className="collapse-btn" onClick={() => setCollapsed(c => !c)}>
+            {collapsed ? '→' : '←'}
+          </button>
+          {!collapsed && (
+            <button className="theme-btn" onClick={() => setLightMode(l => !l)}>
+              {lightMode ? 'DARK' : 'LIGHT'}
+            </button>
+          )}
+        </div>
       </nav>
 
-      {/* 하단 */}
-      <div className="px-8 pt-6 border-t border-black/5 dark:border-white/5 space-y-3">
-        <ThemeToggle />
-        <div>
-          <p className="text-th-on-subtle text-[10px] uppercase tracking-widest">KIS API</p>
-          <p className="text-th-on-muted text-xs mt-0.5">Korea Investment</p>
+      {/* ── Main ── */}
+      <div className="main">
+        {/* Desktop topbar */}
+        <div className="topbar">
+          <div className="topbar-title">{title}</div>
+          <div className="topbar-time">KST {kstStr}</div>
+          {collapsed && (
+            <button className="theme-btn" style={{ marginLeft: 8 }} onClick={() => setLightMode(l => !l)}>
+              {lightMode ? 'DARK' : 'LIGHT'}
+            </button>
+          )}
         </div>
-      </div>
-    </aside>
-  )
-}
-Sidebar.propTypes = { onNavigate: PropTypes.func }
 
-function ThemeToggle() {
-  const { isDark, toggle } = useTheme()
-  return (
-    <button
-      onClick={toggle}
-      className="flex items-center gap-2 text-th-on-muted hover:text-th-on-surface transition-colors w-full"
-      title={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
-    >
-      <span className="material-symbols-outlined text-[18px]">
-        {isDark ? 'light_mode' : 'dark_mode'}
-      </span>
-      <span className="text-[11px] uppercase tracking-widest">{isDark ? 'Light Mode' : 'Dark Mode'}</span>
-    </button>
-  )
-}
-
-function AppInner() {
-  const [drawerOpen, setDrawerOpen] = useState(false)
-
-  function closeDrawer() { setDrawerOpen(false) }
-
-  return (
-    <div className="min-h-screen bg-th-bg">
-      {/* 데스크탑 사이드바 */}
-      <div className="hidden md:block">
-        <Sidebar />
-      </div>
-
-      {/* 모바일 상단바 */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center gap-3 px-4 py-3 bg-th-sidebar border-b border-black/5 dark:border-white/5">
-        <button
-          onClick={() => setDrawerOpen((o) => !o)}
-          className="text-th-on-muted hover:text-th-on-surface p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-          aria-label="메뉴 열기"
-        >
-          <span className="material-symbols-outlined text-[22px]">
-            {drawerOpen ? 'close' : 'menu'}
-          </span>
-        </button>
-        <div>
-          <span className="text-orange-500 font-bold text-sm">Micro</span>
-          <span className="text-th-on-surface font-bold text-sm"> Trading</span>
+        {/* Mobile topbar */}
+        <div className="mobile-topbar">
+          <div className="mobile-topbar-brand">micro<span>-trader</span></div>
+          <div className="mobile-topbar-title">{title}</div>
+          <button className="theme-btn" onClick={() => setLightMode(l => !l)}>
+            {lightMode ? 'DARK' : 'LIGHT'}
+          </button>
         </div>
-      </div>
 
-      {/* 모바일 드로어 */}
-      {drawerOpen && (
-        <>
-          <div
-            className="md:hidden fixed inset-0 z-40 bg-black/60"
-            onClick={closeDrawer}
-          />
-          <div className="md:hidden fixed top-0 left-0 h-full w-64 z-50 bg-th-sidebar flex flex-col py-8 px-0 shadow-2xl">
-            <div className="px-8 mb-10 mt-2">
-              <span className="text-orange-500 font-bold text-lg tracking-tight">Micro</span>
-              <span className="text-th-on-surface font-bold text-lg tracking-tight"> Trading</span>
-            </div>
-            <nav className="flex flex-col gap-0.5 flex-1 pr-4">
-              {navItems.map((item) => (
-                <NavItem
-                  key={item.to}
-                  to={item.to}
-                  label={item.label}
-                  end={item.end}
-                  icon={item.icon}
-                  onClick={closeDrawer}
-                />
-              ))}
-            </nav>
-            <div className="px-8 pt-6 border-t border-black/5 dark:border-white/5">
-              <ThemeToggle />
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* 메인 콘텐츠 */}
-      <main className="md:ml-64 min-h-screen pt-14 md:pt-0">
-        <div className="p-4 md:p-8 max-w-screen-xl mx-auto">
+        <div className="content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/monitor" element={<Monitor />} />
+            <Route path="/positions" element={<Positions />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/reports/trades" element={<TradeReports />} />
             <Route path="/reports/daily" element={<DailyReports />} />
-            <Route path="/reports/optimization" element={<OptimizationReports />} />
-            <Route path="/logs" element={<ErrorLogs />} />
-            <Route path="/stock-logs" element={<StockLogs />} />
-            <Route path="/stock-list" element={<StockList />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/logs" element={<Logs />} />
+            <Route path="*" element={<Dashboard />} />
           </Routes>
         </div>
-      </main>
-    </div>
-  )
-}
+      </div>
 
-export default function App() {
-  return (
-    <ThemeProvider>
-      <AppInner />
-    </ThemeProvider>
+      {/* ── Mobile bottom tab bar ── */}
+      <div className="bottom-tabbar">
+        <div className="bottom-tabbar-inner">
+          {BOTTOM_TABS.map(tab => {
+            const isActive = tab.id === '__more' ? moreActive : path === tab.path
+            return (
+              <button key={tab.id || tab.path}
+                className={`bottom-tab ${isActive ? 'active' : ''}`}
+                onClick={() => goTo(tab.id || tab.path)}>
+                <span className="bottom-tab-icon">{tab.icon}</span>
+                <span className="bottom-tab-label">{tab.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── Mobile drawer ── */}
+      {drawerOpen && (
+        <div className="drawer-overlay" onClick={() => setDrawerOpen(false)}>
+          <div className="drawer" onClick={e => e.stopPropagation()}>
+            <div className="drawer-handle"></div>
+            {DRAWER_ITEMS.map(item => (
+              <div key={item.path}
+                className={`drawer-item ${path === item.path ? 'active' : ''}`}
+                onClick={() => goTo(item.path)}>
+                <span className="drawer-item-icon">{item.icon}</span>
+                <span>{item.label}</span>
+              </div>
+            ))}
+            <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0' }}></div>
+            <div className="drawer-item" onClick={() => { setLightMode(l => !l); setDrawerOpen(false) }}>
+              <span className="drawer-item-icon">{lightMode ? '○' : '◐'}</span>
+              <span>{lightMode ? '다크 모드' : '라이트 모드'} 전환</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/micro-trading-for-agent/backend/internal/agent"
+	"github.com/micro-trading-for-agent/backend/internal/ops"
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
-	"github.com/micro-trading-for-agent/backend/internal/mst"
+	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
 )
 
 // IndicatorSnapshot holds key technical indicators for sell condition evaluation.
@@ -32,8 +32,7 @@ type MonitoredEntry struct {
 	TargetPrice float64
 	StopPrice   float64
 	OrderID     int64
-	Market      string        // "KR" or "US" (empty defaults to "KR")
-	ExchCode    string        // 거래소코드 for US: NASD/NYSE/AMEX (empty for KR)
+	Market      string        // "KR" (empty defaults to "KR")
 	AssetType   string        // "STOCK" | "ETF" | "ETF_DOMESTIC" (MST 기반)
 	SoldCh      chan<- string // optional: engine receives sold signal (may be nil)
 	// 트레일링 스탑
@@ -56,7 +55,7 @@ type Monitor struct {
 	kisClient *kis.Client
 	wsClient  *kis.WebSocketClient
 	db        *database.DB
-	mstStore  *mst.Store
+	mstStore  *stockmaster.Store
 
 	// 횡보 감지
 	stagnMu                       sync.Mutex
@@ -73,7 +72,7 @@ type Monitor struct {
 }
 
 // New creates a Monitor.
-func New(db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mstStore *mst.Store) *Monitor {
+func New(db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mstStore *stockmaster.Store) *Monitor {
 	return &Monitor{
 		positions:     make(map[string]*MonitoredEntry),
 		stagnantSince: make(map[string]*time.Time),
@@ -133,22 +132,15 @@ func (m *Monitor) Register(ctx context.Context, pos MonitoredEntry) error {
 	m.mu.Unlock()
 
 	// Persist for server-restart recovery.
-	_, err := m.db.ExecContext(ctx,
-		`INSERT INTO monitored_positions
-		  (stock_code, stock_name, filled_price, target_price, stop_price, order_id, market)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(stock_code) DO UPDATE SET
-		   stock_name=excluded.stock_name,
-		   filled_price=excluded.filled_price,
-		   target_price=excluded.target_price,
-		   stop_price=excluded.stop_price,
-		   order_id=excluded.order_id,
-		   market=excluded.market,
-		   created_at=CURRENT_TIMESTAMP`,
-		pos.StockCode, pos.StockName, pos.FilledPrice,
-		pos.TargetPrice, pos.StopPrice, pos.OrderID, pos.Market,
-	)
-	if err != nil {
+	dbPos := &models.MonitoredPosition{
+		StockCode:   pos.StockCode,
+		StockName:   pos.StockName,
+		FilledPrice: pos.FilledPrice,
+		TargetPrice: pos.TargetPrice,
+		StopPrice:   pos.StopPrice,
+		OrderID:     pos.OrderID,
+	}
+	if err := m.db.CreatePosition(ctx, dbPos); err != nil {
 		return fmt.Errorf("persist monitored_position: %w", err)
 	}
 
@@ -179,7 +171,7 @@ func (m *Monitor) Remove(ctx context.Context, stockCode string) {
 	delete(m.stagnantSince, stockCode)
 	m.stagnMu.Unlock()
 
-	m.db.ExecContext(ctx, `DELETE FROM monitored_positions WHERE stock_code = ?`, stockCode)
+	_ = m.db.DeletePosition(ctx, stockCode)
 
 	if m.wsClient != nil {
 		m.wsClient.UnsubscribePrice(stockCode) //nolint:errcheck
@@ -362,23 +354,26 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	if resp != nil {
 		kisOrderID = resp.KISOrderID
 	}
-	_, _ = m.db.ExecContext(ctx,
-		`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
-		 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
-		stockCode, pos.StockName, qty, pos.FilledPrice, kisOrderID, reason, time.Now().UTC())
+	sellOrder := &models.Order{
+		StockCode:  stockCode,
+		StockName:  pos.StockName,
+		OrderType:  models.OrderTypeSell,
+		Qty:        qty,
+		Price:      pos.FilledPrice,
+		Status:     models.OrderStatusPending,
+		KISOrderID: kisOrderID,
+		SellReason: reason,
+		Source:     models.OrderSourceAgent,
+		CreatedAt:  time.Now().UTC(),
+	}
+	sellOrderID, _ := m.db.CreateOrder(ctx, sellOrder)
 
 	// Update trade report with sell data (non-blocking).
-	go func(buyOrderID int64, sellQty int, sellReason string) {
+	go func(buyOrderID, soID int64, sellQty int, sellReason string) {
 		rCtx := context.Background()
-		// 방금 INSERT된 매도 주문 ID 조회
-		var sellOrderID int64
-		_ = m.db.QueryRowContext(rCtx,
-			`SELECT id FROM orders WHERE stock_code=? AND order_type='SELL' ORDER BY id DESC LIMIT 1`,
-			stockCode).Scan(&sellOrderID)
-		// 현재 주가 및 지표 조회 (매도 시점 데이터)
 		var sellPrice float64
 		var sellIndJSON string
-		info, infoErr := agent.GetStockInfo(rCtx, m.kisClient, stockCode)
+		info, infoErr := ops.GetStockInfo(rCtx, m.kisClient, stockCode)
 		if infoErr == nil {
 			if p, e := strconv.ParseFloat(info.CurrentPrice, 64); e == nil {
 				sellPrice = p
@@ -386,11 +381,11 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 			b, _ := json.Marshal(info)
 			sellIndJSON = string(b)
 		}
-		if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, sellQty, sellReason, sellIndJSON); err != nil {
+		if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, soID, sellPrice, sellQty, sellReason, sellIndJSON); err != nil {
 			logger.Error("monitor: UpdateTradeReportOnSell failed",
 				map[string]any{"stock_code": stockCode, "error": err.Error()})
 		}
-	}(pos.OrderID, qty, reason)
+	}(pos.OrderID, sellOrderID, qty, reason)
 
 	// Notify engine that this position was sold.
 	if pos.SoldCh != nil {
@@ -451,20 +446,25 @@ func (m *Monitor) executePartialSell(stockCode string, pos *MonitoredEntry, reas
 	if resp != nil {
 		kisOrderID = resp.KISOrderID
 	}
-	_, _ = m.db.ExecContext(ctx,
-		`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
-		 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
-		stockCode, pos.StockName, sellQty, pos.FilledPrice, kisOrderID, reason, time.Now().UTC())
+	partialOrder := &models.Order{
+		StockCode:  stockCode,
+		StockName:  pos.StockName,
+		OrderType:  models.OrderTypeSell,
+		Qty:        sellQty,
+		Price:      pos.FilledPrice,
+		Status:     models.OrderStatusPending,
+		KISOrderID: kisOrderID,
+		SellReason: reason,
+		Source:     models.OrderSourceAgent,
+		CreatedAt:  time.Now().UTC(),
+	}
+	partialSellOrderID, _ := m.db.CreateOrder(ctx, partialOrder)
 
-	go func(buyOrderID int64, qty int, sellReason string) {
+	go func(buyOrderID, soID int64, qty int, sellReason string) {
 		rCtx := context.Background()
-		var sellOrderID int64
-		_ = m.db.QueryRowContext(rCtx,
-			`SELECT id FROM orders WHERE stock_code=? AND order_type='SELL' ORDER BY id DESC LIMIT 1`,
-			stockCode).Scan(&sellOrderID)
 		var sellPrice float64
 		var sellIndJSON string
-		info, infoErr := agent.GetStockInfo(rCtx, m.kisClient, stockCode)
+		info, infoErr := ops.GetStockInfo(rCtx, m.kisClient, stockCode)
 		if infoErr == nil {
 			if p, e := strconv.ParseFloat(info.CurrentPrice, 64); e == nil {
 				sellPrice = p
@@ -472,11 +472,11 @@ func (m *Monitor) executePartialSell(stockCode string, pos *MonitoredEntry, reas
 			b, _ := json.Marshal(info)
 			sellIndJSON = string(b)
 		}
-		if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, qty, sellReason, sellIndJSON); err != nil {
+		if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, soID, sellPrice, qty, sellReason, sellIndJSON); err != nil {
 			logger.Error("monitor: UpdateTradeReportOnSell (partial) failed",
 				map[string]any{"stock_code": stockCode, "error": err.Error()})
 		}
-	}(pos.OrderID, sellQty, reason)
+	}(pos.OrderID, partialSellOrderID, sellQty, reason)
 
 	return sellQty
 }
@@ -535,20 +535,25 @@ func (m *Monitor) executePartialSellWithRatio(stockCode string, pos *MonitoredEn
 	if resp != nil {
 		kisOrderID = resp.KISOrderID
 	}
-	_, _ = m.db.ExecContext(ctx,
-		`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
-		 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
-		stockCode, pos.StockName, sellQty, pos.FilledPrice, kisOrderID, reason, time.Now().UTC())
+	tpOrder := &models.Order{
+		StockCode:  stockCode,
+		StockName:  pos.StockName,
+		OrderType:  models.OrderTypeSell,
+		Qty:        sellQty,
+		Price:      pos.FilledPrice,
+		Status:     models.OrderStatusPending,
+		KISOrderID: kisOrderID,
+		SellReason: reason,
+		Source:     models.OrderSourceAgent,
+		CreatedAt:  time.Now().UTC(),
+	}
+	tpSellOrderID, _ := m.db.CreateOrder(ctx, tpOrder)
 
-	go func(buyOrderID int64, qty int, sellReason string) {
+	go func(buyOrderID, soID int64, qty int, sellReason string) {
 		rCtx := context.Background()
-		var sellOrderID int64
-		_ = m.db.QueryRowContext(rCtx,
-			`SELECT id FROM orders WHERE stock_code=? AND order_type='SELL' ORDER BY id DESC LIMIT 1`,
-			stockCode).Scan(&sellOrderID)
 		var sellPrice float64
 		var sellIndJSON string
-		info, infoErr := agent.GetStockInfo(rCtx, m.kisClient, stockCode)
+		info, infoErr := ops.GetStockInfo(rCtx, m.kisClient, stockCode)
 		if infoErr == nil {
 			if p, e := strconv.ParseFloat(info.CurrentPrice, 64); e == nil {
 				sellPrice = p
@@ -556,11 +561,11 @@ func (m *Monitor) executePartialSellWithRatio(stockCode string, pos *MonitoredEn
 			b, _ := json.Marshal(info)
 			sellIndJSON = string(b)
 		}
-		if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, qty, sellReason, sellIndJSON); err != nil {
+		if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, soID, sellPrice, qty, sellReason, sellIndJSON); err != nil {
 			logger.Error("monitor: UpdateTradeReportOnSell (partial-tp) failed",
 				map[string]any{"stock_code": stockCode, "error": err.Error()})
 		}
-	}(pos.OrderID, sellQty, reason)
+	}(pos.OrderID, tpSellOrderID, sellQty, reason)
 
 	return sellQty
 }
@@ -655,19 +660,25 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 		if liqResp != nil {
 			kisOrderID = liqResp.KISOrderID
 		}
-		_, _ = m.db.ExecContext(ctx,
-			`INSERT INTO orders (stock_code, stock_name, order_type, qty, price, status, kis_order_id, sell_reason, market, created_at)
-			 VALUES (?, ?, 'SELL', ?, ?, 'PENDING', ?, ?, 'KR', ?)`,
-			code, pos.StockName, qty, pos.FilledPrice, kisOrderID, "일일 자동 청산", time.Now().UTC())
+		liqOrder := &models.Order{
+			StockCode:  code,
+			StockName:  pos.StockName,
+			OrderType:  models.OrderTypeSell,
+			Qty:        qty,
+			Price:      pos.FilledPrice,
+			Status:     models.OrderStatusPending,
+			KISOrderID: kisOrderID,
+			SellReason: "일일 자동 청산",
+			Source:     models.OrderSourceAgent,
+			CreatedAt:  time.Now().UTC(),
+		}
+		liqSellOrderID, _ := m.db.CreateOrder(ctx, liqOrder)
+
 		// Update trade report (non-blocking).
-		go func(codeSnap string, buyOrderID int64, sellQty int, sellPriceEst float64) {
+		go func(codeSnap string, buyOrderID, soID int64, sellQty int, sellPriceEst float64) {
 			rCtx := context.Background()
-			var sellOrderID int64
-			_ = m.db.QueryRowContext(rCtx,
-				`SELECT id FROM orders WHERE stock_code=? AND order_type='SELL' ORDER BY id DESC LIMIT 1`,
-				codeSnap).Scan(&sellOrderID)
 			var sellIndJSON string
-			info, infoErr := agent.GetStockInfo(rCtx, m.kisClient, codeSnap)
+			info, infoErr := ops.GetStockInfo(rCtx, m.kisClient, codeSnap)
 			sellPrice := sellPriceEst
 			if infoErr == nil {
 				if p, e := strconv.ParseFloat(info.CurrentPrice, 64); e == nil && p > 0 {
@@ -676,11 +687,11 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 				b, _ := json.Marshal(info)
 				sellIndJSON = string(b)
 			}
-			if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, sellOrderID, sellPrice, sellQty, "일일 자동 청산", sellIndJSON); err != nil {
+			if err := m.db.UpdateTradeReportOnSell(rCtx, buyOrderID, soID, sellPrice, sellQty, "일일 자동 청산", sellIndJSON); err != nil {
 				logger.Error("monitor: UpdateTradeReportOnSell (liquidate) failed",
 					map[string]any{"stock_code": codeSnap, "error": err.Error()})
 			}
-		}(code, pos.OrderID, qty, currentPrice)
+		}(code, pos.OrderID, liqSellOrderID, qty, currentPrice)
 
 		m.Remove(ctx, code)
 	}
@@ -711,6 +722,14 @@ func (m *Monitor) Count() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.positions)
+}
+
+// Has reports whether the stock code is currently being monitored.
+func (m *Monitor) Has(stockCode string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, ok := m.positions[stockCode]
+	return ok
 }
 
 // RecoverFromHoldings compares KIS actual holdings with the current monitored positions map
@@ -760,15 +779,11 @@ func (m *Monitor) RecoverFromHoldings(ctx context.Context, soldCh chan<- string)
 			continue
 		}
 
-		// DB에서 해당 종목의 오늘 마지막 매수 주문 ID 조회.
+		// DB에서 해당 종목의 마지막 AGENT BUY 주문 ID 조회.
 		var orderID int64
-		m.db.QueryRowContext(ctx, //nolint:errcheck
-			`SELECT id FROM orders
-			 WHERE stock_code = ? AND order_type = 'BUY' AND status = 'FILLED'
-			   AND source = 'AGENT'
-			 ORDER BY id DESC LIMIT 1`,
-			h.StockCode,
-		).Scan(&orderID)
+		if lastOrder, err := m.db.GetLastAgentBuyOrder(ctx, h.StockCode); err == nil && lastOrder != nil {
+			orderID = lastOrder.ID
+		}
 
 		// MST 기반 AssetType 결정 — ETF/주식별 익절/손절 분리 적용.
 		assetType := "STOCK"
@@ -895,24 +910,21 @@ func (m *Monitor) ResubscribeAll() {
 
 // LoadFromDB restores monitored positions from the database after a server restart.
 func (m *Monitor) LoadFromDB(ctx context.Context) error {
-	rows, err := m.db.QueryContext(ctx,
-		`SELECT stock_code, stock_name, filled_price, target_price, stop_price, order_id, COALESCE(market, 'KR')
-		 FROM monitored_positions`)
+	dbPositions, err := m.db.ListPositions(ctx)
 	if err != nil {
 		return fmt.Errorf("load monitored_positions: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var pos MonitoredEntry
-		var market string
-		if err := rows.Scan(
-			&pos.StockCode, &pos.StockName,
-			&pos.FilledPrice, &pos.TargetPrice, &pos.StopPrice, &pos.OrderID, &market,
-		); err != nil {
-			continue
+	for _, p := range dbPositions {
+		pos := MonitoredEntry{
+			StockCode:   p.StockCode,
+			StockName:   p.StockName,
+			FilledPrice: p.FilledPrice,
+			TargetPrice: p.TargetPrice,
+			StopPrice:   p.StopPrice,
+			OrderID:     p.OrderID,
+			Market:      "KR",
 		}
-		pos.Market = market
 		m.mu.Lock()
 		m.positions[pos.StockCode] = &pos
 		m.mu.Unlock()

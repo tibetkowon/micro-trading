@@ -5,17 +5,18 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/micro-trading-for-agent/backend/internal/agent"
+	"github.com/micro-trading-for-agent/backend/internal/ops"
 	"github.com/micro-trading-for-agent/backend/internal/config"
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
-	"github.com/micro-trading-for-agent/backend/internal/mst"
+	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
 	"github.com/micro-trading-for-agent/backend/internal/report"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
@@ -29,8 +30,7 @@ type Handler struct {
 	monitor      *monitor.Monitor
 	wsClient     *kis.WebSocketClient
 	engine       *trader.Engine
-	mstStore     *mst.Store
-	claude       *trader.ClaudeClient
+	mstStore     *stockmaster.Store
 	// available_cash 캐시 (GetServerStatus 호출 시 KIS API 중복 호출 방지)
 	cashCacheMu  sync.Mutex
 	cashCacheVal float64
@@ -51,7 +51,7 @@ func NewHandler(db *database.DB, client *kis.Client, tokenManager *kis.TokenMana
 }
 
 // SetMSTStore injects the MST store for stock master lookups.
-func (h *Handler) SetMSTStore(s *mst.Store) {
+func (h *Handler) SetMSTStore(s *stockmaster.Store) {
 	h.mstStore = s
 }
 
@@ -60,19 +60,39 @@ func (h *Handler) SetEngine(e *trader.Engine) {
 	h.engine = e
 }
 
-// SetClaudeClient injects the Claude client for optimization analysis.
-func (h *Handler) SetClaudeClient(c *trader.ClaudeClient) {
-	h.claude = c
-}
-
 // GET /api/balance
 func (h *Handler) GetBalance(c *gin.Context) {
-	bal, err := agent.GetAccountBalance(c.Request.Context(), h.client, h.db)
+	bal, err := ops.GetAccountBalance(c.Request.Context(), h.client, h.db)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, bal)
+	assetChangePct := 0.0
+	if v, err2 := strconv.ParseFloat(bal.AssetChangeRate, 64); err2 == nil {
+		assetChangePct = v
+	}
+	// Today's pnl/win_rate from the most recent daily report
+	kst := ops.KSTLocation()
+	todayStr := time.Now().In(kst).Format("2006-01-02")
+	todayPnl, todayPnlPct, winRate := 0.0, 0.0, 0.0
+	if reports, err2 := h.db.ListDailyReports(c.Request.Context(), 1); err2 == nil && len(reports) > 0 && reports[0].Date == todayStr {
+		r := reports[0]
+		todayPnl = r.TotalProfitAmount
+		todayPnlPct = r.AvgProfitPct
+		if r.TotalTrades > 0 {
+			winRate = float64(r.WinningTrades) / float64(r.TotalTrades) * 100
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"total_assets":            bal.TotalEval,
+			"available_cash":          bal.OrderableAmt,
+			"today_pnl":               todayPnl,
+			"today_pnl_pct":           todayPnlPct,
+			"win_rate":                winRate,
+			"total_assets_change_pct": assetChangePct,
+		},
+	})
 }
 
 // GET /api/orders?sync=true
@@ -94,12 +114,12 @@ func (h *Handler) GetOrders(c *gin.Context) {
 		startDate := time.Now().AddDate(0, 0, -(days - 1)).Format("20060102")
 		syncCtx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 		defer cancel()
-		if _, err := agent.GetOrderHistory(syncCtx, h.client, h.db, startDate, endDate); err != nil {
+		if _, err := ops.GetOrderHistory(syncCtx, h.client, h.db, startDate, endDate); err != nil {
 			syncError = err.Error()
 		}
 	}
 
-	orders, err := agent.GetLocalOrderHistory(c.Request.Context(), h.db, limit, offset)
+	orders, err := ops.GetLocalOrderHistory(c.Request.Context(), h.db, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -107,7 +127,8 @@ func (h *Handler) GetOrders(c *gin.Context) {
 	if orders == nil {
 		orders = []models.Order{}
 	}
-	resp := gin.H{"orders": orders, "limit": limit, "offset": offset}
+	total, _ := h.db.CountOrders(c.Request.Context())
+	resp := gin.H{"orders": orders, "data": orders, "total": total, "limit": limit, "offset": offset}
 	if syncError != "" {
 		resp["sync_error"] = syncError
 	}
@@ -122,7 +143,7 @@ func (h *Handler) CancelOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	result, err := agent.CancelOrder(c.Request.Context(), h.client, h.db, id)
+	result, err := ops.CancelOrder(c.Request.Context(), h.client, h.db, id)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
@@ -141,13 +162,14 @@ func (h *Handler) DeleteOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	res, err := h.db.ExecContext(c.Request.Context(), `DELETE FROM orders WHERE id = ?`, id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// Firestore: 해당 주문 존재 확인 후 삭제
+	order, err := h.db.GetOrderByID(c.Request.Context(), id)
+	if err != nil || order == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+	if err := h.db.DeleteOrder(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"deleted": id})
@@ -160,13 +182,22 @@ func (h *Handler) DeleteKISLog(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	res, err := h.db.ExecContext(c.Request.Context(), `DELETE FROM kis_api_logs WHERE id = ?`, id)
-	if err != nil {
+	if err := h.db.DeleteKISAPILog(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "log not found"})
+	c.JSON(http.StatusOK, gin.H{"deleted": id})
+}
+
+// DELETE /api/logs/service/:id
+func (h *Handler) DeleteServiceLog(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	if err := h.db.DeleteServiceLog(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"deleted": id})
@@ -209,7 +240,7 @@ func (h *Handler) PlaceOrder(c *gin.Context) {
 		divn = "01" // 시장가
 	}
 
-	result, err := agent.PlaceOrder(c.Request.Context(), h.client, h.db, agent.PlaceOrderRequest{
+	result, err := ops.PlaceOrder(c.Request.Context(), h.client, h.db, ops.PlaceOrderRequest{
 		StockCode: req.StockCode,
 		OrderType: orderType,
 		Qty:       req.Qty,
@@ -256,7 +287,7 @@ func (h *Handler) PlaceOrder(c *gin.Context) {
 
 // GET /api/server/status — 통합 서버 상태 (시장개장/WebSocket연결/모니터링 수)
 func (h *Handler) GetServerStatus(c *gin.Context) {
-	now := time.Now().In(agent.KSTLocation())
+	now := time.Now().In(ops.KSTLocation())
 
 	// KR market open check (weekdays 09:00~15:30 KST)
 	marketOpen := false
@@ -327,14 +358,50 @@ func (h *Handler) LiquidateAll(c *gin.Context) {
 // GET /api/monitor/positions — 현재 모니터링 중인 포지션 목록
 func (h *Handler) GetMonitorPositions(c *gin.Context) {
 	if h.monitor == nil {
-		c.JSON(http.StatusOK, gin.H{"positions": []any{}})
+		c.JSON(http.StatusOK, gin.H{"data": []any{}})
 		return
 	}
 	positions := h.monitor.List()
 	if positions == nil {
 		positions = []models.MonitoredPosition{}
 	}
-	c.JSON(http.StatusOK, gin.H{"positions": positions})
+	type posView struct {
+		ID           int64   `json:"id"`
+		StockCode    string  `json:"stock_code"`
+		StockName    string  `json:"stock_name"`
+		AvgPrice     float64 `json:"avg_price"`
+		CurrentPrice float64 `json:"current_price"`
+		TargetPrice  float64 `json:"target_price"`
+		StopPrice    float64 `json:"stop_price"`
+		Quantity     int     `json:"quantity"`
+		PnlPct       float64 `json:"pnl_pct"`
+		PnlAmount    float64 `json:"pnl_amount"`
+		HeldDays     int     `json:"held_days"`
+		EntryTime    string  `json:"entry_time"`
+		Status       string  `json:"status"`
+	}
+	kst := ops.KSTLocation()
+	now := time.Now().In(kst)
+	views := make([]posView, len(positions))
+	for i, p := range positions {
+		heldDays := int(now.Sub(p.CreatedAt.In(kst)).Hours() / 24)
+		views[i] = posView{
+			ID:           p.ID,
+			StockCode:    p.StockCode,
+			StockName:    p.StockName,
+			AvgPrice:     p.FilledPrice,
+			CurrentPrice: p.FilledPrice,
+			TargetPrice:  p.TargetPrice,
+			StopPrice:    p.StopPrice,
+			Quantity:     0,
+			PnlPct:       0,
+			PnlAmount:    0,
+			HeldDays:     heldDays,
+			EntryTime:    p.CreatedAt.In(kst).Format("2006-01-02 15:04"),
+			Status:       "MONITORING",
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": views})
 }
 
 // POST /api/monitor/positions/:code/sell — 강제 시장가 매도 + 모니터링 해제
@@ -386,7 +453,6 @@ func (h *Handler) GetPositions(c *gin.Context) {
 
 // GET /api/logs/kis?limit=N&summary=true
 // summary=true 이면 raw_response 필드를 제외한 요약 형태로 반환
-// 호출 시 2일 이상 된 로그는 자동 삭제됨
 func (h *Handler) GetKISLogs(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	if limit <= 0 || limit > 500 {
@@ -394,37 +460,43 @@ func (h *Handler) GetKISLogs(c *gin.Context) {
 	}
 	summary := c.Query("summary") == "true"
 
-	h.db.ExecContext(c.Request.Context(),
-		`DELETE FROM kis_api_logs WHERE timestamp < datetime('now', '-2 days')`)
-
-	rows, err := h.db.QueryContext(c.Request.Context(),
-		`SELECT id, endpoint, error_code, error_message, raw_response, timestamp
-		 FROM kis_api_logs ORDER BY id DESC LIMIT ?`, limit)
+	logs, err := h.db.ListKISAPILogs(c.Request.Context(), limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	defer rows.Close()
-
-	var logs []models.KISAPILog
-	for rows.Next() {
-		var l models.KISAPILog
-		if err := rows.Scan(&l.ID, &l.Endpoint, &l.ErrorCode, &l.ErrorMsg, &l.RawResponse, &l.Timestamp); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if summary {
-			l.RawResponse = "" // 요약 모드에서는 raw 응답 제외
-		}
-		logs = append(logs, l)
-	}
 	if logs == nil {
 		logs = []models.KISAPILog{}
 	}
-	c.JSON(http.StatusOK, gin.H{"logs": logs})
+	type kisLogView struct {
+		ID          int64  `json:"id"`
+		Endpoint    string `json:"endpoint"`
+		ErrorCode   string `json:"error_code"`
+		ErrorMsg    string `json:"error_message"`
+		RawResponse string `json:"raw_response,omitempty"`
+		CreatedAt   string `json:"created_at"`
+		Message     string `json:"message"`
+	}
+	views := make([]kisLogView, len(logs))
+	for i, l := range logs {
+		raw := ""
+		if !summary {
+			raw = l.RawResponse
+		}
+		views[i] = kisLogView{
+			ID:          l.ID,
+			Endpoint:    l.Endpoint,
+			ErrorCode:   l.ErrorCode,
+			ErrorMsg:    l.ErrorMsg,
+			RawResponse: raw,
+			CreatedAt:   l.Timestamp.In(ops.KSTLocation()).Format("2006-01-02 15:04:05"),
+			Message:     l.ErrorMsg,
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": views})
 }
 
-// GET /api/logs/service?limit=100&source=ALL — 서비스 전체 에러 로그 조회
+// GET /api/logs/service?limit=100&source=ALL|TRADER|MONITOR|SYSTEM — 서비스 전체 에러 로그 조회
 func (h *Handler) GetServiceLogs(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	if limit <= 0 || limit > 500 {
@@ -432,63 +504,104 @@ func (h *Handler) GetServiceLogs(c *gin.Context) {
 	}
 	source := c.DefaultQuery("source", "ALL")
 
-	logs, err := h.db.GetServiceLogs(c.Request.Context(), source, limit)
+	logs, err := h.db.ListServiceLogs(c.Request.Context(), limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"logs": logs})
+	if logs == nil {
+		logs = []models.ServiceLog{}
+	}
+	type svcLogView struct {
+		ID        int64  `json:"id"`
+		Source    string `json:"source"`
+		Level     string `json:"level"`
+		Message   string `json:"message"`
+		Detail    string `json:"detail"`
+		CreatedAt string `json:"created_at"`
+	}
+	kst := ops.KSTLocation()
+	views := make([]svcLogView, 0, len(logs))
+	for _, l := range logs {
+		if source != "ALL" && l.Source != source {
+			continue
+		}
+		views = append(views, svcLogView{
+			ID:        l.ID,
+			Source:    l.Source,
+			Level:     l.Level,
+			Message:   l.Message,
+			Detail:    l.Detail,
+			CreatedAt: l.Timestamp.In(kst).Format("2006-01-02 15:04:05"),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"data": views})
 }
 
-// GET /api/logs/selection?limit=20 — LLM 종목 선정 로그 조회 (최신 순)
-// 30일 이상 된 로그는 자동 삭제됨
-func (h *Handler) GetSelectionLogs(c *gin.Context) {
+// GET /api/logs/scan?limit=20 — 스캔 로그 조회 (최신 순)
+func (h *Handler) GetScanLogs(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	if limit <= 0 || limit > 500 {
 		limit = 20
 	}
 
-	h.db.ExecContext(c.Request.Context(), //nolint:errcheck
-		`DELETE FROM trader_selection_logs WHERE timestamp < datetime('now', '-30 days')`)
-
-	rows, err := h.db.QueryContext(c.Request.Context(),
-		`SELECT id, timestamp, sent_count, candidates, llm_result, selected_code, selected_reason, fail_reason, market, ranking_log_id
-		 FROM trader_selection_logs ORDER BY id DESC LIMIT ?`, limit)
+	logs, err := h.db.ListScanLogs(c.Request.Context(), limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	defer rows.Close()
-
-	var logs []models.TraderSelectionLog
-	for rows.Next() {
-		var l models.TraderSelectionLog
-		if err := rows.Scan(&l.ID, &l.Timestamp, &l.SentCount, &l.Candidates, &l.LLMResult, &l.SelectedCode, &l.SelectedReason, &l.FailReason, &l.Market, &l.RankingLogID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		logs = append(logs, l)
 	}
 	if logs == nil {
-		logs = []models.TraderSelectionLog{}
+		logs = []models.ScanLog{}
 	}
-	c.JSON(http.StatusOK, gin.H{"logs": logs})
+	type scanLogView struct {
+		ID                  int64  `json:"id"`
+		ScannedAt           string `json:"scanned_at"`
+		CreatedAt           string `json:"created_at"`
+		EvaluatedCount      int    `json:"evaluated_count"`
+		PassedHardFilter    int    `json:"passed_hard_filter"`
+		ScoredCount         int    `json:"scored_count"`
+		SelectedStockCode   string `json:"selected_stock_code"`
+		SelectedStockName   string `json:"selected_stock_name"`
+		RejectionSummary    string `json:"rejection_summary"`
+		Stocks              []gin.H `json:"stocks"`
+	}
+	views := make([]scanLogView, len(logs))
+	for i, l := range logs {
+		// Build stock list from top_stocks (comma-separated names)
+		stocks := []gin.H{}
+		if l.TopStocks != "" {
+			for _, name := range splitTrimmed(l.TopStocks, ",") {
+				if name != "" {
+					stocks = append(stocks, gin.H{"stock_name": name})
+				}
+			}
+		}
+		views[i] = scanLogView{
+			ID:               l.ID,
+			ScannedAt:        l.Timestamp,
+			CreatedAt:        l.Timestamp,
+			EvaluatedCount:   l.StocksFound,
+			PassedHardFilter: l.StocksFound,
+			ScoredCount:      len(stocks),
+			SelectedStockCode: l.OrderedCode,
+			SelectedStockName: l.OrderedCode,
+			RejectionSummary: l.SkipReason,
+			Stocks:           stocks,
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": views})
 }
 
-// GET /api/logs/ranking?limit=50 — 순위 조회 시도 로그 (최신 순)
-// 30일 이상 된 로그는 자동 삭제됨
-func (h *Handler) GetRankingLogs(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	if limit <= 0 || limit > 200 {
-		limit = 50
+// splitTrimmed splits s by sep and trims whitespace from each element.
+func splitTrimmed(s, sep string) []string {
+	parts := make([]string, 0)
+	for _, p := range strings.Split(s, sep) {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			parts = append(parts, p)
+		}
 	}
-
-	logs, err := h.db.GetRankingLogs(c.Request.Context(), limit)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"logs": logs})
+	return parts
 }
 
 // POST /api/trader/force-run — 강제 실행 (즉시 매수 사이클 트리거)
@@ -504,7 +617,7 @@ func (h *Handler) ForceRunTrader(c *gin.Context) {
 // GET /api/stock/:code — 현재가 + MA5 + MA20
 func (h *Handler) GetStock(c *gin.Context) {
 	code := c.Param("code")
-	info, err := agent.GetStockInfo(c.Request.Context(), h.client, code)
+	info, err := ops.GetStockInfo(c.Request.Context(), h.client, code)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -516,12 +629,28 @@ func (h *Handler) GetStock(c *gin.Context) {
 func (h *Handler) GetStockChart(c *gin.Context) {
 	code := c.Param("code")
 	interval := c.DefaultQuery("interval", "1m")
-	candles, err := agent.GetChart(c.Request.Context(), h.client, code, interval)
+	candles, err := ops.GetChart(c.Request.Context(), h.client, code, interval)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"stock_code": code, "interval": interval, "candles": candles})
+}
+
+// settingFloat reads a DB setting as float64 with a default fallback.
+func settingFloat(val string, def float64) float64 {
+	if v, err := strconv.ParseFloat(val, 64); err == nil {
+		return v
+	}
+	return def
+}
+
+// settingInt reads a DB setting as int with a default fallback.
+func settingInt(val string, def int) int {
+	if v, err := strconv.Atoi(val); err == nil {
+		return v
+	}
+	return def
 }
 
 // GET /api/settings — 서버 상태 및 런타임 설정 조회
@@ -545,125 +674,76 @@ func (h *Handler) GetSettings(c *gin.Context) {
 
 	ts, _ := h.db.GetTradingSettings(c.Request.Context())
 
-	c.JSON(http.StatusOK, gin.H{
-		"account_no":           maskedAccount,
-		"account_type":         h.cfg.KISAccountType,
-		"kis_configured":       h.cfg.KISAppKey != "" && h.cfg.KISAppSecret != "",
-		"hts_id_configured":    h.cfg.KISHTSID != "",
-		"anthropic_configured": h.cfg.AnthropicAPIKey != "",
-		"ws_connected":         wsConnected,
-		"trading_enabled":      tradingEnabled,
-		"ranking_excl_cls":     rankingExclCls,
-		// Autonomous trading settings
-		"take_profit_pct": ts.TakeProfitPct,
-		"stop_loss_pct":   ts.StopLossPct,
-		// ETF/주식 분리 수익·손절
-		"etf_take_profit_pct":           ts.ETFTakeProfitPct,
-		"etf_stop_loss_pct":             ts.ETFStopLossPct,
-		"stock_take_profit_pct":         ts.StockTakeProfitPct,
-		"stock_stop_loss_pct":           ts.StockStopLossPct,
-		"stock_tax_rate":                ts.StockTaxRate,
-		"ranking_types":                 ts.RankingTypes,
-		"ranking_price_min":             ts.RankingPriceMin,
-		"ranking_price_max":             ts.RankingPriceMax,
-		"max_positions":                 ts.MaxPositions,
-		"order_amount_pct":              ts.OrderAmountPct,
-		"sell_conditions":               ts.SellConditions,
-		"indicator_check_interval_min":  ts.IndicatorCheckIntervalMin,
-		"indicator_rsi_sell_threshold":  ts.IndicatorRSISellThreshold,
-		"indicator_macd_bearish_sell":   ts.IndicatorMACDBearishSell,
-		"claude_model":                  ts.ClaudeModel,
-		"ranking_volume_min_incrrate":   ts.RankingVolumeMinIncrRate,
-		"ranking_strength_min":          ts.RankingStrengthMin,
-		"ranking_fluctuation_min_rate":  ts.RankingFluctuationMinRate,
-		"ranking_fluctuation_max_rate":  ts.RankingFluctuationMaxRate,
-		"ranking_vi_kind_code":          ts.RankingVIKindCode,
-		"ranking_top_n":                 ts.RankingTopN,
-		"trading_start_time":            ts.TradingStartTime,
-		"trading_end_time":              ts.TradingEndTime,
-		"stagnation_threshold_pct":      ts.StagnationThresholdPct,
-		"stagnation_duration_min":       ts.StagnationDurationMin,
-		"ranking_condition":             ts.RankingCondition,
-		"ranking_exchanges":             ts.RankingExchanges,
-		"ranking_volume_blng_cls_codes": ts.RankingVolumeBlngClsCodes,
-		// 거래대금 하한선
-		"min_trading_value": ts.MinTradingValue,
-		// 매수 중단 시간대
-		"buy_pause_start": ts.BuyPauseStart,
-		"buy_pause_end":   ts.BuyPauseEnd,
-		// 트레일링 스탑
-		"trailing_trigger_pct": ts.TrailingTriggerPct,
-		"trailing_stop_pct":    ts.TrailingStopPct,
-		// 일일 최대 손실
-		"daily_max_loss_pct": ts.DailyMaxLossPct,
-		// 지수 필터
-		"index_codes": ts.IndexCodes,
+	ctx := c.Request.Context()
+	db := h.db
+
+	// Weights (stored as weight_<key> in DB)
+	weightKeys := []string{"strength", "rsi", "macd", "bidask", "vwap", "volume"}
+	weights := map[string]float64{}
+	for _, k := range weightKeys {
+		weights[k] = settingFloat(db.GetSetting(ctx, "weight_"+k), 0)
+	}
+
+	// Filters (stored as filter_<key>_enabled / filter_<key>_value in DB)
+	filterKeys := []string{"rsi_upper_limit", "strength_lower", "vwap_min", "vwap_max",
+		"high_disparity", "open_rise_limit", "high_elapsed_min", "volume_ratio_lower"}
+	filters := map[string]gin.H{}
+	for _, k := range filterKeys {
+		filters[k] = gin.H{
+			"enabled": db.GetSetting(ctx, "filter_"+k+"_enabled") == "true",
+			"value":   settingFloat(db.GetSetting(ctx, "filter_"+k+"_value"), 0),
+		}
+	}
+
+	// Schedule
+	tradeStart := ts.TradingStartTime
+	if tradeStart == "" {
+		tradeStart = "09:15"
+	}
+	tradeEnd := ts.TradingEndTime
+	if tradeEnd == "" {
+		tradeEnd = "15:15"
+	}
+	schedule := gin.H{
+		"trade_start":            tradeStart,
+		"trade_end":              tradeEnd,
+		"scan_interval":          settingInt(db.GetSetting(ctx, "scan_interval"), 60),
+		"indicator_check_interval": ts.IndicatorCheckIntervalMin,
+	}
+
+	indicatorRSISellEnabled := db.GetSetting(ctx, "indicator_rsi_sell_enabled") == "true"
+	minScore := settingFloat(db.GetSetting(ctx, "min_score"), 0)
+
+	data := gin.H{
+		// 거래 조건
+		"max_positions":              ts.MaxPositions,
+		"order_amount_pct":           ts.OrderAmountPct,
+		"take_profit_pct":            ts.TakeProfitPct,
+		"stop_loss_pct":              ts.StopLossPct,
+		"etf_take_profit_pct":        ts.ETFTakeProfitPct,
+		"etf_stop_loss_pct":          ts.ETFStopLossPct,
+		"daily_loss_limit_pct":       ts.DailyMaxLossPct,
+		"ranking_condition":          ts.RankingCondition,
+		"indicator_rsi_sell_enabled": indicatorRSISellEnabled,
+		"indicator_macd_bearish_sell": ts.IndicatorMACDBearishSell,
+		"buy_pause_start":            ts.BuyPauseStart,
+		"buy_pause_end":              ts.BuyPauseEnd,
+		// 점수 시스템
+		"min_score": minScore,
+		"weights":   weights,
 		// 하드 필터
-		"filter_rsi_max":             ts.FilterRsiMax,
-		"filter_disparity_m5_max":    ts.FilterDisparityM5Max,
-		"filter_high_price_diff_min": ts.FilterHighPriceDiffMin,
-		"filter_open_price_diff_max": ts.FilterOpenPriceDiffMax,
-		// 지수 하락 임계값
-		"index_drop_threshold_pct": ts.IndexDropThresholdPct,
-		// 요일 스케줄
-		"trading_days": ts.TradingDays,
-		// AI 매매 기준값 — 하드 리젝션
-		"hard_disparity_m5_min":      ts.HardDisparityM5Min,
-		"hard_disparity_m5_max":      ts.HardDisparityM5Max,
-		"hard_high_price_diff_max":   ts.HardHighPriceDiffMax,
-		"hard_high_price_diff_min":   ts.HardHighPriceDiffMin,
-		"hard_prev_vol_ratio_max":    ts.HardPrevVolRatioMax,
-		"hard_strength_min":          ts.HardStrengthMin,
-		"hard_rsi_max":               ts.HardRSIMax,
-		"hard_open_price_diff_max":   ts.HardOpenPriceDiffMax,
-		"hard_macd_bearish_enabled":  ts.HardMACDBearishEnabled,
-		"hard_high_formed_mins_max":  ts.HardHighFormedMinsMax,
-		"hard_vol_vs_3avg_ratio_min": ts.HardVolVs3AvgRatioMin,
-		"hard_relative_strength_min": ts.HardRelativeStrengthMin,
-		// AI 매매 기준값 — 랭킹 기준
-		"vwap_diff_min":           ts.VWAPDiffMin,
-		"vwap_diff_max":           ts.VWAPDiffMax,
-		"rsi_buy_min":             ts.RSIBuyMin,
-		"rsi_buy_max":             ts.RSIBuyMax,
-		"bid_ask_ratio_min":       ts.BidAskRatioMin,
-		"min_market_cap":          ts.MinMarketCap,
-		"min_expected_profit_pct": ts.MinExpectedProfitPct,
-		"max_claude_candidates":   ts.MaxClaudeCandidates,
-		// 복합 모멘텀 스코어링 + 단계적 횡보 청산
-		"momentum_score_min":                ts.MomentumScoreMin,
-		"stagnation_partial_exit_enabled":   ts.StagnationPartialExitEnabled,
-		"stagnation_bid_ask_sell_threshold": ts.StagnationBidAskSellThreshold,
-		// 부분 익절
-		"partial_tp_enabled":    ts.PartialTPEnabled,
-		"partial_tp_pct":        ts.PartialTPPct,
-		"partial_tp_ratio":      ts.PartialTPRatio,
-		"partial_tp_raise_stop": ts.PartialTPRaiseStop,
-		// 복합 스코어링 가중치
-		"scoring_bidask_weight":   ts.ScoringBidAskWeight,
-		"scoring_strength_weight": ts.ScoringStrengthWeight,
-		"scoring_macd_weight":     ts.ScoringMACDWeight,
-		"scoring_rsi_weight":      ts.ScoringRSIWeight,
-		"scoring_vwap_weight":     ts.ScoringVWAPWeight,
-		// Adaptive Threshold
-		"adaptive_threshold_enabled": ts.AdaptiveThresholdEnabled,
-		"adaptive_threshold_trigger": ts.AdaptiveThresholdTrigger,
-		"adaptive_relax_pct":         ts.AdaptiveRelaxPct,
-		// Market Phase Detection
-		"market_phase_relax_enabled":      ts.MarketPhaseRelaxEnabled,
-		"market_phase_index_drop_trigger": ts.MarketPhaseIndexDropTrigger,
-		"market_phase_relax_pct":          ts.MarketPhaseRelaxPct,
-		// Hard Rule Escalation
-		"escalation_enabled":    ts.EscalationEnabled,
-		"escalation_trigger":    ts.EscalationTrigger,
-		"escalation_step_pct":   ts.EscalationStepPct,
-		"escalation_max_stages": ts.EscalationMaxStages,
-		// 하드 감시 종목 / 순위 유지 시간
-		"hard_watch_symbols":      ts.HardWatchSymbols,
-		"rank_lease_duration_min": ts.RankLeaseDurationMin,
-		"active_preset_id":        h.db.GetSetting(c.Request.Context(), "active_preset_id"),
-		// AI 개선 제안 자동 적용 모드
-		"optimization_apply_mode": h.db.GetSetting(c.Request.Context(), "optimization_apply_mode"),
-	})
+		"filters": filters,
+		// 스케줄
+		"schedule": schedule,
+		// 시스템 / KIS 설정 (읽기 전용)
+		"account_no":      maskedAccount,
+		"account_type":    h.cfg.KISAccountType,
+		"kis_configured":  h.cfg.KISAppKey != "" && h.cfg.KISAppSecret != "",
+		"ws_connected":    wsConnected,
+		"trading_enabled": tradingEnabled,
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": data})
 }
 
 // PATCH /api/settings — 런타임 설정 업데이트
@@ -688,8 +768,6 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		IndicatorCheckIntervalMin *int     `json:"indicator_check_interval_min"`
 		IndicatorRSISellThreshold *float64 `json:"indicator_rsi_sell_threshold"`
 		IndicatorMACDBearishSell  *bool    `json:"indicator_macd_bearish_sell"`
-		ClaudeModel               string   `json:"claude_model"`
-		OptimizationApplyMode     string   `json:"optimization_apply_mode"`
 		RankingVolumeMinIncrRate  *float64 `json:"ranking_volume_min_incrrate"`
 		RankingStrengthMin        *float64 `json:"ranking_strength_min"`
 		RankingFluctuationMinRate *float64 `json:"ranking_fluctuation_min_rate"`
@@ -748,8 +826,6 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		BidAskRatioMin                *float64 `json:"bid_ask_ratio_min"`
 		MinMarketCap                  *float64 `json:"min_market_cap"`
 		MinExpectedProfitPct          *float64 `json:"min_expected_profit_pct"`
-		MaxClaudeCandidates           *int     `json:"max_claude_candidates"`
-		MomentumScoreMin              *float64 `json:"momentum_score_min"`
 		StagnationPartialExitEnabled  *bool    `json:"stagnation_partial_exit_enabled"`
 		StagnationBidAskSellThreshold *float64 `json:"stagnation_bid_ask_sell_threshold"`
 		// 부분 익절
@@ -757,25 +833,31 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		PartialTPPct       *float64 `json:"partial_tp_pct"`
 		PartialTPRatio     *float64 `json:"partial_tp_ratio"`
 		PartialTPRaiseStop *bool    `json:"partial_tp_raise_stop"`
-		// 복합 스코어링 가중치
-		ScoringBidAskWeight   *int `json:"scoring_bidask_weight"`
-		ScoringStrengthWeight *int `json:"scoring_strength_weight"`
-		ScoringMACDWeight     *int `json:"scoring_macd_weight"`
-		ScoringRSIWeight      *int `json:"scoring_rsi_weight"`
-		ScoringVWAPWeight     *int `json:"scoring_vwap_weight"`
-		// Adaptive Threshold
-		AdaptiveThresholdEnabled *bool    `json:"adaptive_threshold_enabled"`
-		AdaptiveThresholdTrigger *int     `json:"adaptive_threshold_trigger"`
-		AdaptiveRelaxPct         *float64 `json:"adaptive_relax_pct"`
-		// Market Phase Detection
-		MarketPhaseRelaxEnabled     *bool    `json:"market_phase_relax_enabled"`
-		MarketPhaseIndexDropTrigger *float64 `json:"market_phase_index_drop_trigger"`
-		MarketPhaseRelaxPct         *float64 `json:"market_phase_relax_pct"`
-		// Hard Rule Escalation
-		EscalationEnabled   *bool    `json:"escalation_enabled"`
-		EscalationTrigger   *int     `json:"escalation_trigger"`
-		EscalationStepPct   *float64 `json:"escalation_step_pct"`
-		EscalationMaxStages *int     `json:"escalation_max_stages"`
+		// UI 거래조건 추가 필드
+		DailyLossLimitPct       *float64 `json:"daily_loss_limit_pct"`
+		IndicatorRSISellEnabled *bool    `json:"indicator_rsi_sell_enabled"`
+		MinScore                *float64 `json:"min_score"`
+		// UI 점수시스템 — weights (nested)
+		Weights *struct {
+			Strength float64 `json:"strength"`
+			RSI      float64 `json:"rsi"`
+			MACD     float64 `json:"macd"`
+			BidAsk   float64 `json:"bidask"`
+			VWAP     float64 `json:"vwap"`
+			Volume   float64 `json:"volume"`
+		} `json:"weights"`
+		// UI 하드필터 — filters (nested map)
+		Filters map[string]struct {
+			Enabled bool    `json:"enabled"`
+			Value   float64 `json:"value"`
+		} `json:"filters"`
+		// UI 스케줄 — schedule (nested)
+		Schedule *struct {
+			TradeStart             string `json:"trade_start"`
+			TradeEnd               string `json:"trade_end"`
+			ScanInterval           int    `json:"scan_interval"`
+			IndicatorCheckInterval int    `json:"indicator_check_interval"`
+		} `json:"schedule"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -897,21 +979,6 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			val = "true"
 		}
 		if !save("indicator_macd_bearish_sell", val) {
-			return
-		}
-	}
-	if req.ClaudeModel != "" {
-		if !save("claude_model", req.ClaudeModel) {
-			return
-		}
-	}
-	if req.OptimizationApplyMode != "" {
-		allowed := map[string]bool{"all_auto": true, "all_manual": true}
-		if !allowed[req.OptimizationApplyMode] {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid optimization_apply_mode: must be all_auto or all_manual"})
-			return
-		}
-		if !save("optimization_apply_mode", req.OptimizationApplyMode) {
 			return
 		}
 	}
@@ -1214,16 +1281,6 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
-	if req.MaxClaudeCandidates != nil {
-		if !save("max_claude_candidates", strconv.Itoa(*req.MaxClaudeCandidates)) {
-			return
-		}
-	}
-	if req.MomentumScoreMin != nil {
-		if !save("momentum_score_min", strconv.FormatFloat(*req.MomentumScoreMin, 'f', -1, 64)) {
-			return
-		}
-	}
 	if req.StagnationPartialExitEnabled != nil {
 		val := "false"
 		if *req.StagnationPartialExitEnabled {
@@ -1270,104 +1327,6 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
-	if req.ScoringBidAskWeight != nil {
-		if !save("scoring_bidask_weight", strconv.Itoa(*req.ScoringBidAskWeight)) {
-			return
-		}
-	}
-	if req.ScoringStrengthWeight != nil {
-		if !save("scoring_strength_weight", strconv.Itoa(*req.ScoringStrengthWeight)) {
-			return
-		}
-	}
-	if req.ScoringMACDWeight != nil {
-		if !save("scoring_macd_weight", strconv.Itoa(*req.ScoringMACDWeight)) {
-			return
-		}
-	}
-	if req.ScoringRSIWeight != nil {
-		if !save("scoring_rsi_weight", strconv.Itoa(*req.ScoringRSIWeight)) {
-			return
-		}
-	}
-	if req.ScoringVWAPWeight != nil {
-		if !save("scoring_vwap_weight", strconv.Itoa(*req.ScoringVWAPWeight)) {
-			return
-		}
-	}
-	// Adaptive Threshold
-	if req.AdaptiveThresholdEnabled != nil {
-		val := "false"
-		if *req.AdaptiveThresholdEnabled {
-			val = "true"
-		}
-		if !save("adaptive_threshold_enabled", val) {
-			return
-		}
-	}
-	if req.AdaptiveThresholdTrigger != nil {
-		if !save("adaptive_threshold_trigger", strconv.Itoa(*req.AdaptiveThresholdTrigger)) {
-			return
-		}
-	}
-	if req.AdaptiveRelaxPct != nil {
-		if !save("adaptive_relax_pct", strconv.FormatFloat(*req.AdaptiveRelaxPct, 'f', -1, 64)) {
-			return
-		}
-	}
-	// Market Phase Detection
-	if req.MarketPhaseRelaxEnabled != nil {
-		val := "false"
-		if *req.MarketPhaseRelaxEnabled {
-			val = "true"
-		}
-		if !save("market_phase_relax_enabled", val) {
-			return
-		}
-	}
-	if req.MarketPhaseIndexDropTrigger != nil {
-		if !save("market_phase_index_drop_trigger", strconv.FormatFloat(*req.MarketPhaseIndexDropTrigger, 'f', 2, 64)) {
-			return
-		}
-	}
-	if req.MarketPhaseRelaxPct != nil {
-		if !save("market_phase_relax_pct", strconv.FormatFloat(*req.MarketPhaseRelaxPct, 'f', 1, 64)) {
-			return
-		}
-	}
-	// Hard Rule Escalation
-	if req.EscalationEnabled != nil {
-		val := "false"
-		if *req.EscalationEnabled {
-			val = "true"
-		}
-		if !save("escalation_enabled", val) {
-			return
-		}
-	}
-	if req.EscalationTrigger != nil {
-		if *req.EscalationTrigger < 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "escalation_trigger는 1 이상이어야 합니다"})
-			return
-		}
-		if !save("escalation_trigger", strconv.Itoa(*req.EscalationTrigger)) {
-			return
-		}
-	}
-	if req.EscalationStepPct != nil {
-		if !save("escalation_step_pct", strconv.FormatFloat(*req.EscalationStepPct, 'f', 1, 64)) {
-			return
-		}
-	}
-	if req.EscalationMaxStages != nil {
-		if *req.EscalationMaxStages < 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "escalation_max_stages는 1 이상이어야 합니다"})
-			return
-		}
-		if !save("escalation_max_stages", strconv.Itoa(*req.EscalationMaxStages)) {
-			return
-		}
-	}
 	if req.HardWatchSymbols != nil {
 		b, _ := json.Marshal(req.HardWatchSymbols)
 		if !save("hard_watch_symbols", string(b)) {
@@ -1384,29 +1343,95 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	// UI 거래조건 추가 필드
+	if req.DailyLossLimitPct != nil {
+		if !save("daily_max_loss_pct", strconv.FormatFloat(*req.DailyLossLimitPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.IndicatorRSISellEnabled != nil {
+		v := "false"
+		if *req.IndicatorRSISellEnabled {
+			v = "true"
+		}
+		if !save("indicator_rsi_sell_enabled", v) {
+			return
+		}
+	}
+	if req.MinScore != nil {
+		if !save("min_score", strconv.FormatFloat(*req.MinScore, 'f', -1, 64)) {
+			return
+		}
+	}
+
+	// Weights
+	if req.Weights != nil {
+		w := req.Weights
+		weightMap := map[string]float64{
+			"strength": w.Strength,
+			"rsi":      w.RSI,
+			"macd":     w.MACD,
+			"bidask":   w.BidAsk,
+			"vwap":     w.VWAP,
+			"volume":   w.Volume,
+		}
+		for k, v := range weightMap {
+			if !save("weight_"+k, strconv.FormatFloat(v, 'f', -1, 64)) {
+				return
+			}
+		}
+	}
+
+	// Filters
+	for fKey, fVal := range req.Filters {
+		v := "false"
+		if fVal.Enabled {
+			v = "true"
+		}
+		if !save("filter_"+fKey+"_enabled", v) {
+			return
+		}
+		if !save("filter_"+fKey+"_value", strconv.FormatFloat(fVal.Value, 'f', -1, 64)) {
+			return
+		}
+	}
+
+	// Schedule
+	if req.Schedule != nil {
+		s := req.Schedule
+		if s.TradeStart != "" {
+			if _, err := time.Parse("15:04", s.TradeStart); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "schedule.trade_start 형식이 잘못되었습니다 (HH:MM)"})
+				return
+			}
+			if !save("trading_start_time", s.TradeStart) {
+				return
+			}
+		}
+		if s.TradeEnd != "" {
+			if _, err := time.Parse("15:04", s.TradeEnd); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "schedule.trade_end 형식이 잘못되었습니다 (HH:MM)"})
+				return
+			}
+			if !save("trading_end_time", s.TradeEnd) {
+				return
+			}
+		}
+		if s.ScanInterval > 0 {
+			if !save("scan_interval", strconv.Itoa(s.ScanInterval)) {
+				return
+			}
+		}
+		if s.IndicatorCheckInterval > 0 {
+			if !save("indicator_check_interval_min", strconv.Itoa(s.IndicatorCheckInterval)) {
+				return
+			}
+		}
+	}
+
 	if !changed {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "변경할 항목이 없습니다"})
 		return
-	}
-
-	// 활성 프리셋이 있으면 프리셋 스냅샷도 동시 갱신
-	if activeIDStr := h.db.GetSetting(c.Request.Context(), "active_preset_id"); activeIDStr != "" && activeIDStr != "0" {
-		if activeID, err := strconv.ParseInt(activeIDStr, 10, 64); err == nil && activeID > 0 {
-			rows, err := h.db.QueryContext(c.Request.Context(), `SELECT key, value FROM settings`)
-			if err == nil {
-				defer rows.Close()
-				snap := map[string]string{}
-				for rows.Next() {
-					var k, v string
-					if rows.Scan(&k, &v) == nil {
-						snap[k] = v
-					}
-				}
-				if b, err := json.Marshal(snap); err == nil {
-					_ = h.db.UpdateSettingsPreset(c.Request.Context(), activeID, string(b))
-				}
-			}
-		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "설정이 저장되었습니다."})
@@ -1420,7 +1445,7 @@ func (h *Handler) GetFeasibility(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "code query param is required"})
 		return
 	}
-	result, err := agent.CheckOrderFeasibility(c.Request.Context(), h.client, code)
+	result, err := ops.CheckOrderFeasibility(c.Request.Context(), h.client, code)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -1457,7 +1482,7 @@ func (h *Handler) GetVolumeRank(c *gin.Context) {
 	sort := c.DefaultQuery("sort", "0")
 	priceMin, priceMax := h.resolvePriceFilter(c)
 	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
-	items, err := agent.GetVolumeRank(c.Request.Context(), h.client, market, inputIscd, sort, priceMin, priceMax, excludeCls)
+	items, err := ops.GetVolumeRank(c.Request.Context(), h.client, market, inputIscd, sort, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -1473,7 +1498,7 @@ func (h *Handler) GetStrengthRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "0000")
 	priceMin, priceMax := h.resolvePriceFilter(c)
 	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
-	items, err := agent.GetStrengthRank(c.Request.Context(), h.client, market, priceMin, priceMax, excludeCls)
+	items, err := ops.GetStrengthRank(c.Request.Context(), h.client, market, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -1489,7 +1514,7 @@ func (h *Handler) GetFluctuationRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "0000")
 	priceMin, priceMax := h.resolvePriceFilter(c)
 	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
-	items, err := agent.GetFluctuationRank(c.Request.Context(), h.client, market, priceMin, priceMax, excludeCls)
+	items, err := ops.GetFluctuationRank(c.Request.Context(), h.client, market, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -1502,7 +1527,7 @@ func (h *Handler) GetFluctuationRank(c *gin.Context) {
 func (h *Handler) GetVIStatus(c *gin.Context) {
 	kst, _ := time.LoadLocation("Asia/Seoul")
 	date := c.DefaultQuery("date", time.Now().In(kst).Format("20060102"))
-	items, err := agent.GetVIStatus(c.Request.Context(), h.client, date)
+	items, err := ops.GetVIStatus(c.Request.Context(), h.client, date)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -1520,7 +1545,7 @@ func (h *Handler) GetVIStatus(c *gin.Context) {
 // GET /api/market/status — 현재 장운영 여부 조회
 // Response: { "is_open": bool, "checked_at": RFC3339, "reason": "open"|"weekend"|"outside_hours"|"holiday"|"check_failed" }
 func (h *Handler) GetMarketStatus(c *gin.Context) {
-	now := time.Now().In(agent.KSTLocation())
+	now := time.Now().In(ops.KSTLocation())
 	checkedAt := now.Format(time.RFC3339)
 
 	if wd := now.Weekday(); wd == time.Saturday || wd == time.Sunday {
@@ -1534,7 +1559,7 @@ func (h *Handler) GetMarketStatus(c *gin.Context) {
 		return
 	}
 
-	isOpen, err := agent.IsMarketOpen(c.Request.Context(), h.client)
+	isOpen, err := ops.IsMarketOpen(c.Request.Context(), h.client)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"is_open": false, "checked_at": checkedAt, "reason": "check_failed"})
 		return
@@ -1628,99 +1653,6 @@ func (h *Handler) GetDailyPnL(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"days": days, "data": data})
 }
 
-// ─── Settings Presets ─────────────────────────────────────────────────────────
-
-// GET /api/presets — 프리셋 목록 반환
-func (h *Handler) ListPresets(c *gin.Context) {
-	presets, err := h.db.ListSettingsPresets(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"presets": presets})
-}
-
-// POST /api/presets — 현재 설정 스냅샷을 새 프리셋으로 저장
-func (h *Handler) CreatePreset(c *gin.Context) {
-	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name은 필수입니다"})
-		return
-	}
-
-	// 현재 settings 테이블의 모든 키-값 스냅샷
-	rows, err := h.db.QueryContext(c.Request.Context(), `SELECT key, value FROM settings`)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	defer rows.Close()
-	snapshot := map[string]string{}
-	for rows.Next() {
-		var k, v string
-		if err := rows.Scan(&k, &v); err == nil {
-			snapshot[k] = v
-		}
-	}
-	b, _ := json.Marshal(snapshot)
-
-	id, err := h.db.CreateSettingsPreset(c.Request.Context(), req.Name, req.Description, "KR", string(b))
-	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "이미 동일한 이름의 프리셋이 있습니다: " + err.Error()})
-		return
-	}
-	_ = h.db.SetSetting(c.Request.Context(), "active_preset_id", strconv.FormatInt(id, 10))
-	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "프리셋이 저장되었습니다."})
-}
-
-// POST /api/presets/:id/apply — 프리셋 값을 현재 settings에 적용
-func (h *Handler) ApplyPreset(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "잘못된 프리셋 ID"})
-		return
-	}
-	preset, err := h.db.GetSettingsPreset(c.Request.Context(), id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "프리셋을 찾을 수 없습니다"})
-		return
-	}
-	var snapshot map[string]string
-	if err := json.Unmarshal([]byte(preset.SettingsJSON), &snapshot); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "프리셋 파싱 실패"})
-		return
-	}
-	ctx := c.Request.Context()
-	for k, v := range snapshot {
-		if err := h.db.SetSetting(ctx, k, v); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "설정 적용 실패: " + err.Error()})
-			return
-		}
-	}
-	// 활성 프리셋 ID 기록
-	_ = h.db.SetSetting(ctx, "active_preset_id", strconv.FormatInt(id, 10))
-	c.JSON(http.StatusOK, gin.H{"message": preset.Name + " 프리셋이 적용되었습니다."})
-}
-
-// DELETE /api/presets/:id — 프리셋 삭제
-func (h *Handler) DeletePreset(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "잘못된 프리셋 ID"})
-		return
-	}
-	if err := h.db.DeleteSettingsPreset(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "프리셋이 삭제되었습니다."})
-}
-
 // GET /api/stocks?q=&etf_only=&market= — 종목 마스터 검색
 // q: 종목명/코드 검색어 (부분 일치)
 // etf_only: "true" 이면 ETF만 반환
@@ -1752,88 +1684,204 @@ func (h *Handler) GetStocks(c *gin.Context) {
 		IsHardWatch         bool   `json:"is_hard_watch"`
 	}
 
-	// 동적 쿼리 조립
-	query := `SELECT stock_code, stock_name, market_type, is_etf, is_domestic_equity_etf
-	          FROM stock_masters WHERE 1=1`
-	args := []any{}
-
-	if q != "" {
-		query += ` AND (stock_code LIKE ? OR stock_name LIKE ?)`
-		like := "%" + q + "%"
-		args = append(args, like, like)
-	}
-	if etfOnly {
-		query += ` AND is_etf = 1`
-	}
-	if market != "" {
-		query += ` AND market_type = ?`
-		args = append(args, market)
-	}
-	query += ` ORDER BY stock_code LIMIT 200`
-
-	rows, err := h.db.QueryContext(ctx, query, args...)
+	items, err := h.mstStore.Search(ctx, q, etfOnly, market, 200)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	defer rows.Close()
 
-	items := make([]StockItem, 0, 64)
-	for rows.Next() {
-		var item StockItem
-		var isETF, isDomestic int
-		if err := rows.Scan(&item.StockCode, &item.StockName, &item.MarketType, &isETF, &isDomestic); err != nil {
-			continue
-		}
-		item.IsETF = isETF == 1
-		item.IsDomesticEquityETF = isDomestic == 1
-		item.IsHardWatch = hardSet[item.StockCode]
-		items = append(items, item)
+	result := make([]StockItem, 0, len(items))
+	for _, s := range items {
+		result = append(result, StockItem{
+			StockCode:           s.StockCode,
+			StockName:           s.StockName,
+			MarketType:          s.MarketType,
+			IsETF:               s.IsETF,
+			IsDomesticEquityETF: s.IsDomesticEquityETF,
+			IsHardWatch:         hardSet[s.StockCode],
+		})
 	}
-	if err := rows.Err(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
+	c.JSON(http.StatusOK, gin.H{"items": result, "total": len(result)})
 }
 
 // GET /api/reports/trades?date=YYYY-MM-DD&stock_code=XXXXXX&page=1&limit=20
 func (h *Handler) GetTradeReports(c *gin.Context) {
-	date := c.Query("date")
-	stockCode := c.Query("stock_code")
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
-	offset := (page - 1) * limit
 
-	reports, err := h.db.GetTradeReports(c.Request.Context(), date, stockCode, limit, offset)
+	reports, err := h.db.ListTradeReports(c.Request.Context(), limit*5) // fetch more for grouping
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"reports": reports})
+	if reports == nil {
+		reports = []models.TradeReport{}
+	}
+
+	// 날짜/종목코드 필터 (클라이언트 사이드)
+	date := c.Query("date")
+	stockCode := c.Query("stock_code")
+	if date != "" || stockCode != "" {
+		filtered := reports[:0]
+		for _, r := range reports {
+			if date != "" && r.Date != date {
+				continue
+			}
+			if stockCode != "" && r.StockCode != stockCode {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		reports = filtered
+	}
+
+	kst := ops.KSTLocation()
+	// Group by date
+	type tradeView struct {
+		ID         int64          `json:"id"`
+		StockCode  string         `json:"stock_code"`
+		StockName  string         `json:"stock_name"`
+		BuyPrice   float64        `json:"buy_price"`
+		SellPrice  float64        `json:"sell_price"`
+		PnlAmount  float64        `json:"pnl_amount"`
+		PnlPct     float64        `json:"pnl_pct"`
+		SellReason string         `json:"sell_reason"`
+		BuyTime    string         `json:"buy_time"`
+		SellTime   string         `json:"sell_time"`
+		HoldPeriod string         `json:"hold_period"`
+		Indicators map[string]any `json:"indicators"`
+	}
+	type groupView struct {
+		Date   string      `json:"date"`
+		DayPnl float64     `json:"day_pnl"`
+		Trades []tradeView `json:"trades"`
+	}
+
+	dateOrder := []string{}
+	dateMap := map[string]*groupView{}
+	for _, r := range reports {
+		g, ok := dateMap[r.Date]
+		if !ok {
+			g = &groupView{Date: r.Date}
+			dateMap[r.Date] = g
+			dateOrder = append(dateOrder, r.Date)
+		}
+		g.DayPnl += r.ProfitAmount
+
+		buyTime := ""
+		if !r.CreatedAt.IsZero() {
+			buyTime = r.CreatedAt.In(kst).Format("15:04")
+		}
+		sellTime := ""
+		if r.SoldAt != nil {
+			sellTime = r.SoldAt.In(kst).Format("15:04")
+		}
+		holdPeriod := ""
+		if r.SoldAt != nil && !r.CreatedAt.IsZero() {
+			dur := r.SoldAt.Sub(r.CreatedAt)
+			h := int(dur.Hours())
+			m := int(dur.Minutes()) % 60
+			if h > 0 {
+				holdPeriod = strconv.Itoa(h) + "시간 " + strconv.Itoa(m) + "분"
+			} else {
+				holdPeriod = strconv.Itoa(m) + "분"
+			}
+		}
+
+		// Parse buy_indicators JSON
+		var indicators map[string]any
+		if r.BuyIndicators != "" {
+			_ = json.Unmarshal([]byte(r.BuyIndicators), &indicators)
+		}
+
+		g.Trades = append(g.Trades, tradeView{
+			ID:         r.ID,
+			StockCode:  r.StockCode,
+			StockName:  r.StockName,
+			BuyPrice:   r.BuyPrice,
+			SellPrice:  r.SellPrice,
+			PnlAmount:  r.ProfitAmount,
+			PnlPct:     r.ProfitPct,
+			SellReason: r.SellReason,
+			BuyTime:    buyTime,
+			SellTime:   sellTime,
+			HoldPeriod: holdPeriod,
+			Indicators: indicators,
+		})
+	}
+
+	groups := make([]groupView, 0, len(dateOrder))
+	for _, d := range dateOrder {
+		groups = append(groups, *dateMap[d])
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": groups})
 }
 
 // GET /api/reports/daily?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=30
 func (h *Handler) GetDailyReports(c *gin.Context) {
-	from := c.Query("from")
-	to := c.Query("to")
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "30"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	if limit < 1 || limit > 365 {
-		limit = 30
+		limit = 50
 	}
 
-	reports, err := h.db.GetDailyReports(c.Request.Context(), from, to, limit)
+	reports, err := h.db.ListDailyReports(c.Request.Context(), limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"reports": reports})
+	if reports == nil {
+		reports = []models.DailyReport{}
+	}
+
+	// from/to 범위 필터 (클라이언트 사이드)
+	from := c.Query("from")
+	to := c.Query("to")
+	if from != "" || to != "" {
+		filtered := reports[:0]
+		for _, r := range reports {
+			if from != "" && r.Date < from {
+				continue
+			}
+			if to != "" && r.Date > to {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		reports = filtered
+	}
+
+	type dailyView struct {
+		Date          string  `json:"date"`
+		TradeCount    int     `json:"trade_count"`
+		Wins          int     `json:"wins"`
+		Losses        int     `json:"losses"`
+		Pnl           float64 `json:"pnl"`
+		PnlPct        float64 `json:"pnl_pct"`
+		WinRate       float64 `json:"win_rate"`
+		ReportSummary string  `json:"report_summary"`
+	}
+	views := make([]dailyView, len(reports))
+	for i, r := range reports {
+		winRate := 0.0
+		if r.TotalTrades > 0 {
+			winRate = float64(r.WinningTrades) / float64(r.TotalTrades) * 100
+		}
+		views[i] = dailyView{
+			Date:          r.Date,
+			TradeCount:    r.TotalTrades,
+			Wins:          r.WinningTrades,
+			Losses:        r.LosingTrades,
+			Pnl:           r.TotalProfitAmount,
+			PnlPct:        r.AvgProfitPct,
+			WinRate:       winRate,
+			ReportSummary: r.TradeSummary,
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": views})
 }
 
 // POST /api/reports/daily/generate?date=YYYY-MM-DD
@@ -1844,59 +1892,4 @@ func (h *Handler) GenerateDailyReport(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-}
-
-// ────────────────────────────────────────────────────────
-// Optimization Reports
-// ────────────────────────────────────────────────────────
-
-// GET /api/reports/optimization?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=N
-func (h *Handler) GetOptimizationReports(c *gin.Context) {
-	from := c.Query("from")
-	to := c.Query("to")
-	limit := 20
-	if l, err := strconv.Atoi(c.Query("limit")); err == nil && l > 0 {
-		limit = l
-	}
-	reports, err := h.db.GetOptimizationReports(c.Request.Context(), from, to, limit)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"reports": reports})
-}
-
-// POST /api/reports/optimization/analyze?date=YYYY-MM-DD
-// Manually trigger optimization analysis (generates daily report first if missing).
-func (h *Handler) AnalyzeOptimization(c *gin.Context) {
-	date := c.Query("date")
-	go func() {
-		ctx := context.Background()
-		if err := report.GenerateOptimizationSuggestions(ctx, h.db, h.claude, date); err != nil {
-			_ = err // logged inside GenerateOptimizationSuggestions
-		}
-	}()
-	c.JSON(http.StatusAccepted, gin.H{"status": "analysis started"})
-}
-
-// POST /api/reports/optimization/:date/suggestions/:id/apply
-func (h *Handler) ApplyOptimizationSuggestion(c *gin.Context) {
-	date := c.Param("date")
-	suggestionID := c.Param("id")
-	if err := report.ApplySuggestionByID(c.Request.Context(), h.db, date, suggestionID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "applied"})
-}
-
-// POST /api/reports/optimization/:date/suggestions/:id/reject
-func (h *Handler) RejectOptimizationSuggestion(c *gin.Context) {
-	date := c.Param("date")
-	suggestionID := c.Param("id")
-	if err := report.RejectSuggestionByID(c.Request.Context(), h.db, date, suggestionID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "rejected"})
 }

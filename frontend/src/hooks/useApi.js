@@ -1,10 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
+import { apiUrl } from '../utils/api'
 
-/**
- * Generic fetch hook for API calls.
- * @param {string} url - API endpoint path
- * @param {object} options - fetch options (optional)
- */
 export function useApi(url, options = {}) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -14,7 +10,7 @@ export function useApi(url, options = {}) {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(url, options)
+      const res = await fetch(apiUrl(url), options)
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || `HTTP ${res.status}`)
@@ -34,3 +30,5 @@ export function useApi(url, options = {}) {
 
   return { data, loading, error, refetch: fetchData }
 }
+
+export default useApi

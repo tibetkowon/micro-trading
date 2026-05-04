@@ -14,6 +14,7 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(jsonLogger())
+	r.Use(corsMiddleware(h.cfg.FrontendOrigin))
 
 	api := r.Group("/api")
 	{
@@ -29,8 +30,8 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		api.GET("/logs/kis", h.GetKISLogs)
 		api.DELETE("/logs/kis/:id", h.DeleteKISLog)
 		api.GET("/logs/service", h.GetServiceLogs)
-		api.GET("/logs/selection", h.GetSelectionLogs)
-		api.GET("/logs/ranking", h.GetRankingLogs)
+		api.DELETE("/logs/service/:id", h.DeleteServiceLog)
+		api.GET("/logs/scan", h.GetScanLogs)
 		api.GET("/settings", h.GetSettings)
 		api.PATCH("/settings", h.UpdateSettings)
 
@@ -80,18 +81,6 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 			reportsGroup.GET("/trades", h.GetTradeReports)
 			reportsGroup.GET("/daily", h.GetDailyReports)
 			reportsGroup.POST("/daily/generate", h.GenerateDailyReport)
-			reportsGroup.GET("/optimization", h.GetOptimizationReports)
-			reportsGroup.POST("/optimization/analyze", h.AnalyzeOptimization)
-			reportsGroup.POST("/optimization/:date/suggestions/:id/apply", h.ApplyOptimizationSuggestion)
-			reportsGroup.POST("/optimization/:date/suggestions/:id/reject", h.RejectOptimizationSuggestion)
-		}
-
-		presets := api.Group("/presets")
-		{
-			presets.GET("", h.ListPresets)
-			presets.POST("", h.CreatePreset)
-			presets.POST("/:id/apply", h.ApplyPreset)
-			presets.DELETE("/:id", h.DeletePreset)
 		}
 	}
 
@@ -119,6 +108,21 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 	})
 
 	return r
+}
+
+func corsMiddleware(allowedOrigin string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if allowedOrigin != "" {
+			c.Header("Access-Control-Allow-Origin", allowedOrigin)
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Headers", "Content-Type")
+		}
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
+	}
 }
 
 // jsonLogger is a minimal structured request logger middleware.

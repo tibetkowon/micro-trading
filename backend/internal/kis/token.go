@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	// tokenRefreshInterval is 20 hours — safely before the 24-hour KIS expiry.
 	tokenRefreshInterval = 20 * time.Hour
 	tokenEndpoint        = "/oauth2/tokenP"
 )
@@ -44,33 +43,21 @@ func NewTokenManager(baseURL string, appKey, appSecret string, db *database.DB) 
 }
 
 // InvalidateIfCredentialsChanged clears the token cache when APP KEY or SECRET changes.
-// It computes a SHA-256 fingerprint of the current credentials and compares it with
-// the value stored in the settings table. If they differ, all tokens are deleted so
-// EnsureToken will issue a fresh one.
 func (tm *TokenManager) InvalidateIfCredentialsChanged(ctx context.Context) error {
 	h := sha256.Sum256([]byte(tm.appKey + ":" + tm.appSecret))
 	currentHash := fmt.Sprintf("%x", h)
 
-	var storedHash string
-	err := tm.db.QueryRowContext(ctx,
-		`SELECT value FROM settings WHERE key = 'kis_credentials_hash'`).Scan(&storedHash)
+	storedHash := tm.db.GetSetting(ctx, "kis_credentials_hash")
 
-	if err == nil && storedHash == currentHash {
-		// Credentials unchanged; existing tokens are valid.
+	if storedHash == currentHash {
 		return nil
 	}
 
-	// Credentials changed or not yet stored — clear all tokens.
-	if _, err := tm.db.ExecContext(ctx, `DELETE FROM tokens`); err != nil {
+	if err := tm.db.DeleteAllTokens(ctx); err != nil {
 		return fmt.Errorf("clear tokens: %w", err)
 	}
 
-	_, err = tm.db.ExecContext(ctx,
-		`INSERT INTO settings (key, value, updated_at)
-		 VALUES ('kis_credentials_hash', ?, datetime('now'))
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		currentHash)
-	if err != nil {
+	if err := tm.db.SetSetting(ctx, "kis_credentials_hash", currentHash); err != nil {
 		return fmt.Errorf("update credentials hash: %w", err)
 	}
 
@@ -82,7 +69,7 @@ func (tm *TokenManager) InvalidateIfCredentialsChanged(ctx context.Context) erro
 type issueTokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
-	ExpiresIn   int    `json:"expires_in"` // seconds
+	ExpiresIn   int    `json:"expires_in"`
 	MsgCode     string `json:"msg_cd"`
 	Msg         string `json:"msg1"`
 }
@@ -137,7 +124,7 @@ func (tm *TokenManager) IssueToken(ctx context.Context) (*models.Token, error) {
 		ExpiresAt:   now.Add(time.Duration(res.ExpiresIn) * time.Second),
 	}
 
-	if err := tm.saveToken(tok); err != nil {
+	if err := tm.db.SaveToken(ctx, tok); err != nil {
 		return nil, fmt.Errorf("save token: %w", err)
 	}
 
@@ -145,23 +132,13 @@ func (tm *TokenManager) IssueToken(ctx context.Context) (*models.Token, error) {
 	return tok, nil
 }
 
-// GetCurrentToken returns the most recent valid token.
+// GetCurrentToken returns the most recent valid token from DB.
 func (tm *TokenManager) GetCurrentToken(ctx context.Context) (*models.Token, error) {
-	row := tm.db.QueryRowContext(ctx,
-		`SELECT id, access_token, issued_at, expires_at
-		 FROM tokens ORDER BY id DESC LIMIT 1`)
-
-	var tok models.Token
-	err := row.Scan(&tok.ID, &tok.AccessToken, &tok.IssuedAt, &tok.ExpiresAt)
-	if err != nil {
-		return nil, fmt.Errorf("no token found: %w", err)
-	}
-	return &tok, nil
+	return tm.db.GetCurrentToken(ctx)
 }
 
 // EnsureToken reuses a valid token if it has more than 1 hour remaining,
 // otherwise issues a new one.
-// Prevents hitting KIS rate limits (1 issue/min) on repeated restarts.
 func (tm *TokenManager) EnsureToken(ctx context.Context) (*models.Token, error) {
 	tok, err := tm.GetCurrentToken(ctx)
 	if err == nil && time.Until(tok.ExpiresAt) > time.Hour {
@@ -172,22 +149,16 @@ func (tm *TokenManager) EnsureToken(ctx context.Context) (*models.Token, error) 
 	return tm.IssueToken(ctx)
 }
 
-// StartAutoRefresh launches a background goroutine that refreshes the token
-// every tokenRefreshInterval (20 hours). Call Stop() to shut it down.
-//
-// The first refresh is scheduled based on the last token's IssuedAt time so that
-// server restarts do not reset the 20-hour window. For example, if a token was
-// issued 18 hours ago, the first refresh fires in 2 hours — not 20.
+// StartAutoRefresh launches a background goroutine that refreshes the token every 20 hours.
 func (tm *TokenManager) StartAutoRefresh(ctx context.Context) {
 	go func() {
-		// Calculate how long until the next scheduled refresh.
 		firstDelay := tokenRefreshInterval
 		if tok, err := tm.GetCurrentToken(ctx); err == nil {
 			elapsed := time.Since(tok.IssuedAt)
 			if remaining := tokenRefreshInterval - elapsed; remaining > 0 {
 				firstDelay = remaining
 			} else {
-				firstDelay = 0 // already overdue — refresh immediately
+				firstDelay = 0
 			}
 		}
 
@@ -196,7 +167,6 @@ func (tm *TokenManager) StartAutoRefresh(ctx context.Context) {
 			"first_in": firstDelay.String(),
 		})
 
-		// Fire the first refresh after the token-age-aware delay.
 		if firstDelay == 0 {
 			if _, err := tm.IssueToken(ctx); err != nil {
 				logger.Error("KIS token auto-refresh failed", map[string]any{"error": err.Error()})
@@ -219,7 +189,6 @@ func (tm *TokenManager) StartAutoRefresh(ctx context.Context) {
 			timer.Stop()
 		}
 
-		// Subsequent refreshes run on a fixed 20-hour interval.
 		ticker := time.NewTicker(tokenRefreshInterval)
 		defer ticker.Stop()
 		for {
@@ -241,12 +210,4 @@ func (tm *TokenManager) StartAutoRefresh(ctx context.Context) {
 // Stop signals the auto-refresh goroutine to exit.
 func (tm *TokenManager) Stop() {
 	close(tm.stopCh)
-}
-
-func (tm *TokenManager) saveToken(tok *models.Token) error {
-	_, err := tm.db.Exec(
-		`INSERT INTO tokens (access_token, issued_at, expires_at) VALUES (?, ?, ?)`,
-		tok.AccessToken, tok.IssuedAt, tok.ExpiresAt,
-	)
-	return err
 }

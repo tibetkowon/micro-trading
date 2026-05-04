@@ -1,5 +1,125 @@
 # Changelog
 
+## 2026-05-04 — CI/CD 워크플로우 v2 재작성 (GCP/Firebase 인프라 대응)
+
+- **백엔드 배포 전략 변경**: NCP SSH 직접 배포 → GCS 업로드 방식
+  - VM이 08:30~16:10 자동 가동되므로 배포 시 VM 실행 여부와 무관하게 동작
+  - VM 부팅 시 시작 스크립트가 `gsutil cp`로 최신 바이너리 자동 적용
+- **프론트엔드 배포 변경**: NCP rsync → Firebase Hosting (`FirebaseExtended/action-hosting-deploy@v0`)
+- **CGO_ENABLED=1 → CGO_ENABLED=0**: Firestore 순수 Go 드라이버 사용, SQLite(CGO) 의존성 완전 제거
+- **Job 분리**: `deploy` 단일 잡 → `deploy-backend`(GCS) + `deploy-frontend`(Firebase Hosting) 병렬
+- **Secrets 변경**: `NCP_SSH_KEY/HOST/USER` → `GCP_SA_KEY`, `FIREBASE_SERVICE_ACCOUNT`
+- **Variables 추가**: `GCS_BUCKET`, `FIREBASE_PROJECT_ID`
+- 필요한 인프라 설정(firebase.json, VM 시작 스크립트, GCS 버킷)은 Phase 5에서 별도 진행
+
+## 2026-05-03 — Phase 5: 백엔드 API 응답 정규화 (UI 연결)
+
+- **API 응답 통일**: 모든 리스트 응답에 `{data: [...]}` 래퍼 적용 (UI `?.data` 패턴과 일치)
+- **GetBalance**: `total_eval/orderable_amt` → `total_assets/available_cash`, 오늘 손익/승률 포함
+- **GetOrders**: `orders` 키 유지 + `data` 키 추가, `total` count 필드 추가 (페이지네이션)
+- **GetKISLogs/GetServiceLogs**: `timestamp` → `created_at` 별칭 추가, `data` 래퍼 적용
+- **GetServiceLogs**: `source` 쿼리 파라미터 서버 사이드 필터링 적용
+- **GetScanLogs**: `data` 래퍼 + `scanned_at`, `passed_hard_filter`, `selected_stock_code`, `rejection_summary`, `stocks` 필드 정규화
+- **GetMonitorPositions**: `{data: [...]}` 래퍼 + `avg_price`, `current_price`, `pnl_pct`, `pnl_amount`, `held_days`, `entry_time`, `status` 추가
+- **GetSettings**: `{data: {...}}` 래퍼 + `weights`/`filters`/`schedule` 중첩 구조, `daily_loss_limit_pct` 별칭
+- **UpdateSettings**: `weights`/`filters`/`schedule` nested JSON 수용, `indicator_rsi_sell_enabled`/`min_score`/`daily_loss_limit_pct` 추가
+- **GetTradeReports**: 날짜별 그룹 `[{date, day_pnl, trades:[...]}]` 형태, `buy_time`/`sell_time`/`hold_period`/`indicators` 필드 추가
+- **GetDailyReports**: `trade_count`/`wins`/`losses`/`pnl`/`pnl_pct`/`win_rate` 정규화
+- **Dashboard.jsx**: `/api/trader/status` → `/api/server/status`, `/api/scan-logs` → `/api/logs/scan`, `/api/positions` → `/api/monitor/positions`, `trader_state` 필드 직접 접근
+- **Orders.jsx**: `o.quantity` → `o.qty`, `o.order_price` → `o.price`
+- `go build ./...` + `npm run build` 성공 (205KB JS, 15KB CSS)
+
+## 2026-05-03 — Phase 4: UI 전면 재작성 (Claude Design 디자인 적용)
+
+- **디자인 시스템 교체**: Tailwind CSS 완전 제거 → 디자인의 CSS 변수 시스템(`--bg`, `--surface`, `--up`, `--down` 등)으로 교체
+- **폰트 교체**: Inter/Manrope + Material Symbols → Noto Sans KR + IBM Plex Mono
+- **한국 주식 색상 체계 적용**: 상승/이익=빨강(`--up: #EF4444`), 하락/손실=파랑(`--down: #2563EB`)
+- **화면 10개 → 7개로 축소**: v1 레거시 페이지 5개 제거(OptimizationReports, SelectionLogs, RankingLogs, StockLogs, StockList)
+- **신규 파일**:
+  - `src/components/shared.jsx`: Modal / Toggle / Badge / BotStateBadge / PriceProgressBar / fmt 유틸 공유 컴포넌트
+  - `src/pages/Positions.jsx`: 포지션 카드 그리드, 손절~목표가 progress bar, 강제매도/전체청산 확인 모달
+  - `src/pages/Logs.jsx`: KIS API 로그(체크박스 선택 삭제) + 서비스 로그 터미널 통합
+- **전면 재작성**:
+  - `App.jsx`: 데스크톱 사이드바 + 모바일 하단 탭바 + 더보기 드로어 + React Router 간소화
+  - `Dashboard.jsx`: 5 stat 카드(총자산/가용현금/오늘손익/승률/봇상태) + 스캔 로그 확장 카드
+  - `Orders.jsx`: 날짜/타입/상태 칩 필터, KIS 동기화 스피너, 페이지네이션
+  - `TradeReports.jsx`: 날짜 그룹, 거래 카드, 지표 펼침(RSI/MACD/VWAP/체결강도/종합점수)
+  - `DailyReports.jsx`: 요약 stat 카드, SVG 바 차트, 일별 행 확장
+  - `Settings.jsx`: 4탭(거래조건/하드필터/점수시스템/스케줄), DonutChart SVG
+- **반응형 레이아웃**: 모바일(768px 이하) 하단 탭바, 리포트/로그는 더보기 드로어에서 접근
+- `npm run build` 성공 (205KB JS, 15KB CSS)
+
+## 2026-05-03 — Phase 3: v1 레거시 코드 완전 제거
+
+- **internal/database/db.go**: `TradingSettings`에서 v1 레거시 필드 16개 제거
+  - Adaptive threshold 관련 3개: `AdaptiveThresholdEnabled`, `AdaptiveThresholdTrigger`, `AdaptiveRelaxPct`
+  - Escalation 관련 4개: `EscalationEnabled`, `EscalationTrigger`, `EscalationStepPct`, `EscalationMaxStages`
+  - HardRule feedback 관련 3개: `HardRuleFeedbackEnabled`, `HardRuleFeedbackWindow`, `HardRuleFeedbackThresholdPct`
+  - v1 scoring 관련 5개: `MomentumScoreMin`, `ScoringBidAskWeight`, `ScoringStrengthWeight`, `ScoringMACDWeight`, `ScoringRSIWeight`, `ScoringVWAPWeight`
+  - `GetTradingSettings` 파싱 라인 및 `initDefaults` 기본값도 동일하게 제거
+- **internal/monitor/monitor.go**: `MonitoredEntry.ExchCode` 필드 제거 (US 시장 코드), Market 주석 수정 (`"KR"`)
+- **internal/api/handlers.go**: `GetSettings` 응답 및 `UpdateSettings` 요청 구조체에서 레거시 키 제거
+  - 제거된 응답 키: `anthropic_configured`, `claude_model`, `max_claude_candidates`, `momentum_score_min`, `scoring_*_weight` 5개, `adaptive_threshold_*` 3개, `escalation_*` 4개, `optimization_apply_mode`
+  - 제거된 요청 필드: `ClaudeModel`, `OptimizationApplyMode`, `MaxClaudeCandidates`, `MomentumScoreMin`, `Scoring*Weight` 5개, `AdaptiveThreshold*` 3개, `MarketPhaseRelax*` 3개, `Escalation*` 4개
+  - 대응 save 로직 블록도 모두 제거
+- `go build ./...`, `go vet ./...` 통과
+
+## 2026-05-03 — Phase 2: 룰 기반 트레이딩 엔진 구현
+
+- **internal/scorer/scorer.go** (신규): 하드필터(`ApplyHardFilter`) + 가중치 복합점수(`CalcScore`) 패키지
+  - 지표별 0-100 정규화: 체결강도, RSI, MACD, 매수호가비율, VWAP이격도, 거래량증가율
+  - 데이터 없는 지표는 50점(중립)으로 처리
+  - 하드필터: RSI상한, 체결강도하한, 이격도범위, 고가이격, 시가상승률, MACD데드크로스, 고점경과시간, 거래량비율 등
+- **internal/trader/engine.go** (전면 재작성): Phase 1 stub → 실제 구현
+  - `runCycle`: 60초 주기 + 매도시그널 즉시 재스캔
+  - `tryBuy`: 슬롯 체크, 매수중단시간, 일일손실한도 체크
+  - `runScanCycle`: 순위조회 → 하드필터 → 점수계산 → 상위N종목 자동 주문 → ScanLog 저장
+  - `fetchCandidates`: volume/strength/fluctuation 순위 수집, AND/OR 조건, 강제감시종목 지원
+  - `placeAndMonitor`: 매수주문 → WebSocket 체결대기(5분 타임아웃) → 모니터 등록
+  - `waitForFill`: wsClient 없을 때 30초 폴링 폴백
+  - `dailyLossExceeded`: 일일 실현손익 기반 매수중단 체크
+- **internal/monitor/monitor.go**: `Has(stockCode)` 메서드 추가
+- `go build ./...`, `go vet ./...` 통과
+
+## 2026-05-03 — Phase 1.5: 패키지명 정리
+
+- **internal/agent → internal/ops**: AI 제거 후 역할이 "KIS API 비즈니스 오퍼레이션 레이어"로 변경됨에 따라 패키지명을 `ops`로 변경 (파일 7개)
+- **internal/mst → internal/stockmaster**: 한국 증권 내부 약어 → 누구나 읽을 수 있는 이름으로 변경 (파일 3개)
+- import 경로 수정: `cmd/server/main.go`, `internal/api/handlers.go`, `internal/monitor/monitor.go`, `internal/trader/engine.go`
+- `go build ./...`, `go vet ./...` 모두 통과
+
+## 2026-04-30 — Phase 1: SQLite → Firestore 전면 마이그레이션
+
+- **go.mod**: `cloud.google.com/go/firestore` 추가, `go-sqlite3` · `anthropic-sdk-go` 제거
+- **internal/config/config.go**: `FIREBASE_PROJECT_ID`, `FIREBASE_CREDENTIALS_JSON`, `DISCORD_WEBHOOK_URL`, `FRONTEND_ORIGIN` 환경변수 추가, `DatabasePath` · `AnthropicAPIKey` 제거
+- **internal/models/models.go**: 전 모델에 firestore 태그 추가; US 관련 `Market` 필드 제거; TraderSelectionLog · TraderRankingLog · OptimizationSuggestion · OptimizationReport 삭제; `ScanLog` 신규 추가
+- **internal/database/db.go** (전면 재작성): Firestore 클라이언트 기반, 전 컬렉션 CRUD typed 메서드 구현 (`GetSetting`, `CreateOrder`, `CreatePosition`, `CreateScanLog`, `UpdateTradeReportOnSell` 등 50개+)
+- **internal/notify/discord.go** (신규): Discord Webhook `Send` · `SendEmbed` 구현
+- **internal/mst/store.go**: `*sql.DB` → `*firestore.Client` 기반으로 재작성, `Upsert`(배치 500) · `Search` 추가
+- **internal/trader/claude.go** · **internal/report/optimization.go**: 삭제 (AI 기능 제거)
+- **internal/trader/engine.go**: Claude 제거, Phase 2 scorer를 위한 상태 머신 스텁으로 재작성
+- **internal/kis/token.go** · **agent/order.go** · **agent/balance.go** · **agent/history.go**: raw SQL → DB typed 메서드 교체
+- **internal/monitor/monitor.go**: Register · Remove · executeSell · LoadFromDB 등 raw SQL 전량 제거
+- **internal/kis/client.go**: `logAPIError` → `db.CreateKISAPILog` 사용
+- **internal/api/handlers.go** · **router.go**: Claude · AI · optimization 핸들러 제거, ScanLog 기반으로 정비
+- **cmd/server/main.go**: Firestore 초기화, Claude 초기화 제거, 마켓 스케줄러 정리
+
+## 2026-05-03 — Firestore 기반 DB 메서드로 handlers.go 전면 재작성
+
+- **api/handlers.go**: raw SQL(`ExecContext`, `QueryContext`, `QueryRowContext`) 전부 제거, Firestore typed 메서드(`ListKISAPILogs`, `ListServiceLogs`, `ListScanLogs`, `ListOrders`, `ListTradeReports`, `ListDailyReports`, `GetTradingSettings` 등)로 교체
+- **api/handlers.go**: `SetClaudeClient` / `claude` 필드 제거, Claude/AI 관련 핸들러(`GetOptimizationReports`, `AnalyzeOptimization`, `ApplyOptimizationSuggestion`, `RejectOptimizationSuggestion`) 제거
+- **api/handlers.go**: `GetSelectionLogs` → `GetScanLogs` 로 이름 변경, `db.ListScanLogs` 사용
+- **api/handlers.go**: `GetRankingLogs` 제거 (ScanLog로 통합)
+- **api/handlers.go**: `ListPresets`, `CreatePreset`, `ApplyPreset`, `DeletePreset` 제거
+- **api/handlers.go**: `DeleteOrder`, `DeleteServiceLog` 핸들러 추가 (Firestore 기반)
+- **api/handlers.go**: `GetStocks` — `mstStore.Search()` 사용으로 변경 (raw SQL 제거)
+- **api/handlers.go**: `UpdateSettings` — 프리셋 스냅샷 업데이트 로직(raw SQL) 제거
+- **api/router.go**: 제거된 핸들러 라우트 정리, `/logs/scan` 추가, `/logs/service/:id` DELETE 추가
+- **database/db.go**: `DeleteOrder()` 메서드 추가
+- **database/db.go**: `GetDailyPnL()` 메서드 추가 (Firestore trade_reports 집계)
+- **mst/store.go**: `Search()` 메서드 추가 (Firestore 기반 종목 검색)
+- **cmd/server/main.go**: `database.New` 시그니처 통일, `trader.ClaudeClient` 참조 제거, AI optimization 스케줄러 제거
+
 ## 2026-04-28 — Intraday Adaptive Hard Rule Relaxation 점진적 완화 개선
 
 - **trader/engine.go**: `relaxSpecificRule` — `hard_high_formed_mins` 완전 비활성화 대신 +15분 점진적 완화(상한 180분), `hard_vol_vs_3avg` 0 비활성화 대신 ×(1-rate) 점진적 완화(하한 0.1)로 변경

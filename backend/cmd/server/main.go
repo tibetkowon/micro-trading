@@ -10,15 +10,15 @@ import (
 	"time"
 	_ "time/tzdata" // NCP Micro 이미지에 tzdata 없을 경우 Asia/Seoul 로드 실패 방지
 
-	"github.com/micro-trading-for-agent/backend/internal/agent"
 	"github.com/micro-trading-for-agent/backend/internal/api"
 	"github.com/micro-trading-for-agent/backend/internal/config"
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
-	"github.com/micro-trading-for-agent/backend/internal/mst"
+	"github.com/micro-trading-for-agent/backend/internal/ops"
 	"github.com/micro-trading-for-agent/backend/internal/report"
+	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
 
@@ -29,16 +29,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := database.New(cfg.DatabasePath)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	db, err := database.New(ctx, cfg.FirebaseProjectID, cfg.FirebaseCredentialsJSON)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "database error: %v\n", err)
 		os.Exit(1)
 	}
 	defer db.Close()
-	logger.Info("database initialized", map[string]any{"path": cfg.DatabasePath})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	logger.Info("database initialized", map[string]any{"project": cfg.FirebaseProjectID})
 
 	// Initialize KIS token manager.
 	tokenManager := kis.NewTokenManager(cfg.KISBaseURL, cfg.KISAppKey, cfg.KISAppSecret, db)
@@ -74,8 +74,8 @@ func main() {
 		// approval_key is fetched just before market open; start with empty key.
 	}
 
-	// --- MST (종목 마스터) 초기화 — monitor보다 먼저 생성.
-	mstStore := mst.NewStore(db.DB)
+	// --- Stock master store — monitor보다 먼저 생성.
+	mstStore := stockmaster.NewStore(db.FirestoreClient())
 
 	// --- Position monitor ---
 	mon := monitor.New(db, kisClient, wsClient, mstStore)
@@ -84,13 +84,13 @@ func main() {
 			map[string]any{"error": err.Error()})
 	}
 
-	// --- MST (종목 마스터) 초기 데이터 다운로드 ---
+	// --- Stock master 초기 데이터 다운로드 ---
 	if cnt, err := mstStore.Count(ctx); err == nil && cnt == 0 {
-		logger.Info("stock_masters empty — downloading MST now", nil)
+		logger.Info("stock_masters empty — downloading now", nil)
 		go func() {
-			results, err := mst.DownloadAndParse(ctx)
+			results, err := stockmaster.DownloadAndParse(ctx)
 			if err != nil {
-				logger.Warn("initial MST download failed — stock_masters will be empty",
+				logger.Warn("initial stock master download failed — stock_masters will be empty",
 					map[string]any{"error": err.Error()})
 				return
 			}
@@ -107,21 +107,12 @@ func main() {
 
 	// --- Order sync scheduler (폴링 폴백) ---
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" {
-		agent.StartOrderSyncScheduler(ctx, kisClient, db, 5*time.Minute)
+		ops.StartOrderSyncScheduler(ctx, kisClient, db, 5*time.Minute)
 		logger.Info("order sync scheduler started", map[string]any{"interval": "5m"})
 	}
 
-	// --- Trading engine (Claude-based autonomous trader) ---
-	var claudeClient *trader.ClaudeClient
-	if cfg.AnthropicAPIKey != "" {
-		settings, _ := db.GetTradingSettings(ctx)
-		claudeClient = trader.NewClaudeClient(cfg.AnthropicAPIKey, settings.ClaudeModel)
-		logger.Info("Claude client initialized", map[string]any{"model": settings.ClaudeModel})
-	} else {
-		logger.Warn("ANTHROPIC_API_KEY not set — autonomous trading disabled", nil)
-	}
-
-	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, claudeClient, mstStore)
+	// --- Trading engine (autonomous trader) ---
+	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, mstStore)
 
 	// KIS 실제 잔고와 대조하여 누락된 포지션 자동 복구.
 	// DB에 등록되지 않은 보유 종목(버그·장애·수동 주문 등)을 모니터링에 추가.
@@ -131,36 +122,7 @@ func main() {
 
 	// --- Market hours scheduler ---
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" && wsClient != nil {
-		go runMarketScheduler(ctx, db, kisClient, wsClient, mon, tokenManager, tradingEngine, claudeClient, mstStore)
-	}
-
-	// --- 서버 시작 시 당일 optimization report 누락 여부 확인 ---
-	// 15:20 이후 서버 재시작 등으로 스케줄러가 리포트를 생성하지 못한 경우 자동 보완.
-	if claudeClient != nil {
-		go func() {
-			kst, _ := time.LoadLocation("Asia/Seoul")
-			now := time.Now().In(kst)
-			hhmm := now.Hour()*100 + now.Minute()
-			// 15:20 이후 ~ 다음날 09:00 전까지만 체크 (장 중 재시작은 스케줄러가 처리)
-			if hhmm >= 1520 || hhmm < 900 {
-				date := now.Format("2006-01-02")
-				// 자정 이후이면 어제 날짜로
-				if hhmm < 900 {
-					date = now.AddDate(0, 0, -1).Format("2006-01-02")
-				}
-				existing, err := db.GetOptimizationReportByDate(ctx, date)
-				if err != nil || existing == nil {
-					logger.Info("server startup: no optimization report found, generating now",
-						map[string]any{"date": date})
-					if genErr := report.GenerateOptimizationSuggestions(ctx, db, claudeClient, date); genErr != nil {
-						logger.Error("server startup: optimization generation failed",
-							map[string]any{"error": genErr.Error()})
-					} else {
-						logger.Info("server startup: optimization report generated", map[string]any{"date": date})
-					}
-				}
-			}
-		}()
+		go runMarketScheduler(ctx, db, kisClient, wsClient, mon, tokenManager, tradingEngine, mstStore)
 	}
 
 	// --- Price consumer ---
@@ -171,7 +133,6 @@ func main() {
 	handler := api.NewHandler(db, kisClient, tokenManager, cfg, mon, wsClient)
 	handler.SetEngine(tradingEngine)
 	handler.SetMSTStore(mstStore)
-	handler.SetClaudeClient(claudeClient)
 	router := api.SetupRouter(handler, cfg.FrontendDist)
 
 	srv := &http.Server{
@@ -228,11 +189,11 @@ func parseHHMM(s string, def int) int {
 //	09:00 → check trading_enabled + market open → set tradingReady
 //	09:15 → start trading engine + indicator checker (if tradingReady)
 //	15:15 → stop engine → liquidate all positions
-//	15:20 → generate daily report → AI optimization analysis
+//	15:20 → generate daily report
 //	16:00 → disconnect
 func runMarketScheduler(ctx context.Context,
 	db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mon *monitor.Monitor,
-	tokenManager *kis.TokenManager, eng *trader.Engine, claude *trader.ClaudeClient, mstStore *mst.Store) {
+	tokenManager *kis.TokenManager, eng *trader.Engine, mstStore *stockmaster.Store) {
 
 	kst, _ := time.LoadLocation("Asia/Seoul")
 
@@ -268,9 +229,9 @@ func runMarketScheduler(ctx context.Context,
 				// 08:40 — MST 파일 다운로드
 				mstDownloaded = true
 				go func() {
-					results, err := mst.DownloadAndParse(ctx)
+					results, err := stockmaster.DownloadAndParse(ctx)
 					if err != nil {
-						logger.Warn("MST daily download failed",
+						logger.Warn("stock master daily download failed",
 							map[string]any{"error": err.Error()})
 						mstDownloaded = false // 다음 틱에 재시도 허용
 						return
@@ -325,7 +286,7 @@ func runMarketScheduler(ctx context.Context,
 					logger.Info("market scheduler: trading disabled — engine will not start", nil)
 					break
 				}
-				isOpen, err := agent.IsMarketOpen(ctx, kisClient)
+				isOpen, err := ops.IsMarketOpen(ctx, kisClient)
 				if err != nil || !isOpen {
 					logger.Info("market scheduler: market not open — engine will not start",
 						map[string]any{"is_open": isOpen, "hhmm": hhmm})
@@ -359,7 +320,7 @@ func runMarketScheduler(ctx context.Context,
 					settings.IndicatorRSISellThreshold,
 					settings.IndicatorMACDBearishSell,
 					func(iCtx context.Context, code string) (*monitor.IndicatorSnapshot, error) {
-						info, err := agent.GetStockInfo(iCtx, kisClient, code)
+						info, err := ops.GetStockInfo(iCtx, kisClient, code)
 						if err != nil {
 							return nil, err
 						}
@@ -386,7 +347,7 @@ func runMarketScheduler(ctx context.Context,
 				mon.LiquidateAll(ctx, "KR")
 
 			case !reportGenerated && hhmm >= 1520 && hhmm < 1600:
-				// 15:20 — generate daily trade report, then run AI optimization analysis
+				// 15:20 — generate daily trade report
 				reportGenerated = true
 				go func() {
 					if err := report.GenerateDailyReport(ctx, db, ""); err != nil {
@@ -395,13 +356,6 @@ func runMarketScheduler(ctx context.Context,
 						return
 					}
 					logger.Info("market scheduler: daily report generated", nil)
-
-					if err := report.GenerateOptimizationSuggestions(ctx, db, claude, ""); err != nil {
-						logger.Error("market scheduler: optimization analysis failed",
-							map[string]any{"error": err.Error()})
-					} else {
-						logger.Info("market scheduler: optimization analysis complete", nil)
-					}
 				}()
 
 			case hhmm == 1600 && wsRunning:

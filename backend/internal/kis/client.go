@@ -955,12 +955,8 @@ func (c *Client) setHeaders(req *http.Request, accessToken, trID string) {
 // Per CLAUDE.md: Error Code + Timestamp + raw KIS API Response Message are REQUIRED.
 func (c *Client) logAPIError(endpoint, errorCode, rawResponse string) {
 	logger.KISError(endpoint, errorCode, rawResponse)
-	_, err := c.db.Exec(
-		`INSERT INTO kis_api_logs (endpoint, error_code, error_message, raw_response, timestamp)
-		 VALUES (?, ?, ?, ?, ?)`,
-		endpoint, errorCode, extractMsg(rawResponse), rawResponse, time.Now().UTC(),
-	)
-	if err != nil {
+	ctx := context.Background()
+	if err := c.db.CreateKISAPILog(ctx, endpoint, errorCode, extractMsg(rawResponse), rawResponse); err != nil {
 		logger.Error("failed to persist KIS API error log", map[string]any{"error": err.Error()})
 	}
 }

@@ -4,9 +4,9 @@ import "time"
 
 // Setting stores key-value configuration pairs (e.g., KIS credentials).
 type Setting struct {
-	Key       string    `json:"key"`
-	Value     string    `json:"value"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Key       string    `json:"key" firestore:"key"`
+	Value     string    `json:"value" firestore:"value"`
+	UpdatedAt time.Time `json:"updated_at" firestore:"updated_at"`
 }
 
 // OrderType represents buy or sell.
@@ -36,166 +36,120 @@ const (
 	OrderStatusFailed          OrderStatus = "FAILED"
 )
 
-// Order represents a single stock trade order.
+// Order represents a single stock trade order (KR market only).
 type Order struct {
-	ID          int64       `json:"id"`
-	StockCode   string      `json:"stock_code"`
-	StockName   string      `json:"stock_name"` // 종목명 (KIS 히스토리 동기화 시 채워짐)
-	OrderType   OrderType   `json:"order_type"`
-	Qty         int         `json:"qty"`
-	Price       float64     `json:"price"`
-	FilledPrice float64     `json:"filled_price"` // 체결가 (체결 후 avg_prvs 기준)
-	Status      OrderStatus `json:"status"`
-	KISOrderID  string      `json:"kis_order_id"`
-	Source      OrderSource `json:"source"`      // AGENT: 에이전트 주문 / MANUAL: 수동 거래 감지
-	TargetPct   float64     `json:"target_pct"`  // 목표 수익률 (%)
-	StopPct     float64     `json:"stop_pct"`    // 손절 비율 (%)
-	SellReason  string      `json:"sell_reason"` // 매도 사유 (자동 매도 시만 값 있음)
-	Market      string      `json:"market"`      // "KR" | "US"
-	CreatedAt   time.Time   `json:"created_at"`
+	ID          int64       `json:"id" firestore:"id"`
+	StockCode   string      `json:"stock_code" firestore:"stock_code"`
+	StockName   string      `json:"stock_name" firestore:"stock_name"`
+	OrderType   OrderType   `json:"order_type" firestore:"order_type"`
+	Qty         int         `json:"qty" firestore:"qty"`
+	Price       float64     `json:"price" firestore:"price"`
+	FilledPrice float64     `json:"filled_price" firestore:"filled_price"`
+	Status      OrderStatus `json:"status" firestore:"status"`
+	KISOrderID  string      `json:"kis_order_id" firestore:"kis_order_id"`
+	Source      OrderSource `json:"source" firestore:"source"`
+	TargetPct   float64     `json:"target_pct" firestore:"target_pct"`
+	StopPct     float64     `json:"stop_pct" firestore:"stop_pct"`
+	SellReason  string      `json:"sell_reason" firestore:"sell_reason"`
+	CreatedAt   time.Time   `json:"created_at" firestore:"created_at"`
 }
 
 // MonitoredPosition is a buy position being watched for target/stop price hits.
 type MonitoredPosition struct {
-	ID          int64     `json:"id"`
-	StockCode   string    `json:"stock_code"`
-	StockName   string    `json:"stock_name"`
-	FilledPrice float64   `json:"filled_price"`
-	TargetPrice float64   `json:"target_price"` // FilledPrice × (1 + target_pct/100)
-	StopPrice   float64   `json:"stop_price"`   // FilledPrice × (1 - stop_pct/100)
-	OrderID     int64     `json:"order_id"`
-	Market      string    `json:"market"` // "KR" | "US"
-	CreatedAt   time.Time `json:"created_at"`
+	ID          int64     `json:"id" firestore:"id"`
+	StockCode   string    `json:"stock_code" firestore:"stock_code"`
+	StockName   string    `json:"stock_name" firestore:"stock_name"`
+	FilledPrice float64   `json:"filled_price" firestore:"filled_price"`
+	TargetPrice float64   `json:"target_price" firestore:"target_price"`
+	StopPrice   float64   `json:"stop_price" firestore:"stop_price"`
+	OrderID     int64     `json:"order_id" firestore:"order_id"`
+	CreatedAt   time.Time `json:"created_at" firestore:"created_at"`
 }
 
 // Balance is a point-in-time snapshot of the account balance.
 type Balance struct {
-	ID              int64     `json:"id"`
-	TotalEval       float64   `json:"total_eval"`
-	AvailableAmount float64   `json:"available_amount"`
-	RecordedAt      time.Time `json:"recorded_at"`
+	ID              int64     `json:"id" firestore:"id"`
+	TotalEval       float64   `json:"total_eval" firestore:"total_eval"`
+	AvailableAmount float64   `json:"available_amount" firestore:"available_amount"`
+	RecordedAt      time.Time `json:"recorded_at" firestore:"recorded_at"`
 }
 
-// ServiceLog records service-level errors and warnings for central display.
+// ServiceLog records service-level events for central display.
 type ServiceLog struct {
-	ID        int64     `json:"id"`
-	Source    string    `json:"source"` // TRADER / MONITOR / SYSTEM
-	Level     string    `json:"level"`  // ERROR / WARN
-	Message   string    `json:"message"`
-	Detail    string    `json:"detail"` // 추가 정보 (JSON 또는 평문)
-	Timestamp time.Time `json:"timestamp"`
+	ID        int64     `json:"id" firestore:"id"`
+	Source    string    `json:"source" firestore:"source"` // TRADER / MONITOR / SYSTEM
+	Level     string    `json:"level" firestore:"level"`   // ERROR / WARN / INFO
+	Message   string    `json:"message" firestore:"message"`
+	Detail    string    `json:"detail" firestore:"detail"`
+	Timestamp time.Time `json:"timestamp" firestore:"timestamp"`
 }
 
 // KISAPILog records every KIS API error response for audit and debugging.
 type KISAPILog struct {
-	ID          int64     `json:"id"`
-	Endpoint    string    `json:"endpoint"`
-	ErrorCode   string    `json:"error_code"`
-	ErrorMsg    string    `json:"error_message"`
-	RawResponse string    `json:"raw_response"`
-	Timestamp   time.Time `json:"timestamp"`
+	ID          int64     `json:"id" firestore:"id"`
+	Endpoint    string    `json:"endpoint" firestore:"endpoint"`
+	ErrorCode   string    `json:"error_code" firestore:"error_code"`
+	ErrorMsg    string    `json:"error_message" firestore:"error_message"`
+	RawResponse string    `json:"raw_response" firestore:"raw_response"`
+	Timestamp   time.Time `json:"timestamp" firestore:"timestamp"`
 }
 
-// TraderSelectionLog records each LLM stock selection attempt for UI display.
-type TraderSelectionLog struct {
-	ID             int64  `json:"id"`
-	Timestamp      string `json:"timestamp"`
-	SentCount      int    `json:"sent_count"`
-	Candidates     string `json:"candidates"`    // JSON string — full ranking list sent to LLM
-	LLMResult      string `json:"llm_result"`    // JSON string — ordered StockCandidate list
-	SelectedCode   string `json:"selected_code"` // empty if no fill occurred
-	SelectedReason string `json:"selected_reason"`
-	FailReason     string `json:"fail_reason"`     // LLM 오류 또는 주문 실패 사유
-	Market         string `json:"market"`          // "KR" | "US"
-	RankingLogID   int64  `json:"ranking_log_id"`  // 연결된 TraderRankingLog.ID (0=연결없음)
-	HardRuleStats  string `json:"hard_rule_stats"` // JSON map[string]int — Hard Rule별 위반 종목 수
-}
-
-// TraderRankingLog records each getRankings() attempt for UI display.
-type TraderRankingLog struct {
-	ID                int64     `json:"id"`
-	Timestamp         time.Time `json:"timestamp"`
-	RankingTypes      string    `json:"ranking_types"` // JSON string: ["volume","strength"]
-	PriceMin          string    `json:"price_min"`
-	PriceMax          string    `json:"price_max"`
-	VolumeCount       int       `json:"volume_count"` // -1 = 타입 미사용
-	StrengthCount     int       `json:"strength_count"`
-	TypeCounts        string    `json:"type_counts"`        // JSON: {"volume":15,"strength":20,...}
-	RankingCondition  string    `json:"ranking_condition"`  // "AND" | "OR"
-	IntersectionCount int       `json:"intersection_count"` // 최종 결과 종목 수 (AND=교집합, OR=합집합)
-	ResultStocks      string    `json:"result_stocks"`      // JSON array of RankItem (지표 보강 전)
-	FilteredStocks    string    `json:"filtered_stocks"`    // JSON array — 하드필터로 제거된 종목 및 사유
-	ErrorMessage      string    `json:"error_message"`
-	Market            string    `json:"market"` // "KR" | "US"
+// ScanLog records each scanner cycle: rankings → hard filter → score → order decision.
+type ScanLog struct {
+	ID          int64  `json:"id" firestore:"id"`
+	Timestamp   string `json:"timestamp" firestore:"timestamp"`
+	StocksFound int    `json:"stocks_found" firestore:"stocks_found"` // 하드 필터 통과 후 후보 수
+	TopStocks   string `json:"top_stocks" firestore:"top_stocks"`     // JSON: 상위 점수 종목 목록
+	Ordered     bool   `json:"ordered" firestore:"ordered"`
+	OrderedCode string `json:"ordered_code" firestore:"ordered_code"`
+	SkipReason  string `json:"skip_reason" firestore:"skip_reason"`
+	ScoreStats  string `json:"score_stats" firestore:"score_stats"` // JSON: 점수 통계
 }
 
 // TradeReport records each trade lifecycle (buy → sell) with indicators and reasoning.
 type TradeReport struct {
-	ID             int64      `json:"id"`
-	Date           string     `json:"date"` // YYYY-MM-DD
-	StockCode      string     `json:"stock_code"`
-	StockName      string     `json:"stock_name"`
-	BuyOrderID     int64      `json:"buy_order_id"`
-	SellOrderID    int64      `json:"sell_order_id"`    // 0 until sold
-	SelectionLogID int64      `json:"selection_log_id"` // 0 if not from trader
-	BuyPrice       float64    `json:"buy_price"`
-	BuyQty         int        `json:"buy_qty"`
-	BuyAmount      float64    `json:"buy_amount"`
-	BuyReason      string     `json:"buy_reason"`     // Claude 선정 근거
-	BuyIndicators  string     `json:"buy_indicators"` // JSON: RankItem snapshot
-	SellPrice      float64    `json:"sell_price"`     // 0 until sold
-	SellQty        int        `json:"sell_qty"`
-	SellAmount     float64    `json:"sell_amount"`
-	SellReason     string     `json:"sell_reason"`
-	SellIndicators string     `json:"sell_indicators"` // JSON: StockInfo at sell time
-	ProfitAmount   float64    `json:"profit_amount"`
-	ProfitPct      float64    `json:"profit_pct"`
-	CreatedAt      time.Time  `json:"created_at"`
-	SoldAt         *time.Time `json:"sold_at"` // nil until sold
+	ID             int64      `json:"id" firestore:"id"`
+	Date           string     `json:"date" firestore:"date"` // YYYY-MM-DD
+	StockCode      string     `json:"stock_code" firestore:"stock_code"`
+	StockName      string     `json:"stock_name" firestore:"stock_name"`
+	BuyOrderID     int64      `json:"buy_order_id" firestore:"buy_order_id"`
+	SellOrderID    int64      `json:"sell_order_id" firestore:"sell_order_id"`
+	ScanLogID      int64      `json:"scan_log_id" firestore:"scan_log_id"` // 연결된 ScanLog.ID (0=없음)
+	BuyPrice       float64    `json:"buy_price" firestore:"buy_price"`
+	BuyQty         int        `json:"buy_qty" firestore:"buy_qty"`
+	BuyAmount      float64    `json:"buy_amount" firestore:"buy_amount"`
+	BuyReason      string     `json:"buy_reason" firestore:"buy_reason"`
+	BuyIndicators  string     `json:"buy_indicators" firestore:"buy_indicators"` // JSON snapshot
+	SellPrice      float64    `json:"sell_price" firestore:"sell_price"`
+	SellQty        int        `json:"sell_qty" firestore:"sell_qty"`
+	SellAmount     float64    `json:"sell_amount" firestore:"sell_amount"`
+	SellReason     string     `json:"sell_reason" firestore:"sell_reason"`
+	SellIndicators string     `json:"sell_indicators" firestore:"sell_indicators"`
+	ProfitAmount   float64    `json:"profit_amount" firestore:"profit_amount"`
+	ProfitPct      float64    `json:"profit_pct" firestore:"profit_pct"`
+	CreatedAt      time.Time  `json:"created_at" firestore:"created_at"`
+	SoldAt         *time.Time `json:"sold_at" firestore:"sold_at"`
 }
 
 // DailyReport summarizes all completed trades for a single trading day.
 type DailyReport struct {
-	ID                int64     `json:"id"`
-	Date              string    `json:"date"` // YYYY-MM-DD, UNIQUE
-	TotalTrades       int       `json:"total_trades"`
-	WinningTrades     int       `json:"winning_trades"`
-	LosingTrades      int       `json:"losing_trades"`
-	TotalProfitAmount float64   `json:"total_profit_amount"`
-	AvgProfitPct      float64   `json:"avg_profit_pct"`
-	BestTrade         string    `json:"best_trade"`    // JSON: TradeReport 요약
-	WorstTrade        string    `json:"worst_trade"`   // JSON: TradeReport 요약
-	TradeSummary      string    `json:"trade_summary"` // JSON: 전체 완료 거래 배열
-	CreatedAt         time.Time `json:"created_at"`
-}
-
-// OptimizationSuggestion is a single AI-generated suggestion item.
-type OptimizationSuggestion struct {
-	ID             string `json:"id"`              // UUID
-	Category       string `json:"category"`        // "settings" | "feature"
-	Key            string `json:"key"`             // settings 키 (category=settings)
-	Name           string `json:"name,omitempty"`  // 기능명 (category=feature)
-	Type           string `json:"type,omitempty"`  // feature 타입 (indicator, field, etc.)
-	CurrentValue   string `json:"current_value"`   // 현재 값
-	SuggestedValue string `json:"suggested_value"` // 제안 값
-	Comment        string `json:"comment"`         // 제안 근거 설명
-	Status         string `json:"status"`          // PENDING | APPLIED | REJECTED
-}
-
-// OptimizationReport stores AI-generated improvement suggestions for a trading day.
-type OptimizationReport struct {
-	ID                int64     `json:"id"`
-	Date              string    `json:"date"`                // YYYY-MM-DD (daily_reports.date 참조)
-	OverallAssessment string    `json:"overall_assessment"`  // Claude 전체 평가 요약
-	Suggestions       string    `json:"suggestions"`         // JSON: []OptimizationSuggestion
-	ApplyModeSnapshot string    `json:"apply_mode_snapshot"` // 생성 시점의 optimization_apply_mode
-	CreatedAt         time.Time `json:"created_at"`
+	ID                int64     `json:"id" firestore:"id"`
+	Date              string    `json:"date" firestore:"date"` // YYYY-MM-DD (unique)
+	TotalTrades       int       `json:"total_trades" firestore:"total_trades"`
+	WinningTrades     int       `json:"winning_trades" firestore:"winning_trades"`
+	LosingTrades      int       `json:"losing_trades" firestore:"losing_trades"`
+	TotalProfitAmount float64   `json:"total_profit_amount" firestore:"total_profit_amount"`
+	AvgProfitPct      float64   `json:"avg_profit_pct" firestore:"avg_profit_pct"`
+	BestTrade         string    `json:"best_trade" firestore:"best_trade"`       // JSON summary
+	WorstTrade        string    `json:"worst_trade" firestore:"worst_trade"`     // JSON summary
+	TradeSummary      string    `json:"trade_summary" firestore:"trade_summary"` // JSON array
+	CreatedAt         time.Time `json:"created_at" firestore:"created_at"`
 }
 
 // Token stores the KIS OAuth access token and its validity window.
 type Token struct {
-	ID          int64     `json:"id"`
-	AccessToken string    `json:"access_token"`
-	IssuedAt    time.Time `json:"issued_at"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	ID          int64     `json:"id" firestore:"id"`
+	AccessToken string    `json:"access_token" firestore:"access_token"`
+	IssuedAt    time.Time `json:"issued_at" firestore:"issued_at"`
+	ExpiresAt   time.Time `json:"expires_at" firestore:"expires_at"`
 }
