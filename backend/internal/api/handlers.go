@@ -598,15 +598,15 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 						}
 					}
 					stocks = append(stocks, gin.H{
-						"stock_code":   e.Code,
-						"stock_name":   stockName,
-						"strength":     e.Strength,
-						"rsi":          e.RSI,
-						"macd_bullish": e.MACDBullish,
-						"bid_ask_ratio": e.BidAsk,
+						"stock_code":     e.Code,
+						"stock_name":     stockName,
+						"strength":       e.Strength,
+						"rsi":            e.RSI,
+						"macd_bullish":   e.MACDBullish,
+						"bid_ask_ratio":  e.BidAsk,
 						"vwap_disparity": e.VWAPDiff,
-						"volume_ratio": e.VolRatio,
-						"total_score":  e.Total,
+						"volume_ratio":   e.VolRatio,
+						"total_score":    e.Total,
 					})
 				}
 			} else {
