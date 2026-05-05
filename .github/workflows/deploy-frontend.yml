@@ -1,6 +1,12 @@
-name: Deploy Frontend (수동)
+name: Deploy Frontend
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'firestore.rules'
   workflow_dispatch:
 
 jobs:
