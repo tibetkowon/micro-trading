@@ -56,14 +56,15 @@ func NewClient(
 
 // StockPriceResponse holds the current price data for a stock.
 type StockPriceResponse struct {
-	StockCode    string `json:"stck_shrn_iscd"` // 단축종목코드
-	CurrentPrice string `json:"stck_prpr"`      // 주식 현재가
-	ChangeRate   string `json:"prdy_ctrt"`      // 전일대비율
-	Volume       string `json:"acml_vol"`       // 누적 거래량
-	DayOpen      string `json:"stck_oprc"`      // 당일 시가
-	DayHigh      string `json:"stck_hgpr"`      // 당일 고가
-	DayLow       string `json:"stck_lwpr"`      // 당일 저가
-	Strength     string `json:"tday_rltv"`      // 체결강도 (당일)
+	StockCode       string `json:"stck_shrn_iscd"` // 단축종목코드
+	CurrentPrice    string `json:"stck_prpr"`      // 주식 현재가
+	ChangeRate      string `json:"prdy_ctrt"`      // 전일대비율
+	Volume          string `json:"acml_vol"`       // 누적 거래량
+	DayOpen         string `json:"stck_oprc"`      // 당일 시가
+	DayHigh         string `json:"stck_hgpr"`      // 당일 고가
+	DayLow          string `json:"stck_lwpr"`      // 당일 저가
+	Strength        string `json:"tday_rltv"`      // 체결강도 (당일)
+	UpperLimitPrice string `json:"stck_mxpr"`      // 당일 상한가
 }
 
 // AvailableOrderResponse holds response from inquire-psbl-order (매수가능조회 TTTC8908R).

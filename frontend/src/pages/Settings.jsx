@@ -53,6 +53,7 @@ function transformSettings(raw) {
       scan_interval: pi(raw.scan_interval, 60),
       indicator_check_interval: pi(raw.indicator_check_interval_min, 5),
     },
+    sell_on_upper_limit: pb(raw.sell_on_upper_limit, false),
     max_consecutive_losses: pi(raw.max_consecutive_losses, 0),
     consecutive_loss_reset_on_profit: pb(raw.consecutive_loss_reset_on_profit, true),
     max_bidask_spread_pct: pf(raw.max_bidask_spread_pct, 0),
@@ -184,6 +185,7 @@ export default function Settings() {
         flat[`filter_${k}_enabled`] = String(settings.filters?.[k]?.enabled ?? false)
         flat[`filter_${k}_value`] = String(settings.filters?.[k]?.value ?? 0)
       }
+      flat.sell_on_upper_limit = String(settings.sell_on_upper_limit ?? false)
       flat.max_consecutive_losses = String(settings.max_consecutive_losses ?? 0)
       flat.consecutive_loss_reset_on_profit = String(settings.consecutive_loss_reset_on_profit ?? true)
       flat.max_bidask_spread_pct = String(settings.max_bidask_spread_pct ?? 0)
@@ -524,6 +526,22 @@ export default function Settings() {
 
       {tab === '매도관리' && (
         <div style={{ maxWidth: 600 }}>
+
+          {/* ── 상한가 매도 ── */}
+          <div style={{ marginBottom: 24 }}>
+            <div className="form-label" style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--accent)' }}>
+              상한가 도달 시 매도
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              당일 상한가(+30%)에 도달하면 즉시 익절. 매수 등록 시 KIS API에서 상한가 자동 조회.
+            </div>
+            <div className="filter-row">
+              <span className="filter-label">상한가 자동 매도 활성화</span>
+              <Toggle
+                checked={settings.sell_on_upper_limit ?? false}
+                onChange={v => set('sell_on_upper_limit', v)} />
+            </div>
+          </div>
 
           {/* ── 연속 손절 제한 ── */}
           <div style={{ marginBottom: 24 }}>

@@ -44,6 +44,9 @@ type MonitoredEntry struct {
 	PartialExitDone bool // 절반 청산 완료 여부 (true이면 다음 횡보 감지 시 전량 청산)
 	// 부분 익절 (TP partial) — stagnation과 독립적인 별도 플래그
 	PartialTPDone bool // 중간 목표가 도달 후 부분 매도 완료 여부
+	// 상한가 매도
+	UpperLimitPrice  float64 // 당일 상한가. 0=비활성
+	SellOnUpperLimit bool    // 상한가 도달 시 자동 매도
 }
 
 // Monitor watches registered positions for target/stop price hits and
@@ -263,6 +266,20 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 			m.mu.Unlock()
 			return // 다음 틱에서 full TP 체크
 		}
+	}
+
+	// 상한가 도달 시 매도
+	if pos.SellOnUpperLimit && pos.UpperLimitPrice > 0 && price >= pos.UpperLimitPrice {
+		logger.Info("monitor: UPPER LIMIT hit",
+			map[string]any{"stock_code": stockCode, "price": price, "upper_limit": pos.UpperLimitPrice})
+		if !isTest {
+			if soldQty := m.executeSell(stockCode, pos, "상한가 도달"); soldQty >= 0 {
+				m.Remove(context.Background(), stockCode)
+			}
+		} else {
+			m.Remove(context.Background(), stockCode)
+		}
+		return
 	}
 
 	switch {

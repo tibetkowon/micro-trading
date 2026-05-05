@@ -615,6 +615,16 @@ func (e *Engine) placeAndMonitor(
 		SoldCh:             e.soldCh,
 		TrailingTriggerPct: settings.TrailingTriggerPct,
 		TrailingStopPct:    settings.TrailingStopPct,
+		SellOnUpperLimit:   settings.SellOnUpperLimit,
+	}
+
+	// 상한가 가격 조회 (설정 활성화 시)
+	if settings.SellOnUpperLimit {
+		if priceResp, err := e.kisClient.GetStockPrice(ctx, c.StockCode); err == nil {
+			if up, err2 := strconv.ParseFloat(priceResp.UpperLimitPrice, 64); err2 == nil && up > 0 {
+				entry.UpperLimitPrice = up
+			}
+		}
 	}
 
 	if err := e.mon.Register(ctx, entry); err != nil {

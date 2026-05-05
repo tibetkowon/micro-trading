@@ -88,6 +88,8 @@ type TradingSettings struct {
 	ConsecutiveLossResetOnProfit bool
 	// 호가 스프레드 필터
 	MaxBidAskSpreadPct float64
+	// 상한가 매도
+	SellOnUpperLimit bool
 	// 일일 손익 한도
 	DailyMaxLossPct      float64
 	DailyTargetProfitPct float64
@@ -281,6 +283,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.MaxConsecutiveLosses = pi(m, "max_consecutive_losses", 0)
 	s.ConsecutiveLossResetOnProfit = pb(m, "consecutive_loss_reset_on_profit", true)
 	s.MaxBidAskSpreadPct = pf(m, "max_bidask_spread_pct", 0.0)
+	s.SellOnUpperLimit = pb(m, "sell_on_upper_limit", false)
 	s.DailyMaxLossPct = pf(m, "daily_max_loss_pct", 0.0)
 	s.DailyTargetProfitPct = pf(m, "daily_target_profit_pct", 0.0)
 	s.FilterRsiMax = pf(m, "filter_rsi_max", 80.0)
