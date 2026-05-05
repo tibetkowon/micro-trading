@@ -53,6 +53,17 @@ function transformSettings(raw) {
       scan_interval: pi(raw.scan_interval, 60),
       indicator_check_interval: pi(raw.indicator_check_interval_min, 5),
     },
+    trailing: {
+      trigger_pct: pf(raw.trailing_trigger_pct, 0),
+      stop_pct: pf(raw.trailing_stop_pct, 0),
+    },
+    stagnation: {
+      threshold_pct: pf(raw.stagnation_threshold_pct, 0),
+      duration_min: pi(raw.stagnation_duration_min, 0),
+      partial_exit_enabled: pb(raw.stagnation_partial_exit_enabled, false),
+      bidask_sell_threshold: pf(raw.stagnation_bidask_sell_threshold, 1.0),
+    },
+    sell_conditions: pj(raw.sell_conditions, []),
   }
 }
 
@@ -170,6 +181,13 @@ export default function Settings() {
         flat[`filter_${k}_enabled`] = String(settings.filters?.[k]?.enabled ?? false)
         flat[`filter_${k}_value`] = String(settings.filters?.[k]?.value ?? 0)
       }
+      flat.trailing_trigger_pct = String(settings.trailing?.trigger_pct ?? 0)
+      flat.trailing_stop_pct = String(settings.trailing?.stop_pct ?? 0)
+      flat.stagnation_threshold_pct = String(settings.stagnation?.threshold_pct ?? 0)
+      flat.stagnation_duration_min = String(settings.stagnation?.duration_min ?? 0)
+      flat.stagnation_partial_exit_enabled = String(settings.stagnation?.partial_exit_enabled ?? false)
+      flat.stagnation_bidask_sell_threshold = String(settings.stagnation?.bidask_sell_threshold ?? 1.0)
+      flat.sell_conditions = JSON.stringify(settings.sell_conditions ?? [])
       await setDoc(doc(db, 'settings', 'config'), flat, { merge: true })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -193,7 +211,7 @@ export default function Settings() {
   return (
     <div>
       <div className="tab-bar">
-        {['거래조건', '순위조회', '하드필터', '점수시스템', '스케줄'].map(t => (
+        {['거래조건', '순위조회', '하드필터', '점수시스템', '스케줄', '매도관리'].map(t => (
           <div key={t} className={`tab-item ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>{t}</div>
         ))}
       </div>
@@ -487,6 +505,145 @@ export default function Settings() {
                 onChange={e => set('buy_pause_end', e.target.value)}
                 style={{ flex: 1 }} />
             </div>
+          </div>
+        </div>
+      )}
+
+      {tab === '매도관리' && (
+        <div style={{ maxWidth: 600 }}>
+
+          {/* ── 트레일링 스탑 ── */}
+          <div style={{ marginBottom: 24 }}>
+            <div className="form-label" style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--accent)' }}>
+              트레일링 스탑
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              목표가 전이라도 수익이 발생했다가 최고점 대비 일정 % 하락 시 즉시 익절. 0 = 비활성
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">활성화 기준 수익률 (%)</label>
+                <input className="form-input" type="number" step="0.1" min="0"
+                  value={settings.trailing?.trigger_pct ?? 0}
+                  onChange={e => set('trailing.trigger_pct', +e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">최고점 대비 하락 허용폭 (%)</label>
+                <input className="form-input" type="number" step="0.1" min="0"
+                  value={settings.trailing?.stop_pct ?? 0}
+                  onChange={e => set('trailing.stop_pct', +e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          {/* ── 횡보 탐지 ── */}
+          <div style={{ marginBottom: 24, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+            <div className="form-label" style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--accent)' }}>
+              횡보 탐지 청산
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              가격이 기준 변동폭 안에서 일정 시간 이상 횡보하면 청산. 0 = 비활성
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">횡보 판단 변동폭 (%)</label>
+                <input className="form-input" type="number" step="0.1" min="0"
+                  value={settings.stagnation?.threshold_pct ?? 0}
+                  onChange={e => set('stagnation.threshold_pct', +e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">횡보 지속 기준 (분)</label>
+                <input className="form-input" type="number" min="0"
+                  value={settings.stagnation?.duration_min ?? 0}
+                  onChange={e => set('stagnation.duration_min', +e.target.value)} />
+              </div>
+            </div>
+            <div className="filter-row">
+              <span className="filter-label">단계적 청산 (1차 50% → 2차 전량)</span>
+              <Toggle
+                checked={settings.stagnation?.partial_exit_enabled ?? false}
+                onChange={v => set('stagnation.partial_exit_enabled', v)} />
+            </div>
+            <div className="form-row" style={{ marginTop: 8 }}>
+              <div className="form-group">
+                <label className="form-label">호가비율 즉시 전량청산 기준 (미만)</label>
+                <input className="form-input" type="number" step="0.1" min="0"
+                  value={settings.stagnation?.bidask_sell_threshold ?? 1.0}
+                  onChange={e => set('stagnation.bidask_sell_threshold', +e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          {/* ── 매도 조건 순위 ── */}
+          <div style={{ paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+            <div className="form-label" style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--accent)' }}>
+              지표 기반 매도 조건 순위
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              활성화된 조건을 순서대로 평가. ↑↓ 로 우선순위 변경.
+            </div>
+            {(() => {
+              const ALL_CONDITIONS = [
+                { key: 'rsi_overbought', label: 'RSI 과매수' },
+                { key: 'macd_bearish',   label: 'MACD 데드크로스' },
+                { key: 'stagnation',     label: '횡보 탐지' },
+              ]
+              const active = settings.sell_conditions ?? []
+              const inactive = ALL_CONDITIONS.filter(c => !active.includes(c.key))
+              const activeItems = active
+                .map(k => ALL_CONDITIONS.find(c => c.key === k))
+                .filter(Boolean)
+
+              const move = (idx, dir) => {
+                const next = [...active]
+                const swap = idx + dir
+                if (swap < 0 || swap >= next.length) return
+                ;[next[idx], next[swap]] = [next[swap], next[idx]]
+                set('sell_conditions', next)
+              }
+              const toggle = (key, enabled) => {
+                if (enabled) {
+                  set('sell_conditions', [...active, key])
+                } else {
+                  set('sell_conditions', active.filter(k => k !== key))
+                }
+              }
+
+              return (
+                <div>
+                  {activeItems.map((c, i) => (
+                    <div key={c.key} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 12px', marginBottom: 6,
+                      background: 'var(--bg-card)', borderRadius: 6,
+                      border: '1px solid var(--border)',
+                    }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 18, textAlign: 'center', fontFamily: 'var(--font-mono)' }}>{i + 1}</span>
+                      <span style={{ flex: 1, fontSize: 13 }}>{c.label}</span>
+                      <button className="btn btn-outline btn-sm" style={{ padding: '2px 8px' }}
+                        onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
+                      <button className="btn btn-outline btn-sm" style={{ padding: '2px 8px' }}
+                        onClick={() => move(i, 1)} disabled={i === activeItems.length - 1}>↓</button>
+                      <button className="btn btn-sm" style={{ padding: '2px 8px', background: 'var(--down)', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                        onClick={() => toggle(c.key, false)}>✕</button>
+                    </div>
+                  ))}
+                  {inactive.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>비활성 조건 (클릭하여 추가)</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {inactive.map(c => (
+                          <button key={c.key} className="btn btn-outline btn-sm"
+                            onClick={() => toggle(c.key, true)}>
+                            + {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
