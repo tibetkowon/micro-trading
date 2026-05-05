@@ -276,11 +276,20 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			continue
 		}
 
-		// Fetch bid/ask ratio for scoring (best-effort; 0 = neutral score if unavailable)
-		if settings.ScoreWeightBidAsk > 0 {
-			if ratio, err := e.kisClient.GetBidAskRatio(ctx, c.StockCode); err == nil {
-				cinfo.Info.BidAskRatio = ratio
+		// Fetch order book snapshot: bid/ask ratio for scoring + spread for filter
+		if settings.ScoreWeightBidAsk > 0 || settings.MaxBidAskSpreadPct > 0 {
+			if snap, err := e.kisClient.GetOrderBookSnapshot(ctx, c.StockCode, 0); err == nil {
+				cinfo.Info.BidAskRatio = snap.BidAskRatio
+				cinfo.Info.BidAskSpread = snap.SpreadPct
 			}
+		}
+
+		// Bid-ask spread filter (0 = disabled)
+		if settings.MaxBidAskSpreadPct > 0 && cinfo.Info.BidAskSpread > settings.MaxBidAskSpreadPct {
+			logger.Info("engine: spread filter rejected",
+				map[string]any{"code": c.StockCode, "spread_pct": cinfo.Info.BidAskSpread, "max": settings.MaxBidAskSpreadPct})
+			rejectedCount++
+			continue
 		}
 
 		detail := scorer.CalcScore(cinfo, settings)

@@ -280,6 +280,7 @@ type OrderBookSnapshot struct {
 	NearBidAskRatio float64 // 현재가 ±2% 범위 내 호가만의 매수/매도 비율; 0=계산불가
 	TopAskWall      float64 // 가장 큰 매도 벽의 현재가 대비 위치 (%); 0=데이터없음
 	TopAskWallSize  int64   // 가장 큰 매도 벽의 잔량
+	SpreadPct       float64 // (매도1호가 - 매수1호가) / 매도1호가 × 100; 0=계산불가
 }
 
 // GetOrderBookSnapshot fetches the order book and returns enriched bid/ask metrics.
@@ -352,6 +353,13 @@ func (c *Client) GetOrderBookSnapshot(ctx context.Context, stockCode string, cur
 	snap := OrderBookSnapshot{}
 	if totalAsk > 0 {
 		snap.BidAskRatio = math.Round(totalBid/totalAsk*100) / 100
+	}
+
+	// SpreadPct: (매도1호가 - 매수1호가) / 매도1호가 × 100
+	askP1, _ := strconv.ParseFloat(o1.AskP1, 64)
+	bidP1, _ := strconv.ParseFloat(o1.BidP1, 64)
+	if askP1 > 0 && bidP1 > 0 {
+		snap.SpreadPct = math.Round((askP1-bidP1)/askP1*10000) / 100
 	}
 
 	if currentPrice <= 0 {

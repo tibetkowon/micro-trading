@@ -55,6 +55,7 @@ function transformSettings(raw) {
     },
     max_consecutive_losses: pi(raw.max_consecutive_losses, 0),
     consecutive_loss_reset_on_profit: pb(raw.consecutive_loss_reset_on_profit, true),
+    max_bidask_spread_pct: pf(raw.max_bidask_spread_pct, 0),
     trailing: {
       trigger_pct: pf(raw.trailing_trigger_pct, 0),
       stop_pct: pf(raw.trailing_stop_pct, 0),
@@ -185,6 +186,7 @@ export default function Settings() {
       }
       flat.max_consecutive_losses = String(settings.max_consecutive_losses ?? 0)
       flat.consecutive_loss_reset_on_profit = String(settings.consecutive_loss_reset_on_profit ?? true)
+      flat.max_bidask_spread_pct = String(settings.max_bidask_spread_pct ?? 0)
       flat.trailing_trigger_pct = String(settings.trailing?.trigger_pct ?? 0)
       flat.trailing_stop_pct = String(settings.trailing?.stop_pct ?? 0)
       flat.stagnation_threshold_pct = String(settings.stagnation?.threshold_pct ?? 0)
@@ -408,6 +410,13 @@ export default function Settings() {
 
       {tab === '하드필터' && (
         <div style={{ maxWidth: 600 }}>
+          <div className="filter-row" style={{ marginBottom: 12 }}>
+            <span className="filter-label">최대 호가 스프레드 (%)<span className="muted" style={{ fontSize: 11, marginLeft: 6 }}>0=비활성</span></span>
+            <input className="form-input" type="number" step="0.1" min="0"
+              value={settings.max_bidask_spread_pct ?? 0}
+              onChange={e => set('max_bidask_spread_pct', +e.target.value)}
+              style={{ width: 100 }} />
+          </div>
           {HARD_FILTERS.map(f => {
             const filter = filters[f.key] || {}
             return (
