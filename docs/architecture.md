@@ -1,6 +1,6 @@
 # Project Architecture
 
-> Last updated: 2026-03-17 (rev 8 — KR/US 듀얼 마켓 엔진, 매매 품질 필터 8종)
+> Last updated: 2026-05-04 (rev 9 — Firebase Firestore 마이그레이션, 6종 매도 제어 기능, CI/CD 자동 배포)
 
 ## Directory Tree
 
@@ -8,7 +8,8 @@
 micro-trading-for-agent/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml              # CI: Go build/test/fmt + React lint/build; CD: linux/amd64 크로스 컴파일 → SCP → rsync → systemctl restart
+│       ├── deploy-backend.yml  # CD: Go linux/amd64 크로스 컴파일 → GCS 업로드 (main 브랜치 backend/** 변경 시 자동)
+│       └── deploy-frontend.yml # CD: React 빌드 → Firebase Hosting 배포 (main 브랜치 frontend/** 변경 시 자동)
 ├── .claude/
 │   └── skills/                 # AI 에이전트 행동 지침 파일 (.md)
 ├── backend/                    # Go backend root
@@ -19,9 +20,9 @@ micro-trading-for-agent/
 │   │   ├── config/
 │   │   │   └── config.go       # .env 로드 (godotenv); KIS·Anthropic·서버 설정
 │   │   ├── database/
-│   │   │   └── db.go           # SQLite 초기화 + 스키마 마이그레이션; GetTradingSettings(), SaveReport()
+│   │   │   └── db.go           # Firebase Firestore 클라이언트 초기화; GetTradingSettings(), SaveReport(), GetLatestCompletedTradeByStock()
 │   │   ├── models/
-│   │   │   └── models.go       # DB 테이블 1:1 Go 구조체 (Order, Report, MonitoredPosition 등)
+│   │   │   └── models.go       # Firestore 컬렉션 1:1 Go 구조체 (Order, Report, MonitoredPosition 등)
 │   │   ├── logger/
 │   │   │   └── logger.go       # 구조화 JSON 로깅; KISError()는 필수 필드(error_code, timestamp, raw_response) 강제
 │   │   ├── kis/
@@ -46,7 +47,7 @@ micro-trading-for-agent/
 │   │   └── api/
 │   │       ├── handlers.go     # HTTP 핸들러: 잔고/종목/차트/주문/모니터/서버상태/순위/설정/리포트/로그/디버그
 │   │       └── router.go       # gin.Engine 설정; 라우트 등록; SPA 폴백
-│   ├── data/                   # SQLite .db 파일 (git-ignored)
+│   ├── data/                   # 로컬 캐시 파일 (git-ignored)
 │   └── go.mod                  # Go 모듈 정의
 ├── frontend/                   # React frontend root
 │   ├── src/
@@ -73,7 +74,7 @@ micro-trading-for-agent/
 │   └── package.json            # npm 의존성
 ├── docs/
 │   ├── architecture.md         # 이 파일
-│   ├── db_schema.md            # SQLite 테이블 스키마 문서
+│   ├── db_schema.md            # Firestore 컬렉션 스키마 문서
 │   ├── changelog.md            # 변경 이력 (최신 항목이 맨 위)
 │   ├── kis-api/                # KIS API 공식 명세서 (기본시세/순위분석/종목정보/주문계좌/인증/실시간)
 │   ├── plans/                  # 기능 구현 계획 문서
@@ -94,10 +95,10 @@ micro-trading-for-agent/
 - **현재 관리 항목:** KIS 자격증명, Anthropic API 키, HTS ID, 서버 포트, DB 경로
 
 ### `backend/internal/database`
-- **Role:** SQLite 연결 초기화 및 서버 시작 시 스키마 마이그레이션 자동 실행.
-- `GetTradingSettings(ctx)` — 자율 트레이딩 설정 40개 이상을 일괄 조회하여 `TradingSettings` 구조체로 반환 (KR/US 설정, 트레일링 스탑, 매수 중단 시간대, 지수 필터, 일일 손실 한도 포함)
+- **Role:** Firebase Firestore 클라이언트 초기화 및 데이터 액세스 레이어.
+- `GetTradingSettings(ctx)` — Firestore `settings/config` 문서에서 설정 50개 이상을 일괄 조회하여 `TradingSettings` 구조체로 반환 (KR/US 설정, 트레일링 스탑, 상한가 매도, 연속손절 한도, 호가 스프레드 필터 등)
 - `SaveReport(ctx, date, content)` — 일일 리포트 upsert
-- 신규 설정 키는 `INSERT OR IGNORE`로 기본값 자동 삽입 (서버 기동 시)
+- `GetLatestCompletedTradeByStock(ctx, stockCode)` — 특정 종목의 최근 완료 거래 조회 (연속손절 카운터용)
 
 ### `backend/internal/models`
 - **Role:** DB 테이블과 1:1 대응하는 공유 데이터 구조체.
@@ -116,9 +117,9 @@ micro-trading-for-agent/
 
 ### `backend/internal/monitor`
 - **Role:** 보유 포지션 실시간 모니터링.
-- `MonitoredEntry` — `Market string`("KR"/"US"), `ExchCode string`(해외거래소), `TrailingTriggerPct/TrailingStopPct/PeakPrice/TrailingActivated` 트레일링 스탑 필드 포함
+- `MonitoredEntry` — `Market string`("KR"/"US"), `ExchCode string`(해외거래소), `TrailingTriggerPct/TrailingStopPct/PeakPrice/TrailingActivated` 트레일링 스탑 필드, `UpperLimitPrice/SellOnUpperLimit` 상한가 매도 필드 포함
 - `Register(ctx, pos MonitoredEntry)` — 포지션 등록; US 종목은 해외 실시간 가격 WebSocket 구독
-- `HandlePrice(stockCode, price, isTest)` — WebSocket 가격 이벤트 처리; 트레일링 스탑 활성화·갱신, 목표/손절 도달 시 `executeSell()`(KR) 또는 `executeOverseasSell()`(US) + `SoldCh` 알림
+- `HandlePrice(stockCode, price, isTest)` — WebSocket 가격 이벤트 처리; 상한가 도달 매도 → 트레일링 스탑 활성화·갱신 → 목표/손절 도달 시 `executeSell()`(KR) 또는 `executeOverseasSell()`(US) + `SoldCh` 알림
 - `StartIndicatorChecker(ctx, intervalMin, conditions, rsiThreshold, macdBearish, getInfoFn)` — RSI/MACD 주기 평가; `getInfoFn` 콜백으로 순환 임포트 방지
 - `LiquidateAll(ctx, market ...string)` — 전량 시장가 청산; market 인자로 "KR"/"US" 선택 가능 (생략 시 전체)
 
@@ -140,7 +141,9 @@ micro-trading-for-agent/
   - `Engine.GetState()` → 현재 상태 (`IDLE|SEARCHING|SELECTING|ORDERING|WAITING_FILL|MONITORING`)
   - `Engine.GenerateDailyReport(ctx)` → 당일 AGENT 주문 로드 후 Claude 리포트 생성
   - `Engine.SoldCh()` → Monitor에 주입할 매도 완료 채널 반환
-  - **KR 품질 필터 (selectAndBuy):** 매수중단시간대 → 지수필터(-1% 이상 하락) → 거래대금 하한선 → RSI/이격도 하드필터 → HighPriceDiff → MA5<MA20 → 일일손실한도
+  - **KR 품질 필터 (selectAndBuy):** 매수중단시간대 → 연속손절한도 초과 → 지수필터(-1% 이상 하락) → 거래대금 하한선 → RSI/이격도 하드필터 → HighPriceDiff → MA5<MA20 → 호가스프레드 상한 → 일일손실한도
+  - `consecutiveLosses int` / `consecutiveLossHalt bool` — 연속손절 카운터·중단 상태 엔진 내 관리
+  - `ResetConsecutiveLosses()` — 장 시작(09:00) 시 자동 호출하여 연속손절 카운터 초기화
   - **US 품질 필터 (selectAndBuyUS):** 거래대금 하한선 → GetOverseasDailyChart MA5/MA20 크로스 확인 + 추가 필터
 
 ### `backend/internal/api`

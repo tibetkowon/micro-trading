@@ -46,7 +46,7 @@ To optimize token usage and maintain focus, do not scan the entire workspace ind
 
 3. **신규 기능 또는 의미 있는 코드 변경** → `docs/reviews/` 에 한국어 코드 설명 문서 생성 (Go+React 로직 해설).
 
-4. **SQLite 테이블/컬럼 추가 또는 변경** → `docs/db_schema.md` 즉시 업데이트.
+4. **Firestore 컬렉션/필드 추가 또는 변경** → `docs/db_schema.md` 즉시 업데이트.
 
 5. **새 루트 폴더 또는 주요 패키지 추가** → `docs/architecture.md` 즉시 업데이트.
 
@@ -65,7 +65,7 @@ To optimize token usage and maintain focus, do not scan the entire workspace ind
 | 작업 또는 버그 수정 완료 | `.claude/skills/record_changelog.md` — `docs/changelog.md` 업데이트 |
 | 신규 기능 구현 완료 | `.claude/skills/write_code_tutor.md` — `docs/reviews/` 에 한국어 설명 문서 생성 |
 | KIS API 에러 조사 또는 자동매매 실패 | `.claude/skills/analyze_trade_logs.md` — 로그 스마트 추출 및 분석 |
-| SQLite 테이블/컬럼 생성 또는 변경 | `.claude/skills/update_db_schema.md` — `docs/db_schema.md` 업데이트 |
+| Firestore 컬렉션/필드 생성 또는 변경 | `.claude/skills/update_db_schema.md` — `docs/db_schema.md` 업데이트 |
 | 새 루트 폴더 또는 주요 패키지 추가 | `.claude/skills/update_architecture.md` — `docs/architecture.md` 업데이트 |
 | 주요 마일스톤 달성 | `.claude/skills/update_readme.md` — `README.md` 업데이트 |
 | 새 API 패턴/버그 패턴/프로젝트 규칙 발견 | `.claude/skills/manage_skills.md` — 스킬 또는 문서에 기록 |

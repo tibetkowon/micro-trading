@@ -7,11 +7,12 @@ NCP Micro (1GB RAM) 환경에서 효율적으로 동작하도록 설계되었습
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.24, Gin, SQLite (go-sqlite3) |
+| Backend | Go 1.24, Gin, Firebase Firestore |
 | AI | Anthropic Claude API (`anthropic-sdk-go`) |
 | Realtime | KIS WebSocket (`gorilla/websocket`) |
-| Frontend | React 18, Vite, TailwindCSS |
-| Database | SQLite (WAL mode) |
+| Frontend | React 18, Vite, TailwindCSS, Firebase SDK |
+| Database | Firebase Firestore |
+| Hosting | Firebase Hosting (frontend), GCS + NCP VM (backend) |
 | CI/CD | GitHub Actions |
 
 ## 시스템 개요
@@ -54,6 +55,7 @@ cp .env.example .env
 | `KIS_BASE_URL` | | 실전: `https://openapi.koreainvestment.com:9443` |
 | `KIS_HTS_ID` | | HTS 아이디 — 실시간 체결통보 수신 시 필요 |
 | `ANTHROPIC_API_KEY` | ✅ | Claude API 키 — 자율 트레이딩 엔진 동작에 필요 |
+| `FIREBASE_CREDENTIALS_JSON` | ✅ | Firebase 서비스 계정 JSON (백엔드 Firestore 접근용) |
 
 > `ANTHROPIC_API_KEY` 미설정 시 서버는 기동되지만 자율 매매 엔진이 비활성화됩니다.
 
@@ -135,6 +137,9 @@ Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
 | `stagnation_threshold_pct` | 1.0 | 횡보 감지 기준 변동폭 (%) |
 | `stagnation_duration_min` | 30 | 횡보 지속 기준 시간 (분) |
 | `sell_conditions` | ["target_pct","stop_pct"] | 매도 조건 우선순위 배열 |
+| `sell_on_upper_limit` | false | 당일 상한가 도달 시 즉시 매도 여부 |
+| `max_consecutive_losses` | 0 | 연속 손절 허용 횟수 (0=비활성) — 초과 시 당일 매수 중단 |
+| `consecutive_loss_reset_on_profit` | false | 익절 발생 시 연속손절 카운터 리셋 여부 |
 | `indicator_check_interval_min` | 5 | 지표 확인 주기 (분) |
 | `indicator_rsi_sell_threshold` | 70 | RSI 과매수 기준값 |
 | `indicator_macd_bearish_sell` | false | MACD 데드크로스 시 매도 여부 |
@@ -166,6 +171,7 @@ Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
 | `index_drop_threshold_pct` | -1.0 | 지수 낙폭 임계값 (%) |
 | `index_codes` | [] | 지수 필터 코드 JSON 배열 |
 | `ranking_excl_cls` | 1111111111 | 순위 조회 제외 종목 플래그 |
+| `max_bidask_spread_pct` | 0 | 최대 허용 호가 스프레드 (%, 0=비활성) — 초과 종목 후보 제외 |
 
 ### Claude Hard Rejection 룰 (국장 KR)
 
@@ -311,9 +317,10 @@ DB 스키마 상세: [`docs/db_schema.md`](docs/db_schema.md)
 
 ## Security
 
-- 모든 민감 정보 (API 키, 계좌번호, Anthropic 키)는 `.env` 파일로만 관리
+- 모든 민감 정보 (API 키, 계좌번호, Anthropic 키, Firebase 서비스 계정)는 `.env` 파일로만 관리
 - `.env` 파일은 `.gitignore`에 의해 절대 커밋되지 않습니다
-- KIS API 에러는 `kis_api_logs` 테이블에, 서비스 운영 이벤트는 `service_logs` 테이블에 자동 기록됩니다
+- KIS API 에러는 Firestore `kis_api_logs` 컬렉션에, 서비스 운영 이벤트는 `service_logs` 컬렉션에 자동 기록됩니다
+- 트레이딩 설정은 Firestore `settings/config` 문서에 저장되며 UI에서 실시간 반영됩니다
 
 ## License
 

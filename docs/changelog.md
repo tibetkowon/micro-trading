@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-05-05 — chore: 미사용 코드 제거 및 전체 문서 업데이트
+
+- **backend/internal/notify/discord.go** 삭제 — Discord 알림 패키지 (임포트 없음, 완전 미사용)
+- **frontend/package.json**: `recharts` 의존성 제거 (미사용 차트 라이브러리)
+- `go mod tidy` 실행 — 미사용 간접 의존성 정리
+- **README.md**: Tech Stack SQLite → Firebase Firestore 반영, 신규 매도 설정 6종 항목 추가, 환경변수 `FIREBASE_CREDENTIALS_JSON` 추가
+- **CLAUDE.md**: SQLite → Firebase Firestore 조건 업데이트
+- **docs/architecture.md**: rev 9 업데이트 — Firestore 마이그레이션·6종 매도 기능·CI/CD 자동 배포 반영, GitHub Actions workflows 2개로 분리 기재
+- **docs/plans/sell-control-features.md**: 완료된 계획서 보관
+
 ## 2026-05-05 — feat: 매도 제어 6개 기능 구현 (Phase 1~4)
 
 - **Settings.jsx**: `매도관리` 탭 추가 — 트레일링 스탑·횡보탐지·매도조건 순위·상한가 매도·연속 손절 UI
