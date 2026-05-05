@@ -50,10 +50,12 @@ type Engine struct {
 	mon       *monitor.Monitor
 	mstStore  *stockmaster.Store
 
-	mu         sync.RWMutex
-	state      EngineState
-	haltReason string
-	soldCh     chan string
+	mu                  sync.RWMutex
+	state               EngineState
+	haltReason          string
+	soldCh              chan string
+	consecutiveLosses   int
+	consecutiveLossHalt bool
 }
 
 // NewEngine creates a new Engine with all required dependencies.
@@ -143,6 +145,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 		case code := <-e.soldCh:
 			logger.Info("engine: sold signal — rescanning", map[string]any{"stock_code": code})
 			time.Sleep(3 * time.Second)
+			e.updateConsecutiveLosses(ctx, code)
 			e.tryBuy(ctx)
 		case <-ticker.C:
 			e.tryBuy(ctx)
@@ -177,6 +180,25 @@ func (e *Engine) tryBuy(ctx context.Context) {
 	if settings.DailyMaxLossPct > 0 {
 		if e.dailyLossExceeded(ctx, settings.DailyMaxLossPct) {
 			e.setHaltReason(fmt.Sprintf("daily loss limit %.1f%% reached", settings.DailyMaxLossPct))
+			e.setState(StateMonitoring)
+			return
+		}
+	}
+
+	// Consecutive loss check (0 = disabled)
+	if settings.MaxConsecutiveLosses > 0 {
+		e.mu.RLock()
+		lossHalt := e.consecutiveLossHalt || e.consecutiveLosses >= settings.MaxConsecutiveLosses
+		e.mu.RUnlock()
+		if lossHalt {
+			e.mu.Lock()
+			e.consecutiveLossHalt = true
+			e.mu.Unlock()
+			e.setHaltReason(fmt.Sprintf("consecutive losses %d reached limit %d — halted for today", e.consecutiveLosses, settings.MaxConsecutiveLosses))
+			logger.Warn("engine: consecutive loss halt", map[string]any{
+				"consecutive_losses": e.consecutiveLosses,
+				"limit":              settings.MaxConsecutiveLosses,
+			})
 			e.setState(StateMonitoring)
 			return
 		}
@@ -658,6 +680,39 @@ func (e *Engine) inBuyPause(start, end string) bool {
 		return false
 	}
 	return hhmm >= startHHMM && hhmm < endHHMM
+}
+
+// resetConsecutiveLosses resets the counter at engine start (called by main.go scheduler).
+func (e *Engine) ResetConsecutiveLosses() {
+	e.mu.Lock()
+	e.consecutiveLosses = 0
+	e.consecutiveLossHalt = false
+	e.mu.Unlock()
+}
+
+// updateConsecutiveLosses checks the latest trade result for a stock and updates the counter.
+func (e *Engine) updateConsecutiveLosses(ctx context.Context, stockCode string) {
+	report, err := e.db.GetLatestCompletedTradeByStock(ctx, stockCode)
+	if err != nil || report == nil {
+		return
+	}
+	settings, err := e.db.GetTradingSettings(ctx)
+	if err != nil || settings.MaxConsecutiveLosses <= 0 {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if report.ProfitAmount < 0 {
+		e.consecutiveLosses++
+		logger.Warn("engine: consecutive loss recorded", map[string]any{
+			"stock_code":         stockCode,
+			"profit_amount":      report.ProfitAmount,
+			"consecutive_losses": e.consecutiveLosses,
+		})
+	} else if settings.ConsecutiveLossResetOnProfit {
+		e.consecutiveLosses = 0
+		logger.Info("engine: consecutive loss counter reset (profit)", map[string]any{"stock_code": stockCode})
+	}
 }
 
 // dailyLossExceeded checks whether today's realised P&L has hit the max-loss limit.

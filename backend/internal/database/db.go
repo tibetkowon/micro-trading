@@ -83,6 +83,9 @@ type TradingSettings struct {
 	PartialTPPct       float64
 	PartialTPRatio     float64
 	PartialTPRaiseStop bool
+	// 연속 손절 제한
+	MaxConsecutiveLosses        int
+	ConsecutiveLossResetOnProfit bool
 	// 일일 손익 한도
 	DailyMaxLossPct      float64
 	DailyTargetProfitPct float64
@@ -273,6 +276,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.PartialTPPct = pf(m, "partial_tp_pct", 1.0)
 	s.PartialTPRatio = pf(m, "partial_tp_ratio", 0.5)
 	s.PartialTPRaiseStop = pb(m, "partial_tp_raise_stop", false)
+	s.MaxConsecutiveLosses = pi(m, "max_consecutive_losses", 0)
+	s.ConsecutiveLossResetOnProfit = pb(m, "consecutive_loss_reset_on_profit", true)
 	s.DailyMaxLossPct = pf(m, "daily_max_loss_pct", 0.0)
 	s.DailyTargetProfitPct = pf(m, "daily_target_profit_pct", 0.0)
 	s.FilterRsiMax = pf(m, "filter_rsi_max", 80.0)
@@ -896,6 +901,29 @@ func (db *DB) ListTradeReports(ctx context.Context, limit int) ([]models.TradeRe
 		reports = append(reports, r)
 	}
 	return reports, nil
+}
+
+// GetLatestCompletedTradeByStock returns the most recent sold trade report for a stock.
+// Returns nil, nil if none found.
+func (db *DB) GetLatestCompletedTradeByStock(ctx context.Context, stockCode string) (*models.TradeReport, error) {
+	iter := db.client.Collection(colTradeRpt).
+		Where("stock_code", "==", stockCode).
+		Where("sold_at", "!=", nil).
+		OrderBy("sold_at", firestore.Desc).
+		Limit(1).Documents(ctx)
+	defer iter.Stop()
+	snap, err := iter.Next()
+	if err == iterator.Done {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var r models.TradeReport
+	if err := snap.DataTo(&r); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 // ─── DailyReports ─────────────────────────────────────────────────────────────

@@ -53,6 +53,8 @@ function transformSettings(raw) {
       scan_interval: pi(raw.scan_interval, 60),
       indicator_check_interval: pi(raw.indicator_check_interval_min, 5),
     },
+    max_consecutive_losses: pi(raw.max_consecutive_losses, 0),
+    consecutive_loss_reset_on_profit: pb(raw.consecutive_loss_reset_on_profit, true),
     trailing: {
       trigger_pct: pf(raw.trailing_trigger_pct, 0),
       stop_pct: pf(raw.trailing_stop_pct, 0),
@@ -181,6 +183,8 @@ export default function Settings() {
         flat[`filter_${k}_enabled`] = String(settings.filters?.[k]?.enabled ?? false)
         flat[`filter_${k}_value`] = String(settings.filters?.[k]?.value ?? 0)
       }
+      flat.max_consecutive_losses = String(settings.max_consecutive_losses ?? 0)
+      flat.consecutive_loss_reset_on_profit = String(settings.consecutive_loss_reset_on_profit ?? true)
       flat.trailing_trigger_pct = String(settings.trailing?.trigger_pct ?? 0)
       flat.trailing_stop_pct = String(settings.trailing?.stop_pct ?? 0)
       flat.stagnation_threshold_pct = String(settings.stagnation?.threshold_pct ?? 0)
@@ -511,6 +515,30 @@ export default function Settings() {
 
       {tab === '매도관리' && (
         <div style={{ maxWidth: 600 }}>
+
+          {/* ── 연속 손절 제한 ── */}
+          <div style={{ marginBottom: 24 }}>
+            <div className="form-label" style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--accent)' }}>
+              연속 손절 제한
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              N회 연속 손절 시 당일 매매 중지. 0 = 비활성
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">최대 연속 손절 횟수</label>
+                <input className="form-input" type="number" min="0" max="20"
+                  value={settings.max_consecutive_losses ?? 0}
+                  onChange={e => set('max_consecutive_losses', +e.target.value)} />
+              </div>
+            </div>
+            <div className="filter-row">
+              <span className="filter-label">익절 시 연속 손절 카운터 리셋</span>
+              <Toggle
+                checked={settings.consecutive_loss_reset_on_profit ?? true}
+                onChange={v => set('consecutive_loss_reset_on_profit', v)} />
+            </div>
+          </div>
 
           {/* ── 트레일링 스탑 ── */}
           <div style={{ marginBottom: 24 }}>

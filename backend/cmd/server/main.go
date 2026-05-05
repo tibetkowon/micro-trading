@@ -303,6 +303,7 @@ func runMarketScheduler(ctx context.Context,
 					break
 				}
 
+				eng.ResetConsecutiveLosses()
 				stopEngine = eng.Start(ctx)
 				engineRunning = true
 				logger.Info("market scheduler: trading engine started", map[string]any{"hhmm": hhmm, "start": startHHMM, "end": endHHMM})
