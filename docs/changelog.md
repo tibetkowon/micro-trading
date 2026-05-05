@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-05-05 — feat: 매도 제어 6개 기능 구현 (Phase 1~4)
+
+- **Settings.jsx**: `매도관리` 탭 추가 — 트레일링 스탑·횡보탐지·매도조건 순위·상한가 매도·연속 손절 UI
+- **Settings.jsx**: `하드필터` 탭에 호가 스프레드 최대값 설정 추가
+- **trader/engine.go**: 연속 손절 카운터(`consecutiveLosses`) + 임계 초과 시 당일 매매 중지
+- **database/db.go**: `MaxConsecutiveLosses`, `MaxBidAskSpreadPct`, `SellOnUpperLimit` 설정 키 추가
+- **kis/client.go**: `OrderBookSnapshot.SpreadPct` (매도1/매수1 호가 스프레드%) + `StockPriceResponse.UpperLimitPrice` (stck_mxpr) 추가
+- **trader/engine.go**: 스캔 단계 호가 스프레드 필터 적용 + 포지션 등록 시 상한가 가격 조회
+- **monitor/monitor.go**: `SellOnUpperLimit` — 상한가 도달 시 즉시 매도 로직 추가
+
 ## 2026-05-04 — fix: Settings 저장 Firestore 직접 쓰기로 전환 (VM API 우회)
 
 - **Settings.jsx**: `save()` 함수를 `apiFetch` → `setDoc(doc(db,'settings','config'), flat, {merge:true})` 로 교체
