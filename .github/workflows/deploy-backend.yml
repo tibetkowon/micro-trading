@@ -1,6 +1,11 @@
-name: Deploy Backend (수동)
+name: Deploy Backend
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
   workflow_dispatch:
 
 jobs:
