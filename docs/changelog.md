@@ -1,6 +1,12 @@
 # Changelog
 
-## 2026-05-05 — chore: 미사용 코드 제거 및 전체 문서 업데이트
+## 2026-05-05 — docs: README · architecture · CLAUDE.md 전면 재작성
+
+- **README.md**: 처음부터 재작성 — 정확한 Tech Stack (Go 1.26.1, Firestore), 실제 API 엔드포인트, 현재 설정 키 전체, 매도 우선순위, 스케줄러 시각 반영
+- **docs/architecture.md**: rev 10 전면 재작성 — 실제 패키지 구조 (ops/, scorer/, stockmaster/, report/), Firestore 컬렉션 목록, 엔진 사이클, 가격 플로우
+- **CLAUDE.md**: Tech Stack SQLite → Firebase Firestore, Go 1.26.1 정정
+
+## 2026-05-05 — chore: 미사용 코드 제거 및 이전 문서 업데이트
 
 - **backend/internal/notify/discord.go** 삭제 — Discord 알림 패키지 (임포트 없음, 완전 미사용)
 - **frontend/package.json**: `recharts` 의존성 제거 (미사용 차트 라이브러리)

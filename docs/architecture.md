@@ -1,6 +1,6 @@
 # Project Architecture
 
-> Last updated: 2026-05-04 (rev 9 — Firebase Firestore 마이그레이션, 6종 매도 제어 기능, CI/CD 자동 배포)
+> Last updated: 2026-05-05 (rev 10)
 
 ## Directory Tree
 
@@ -8,82 +8,90 @@
 micro-trading-for-agent/
 ├── .github/
 │   └── workflows/
-│       ├── deploy-backend.yml  # CD: Go linux/amd64 크로스 컴파일 → GCS 업로드 (main 브랜치 backend/** 변경 시 자동)
-│       └── deploy-frontend.yml # CD: React 빌드 → Firebase Hosting 배포 (main 브랜치 frontend/** 변경 시 자동)
+│       ├── ci.yml                  # CI: 변경 감지 → Go build/fmt/test + React lint/build + GCS/Firebase 자동 배포
+│       ├── deploy-backend.yml      # CD: backend/** 변경 시 Go linux/amd64 빌드 → GCS 업로드
+│       └── deploy-frontend.yml     # CD: frontend/** 변경 시 React 빌드 → Firebase Hosting 배포
 ├── .claude/
-│   └── skills/                 # AI 에이전트 행동 지침 파일 (.md)
-├── backend/                    # Go backend root
+│   └── skills/                     # AI 에이전트 행동 지침 파일 (.md)
+├── backend/                        # Go backend root (Go 1.26.1)
 │   ├── cmd/
 │   │   └── server/
-│   │       └── main.go         # 진입점; ClaudeClient·Engine 초기화, WebSocket·Monitor, 장운영 스케줄러, 서버 시작/종료
+│   │       └── main.go             # 진입점; Firestore 초기화, WebSocket·Monitor·Engine, 장운영 스케줄러
 │   ├── internal/
 │   │   ├── config/
-│   │   │   └── config.go       # .env 로드 (godotenv); KIS·Anthropic·서버 설정
+│   │   │   └── config.go           # godotenv로 .env 로드; KIS·Anthropic·Firebase·서버 설정
 │   │   ├── database/
-│   │   │   └── db.go           # Firebase Firestore 클라이언트 초기화; GetTradingSettings(), SaveReport(), GetLatestCompletedTradeByStock()
+│   │   │   └── db.go               # Firestore 클라이언트 초기화; GetTradingSettings(), SaveReport(), 컬렉션 CRUD
 │   │   ├── models/
-│   │   │   └── models.go       # Firestore 컬렉션 1:1 Go 구조체 (Order, Report, MonitoredPosition 등)
+│   │   │   └── models.go           # Firestore 컬렉션 1:1 Go 구조체 (Order, TradeReport, MonitoredPosition 등)
 │   │   ├── logger/
-│   │   │   └── logger.go       # 구조화 JSON 로깅; KISError()는 필수 필드(error_code, timestamp, raw_response) 강제
+│   │   │   └── logger.go           # 구조화 JSON 로깅; KISError()는 error_code·timestamp·raw_response 필수
 │   │   ├── kis/
-│   │   │   ├── client.go       # KIS REST API 클라이언트; 랭킹/주문/잔고/가격 조회
-│   │   │   ├── websocket.go    # KIS WebSocket 클라이언트 (gorilla/websocket, AES-256-CBC); PriceCh/ExecCh
-│   │   │   ├── chart.go        # KIS 차트 API: GetMinuteChart(1분봉), GetDailyChart(일봉)
-│   │   │   ├── token.go        # OAuth 토큰 발급 + 20시간 자동 갱신 + 자격증명 지문 체크
-│   │   │   └── ratelimiter.go  # TPS 리미터 (15 req/s, golang.org/x/time/rate)
+│   │   │   ├── client.go           # KIS REST API 클라이언트; 주문/잔고/가격/순위 조회
+│   │   │   ├── websocket.go        # KIS WebSocket; H0STCNT0(체결가)/H0STCNI0(체결통보), AES-256-CBC 복호화
+│   │   │   ├── chart.go            # KIS 차트 API: GetMinuteChart, GetDailyChart
+│   │   │   ├── token.go            # OAuth 토큰 발급·갱신·캐시; 잔여 1시간 미만 자동 재발급
+│   │   │   └── ratelimiter.go      # TPS 리미터 (15 req/s, golang.org/x/time/rate)
 │   │   ├── monitor/
-│   │   │   └── monitor.go      # 포지션 모니터; HandlePrice() 가격 체크 + 자동 매도, StartIndicatorChecker() RSI/MACD 주기 평가, LiquidateAll(), SoldCh 엔진 신호
-│   │   ├── agent/
-│   │   │   ├── market.go       # IsMarketOpen(): KST 평일·장 시간·KIS 영업일 3중 체크 + 당일 캐시
-│   │   │   ├── stock_info.go   # GetStockInfo: 현재가 + MA5/MA20 + RSI14 + MACD(12,26,9)
-│   │   │   ├── chart.go        # GetChart: OHLCV 캔들 (1m/5m/1h), 페이지네이션 + 집계
-│   │   │   ├── balance.go      # GetAccountBalance: 잔고 조회 + DB 스냅샷 저장
-│   │   │   ├── order.go        # PlaceOrder/CancelOrder/CheckOrderFeasibility
-│   │   │   ├── ranking.go      # 거래량/체결강도/대량체결건수/이격도 순위 조회 래퍼
-│   │   │   └── history.go      # KIS 체결 내역 동기화; StartOrderSyncScheduler (5분 ticker, 장중에만)
-│   │   ├── trader/
-│   │   │   ├── claude.go       # ClaudeClient: SelectStock() (JSON 파싱), GenerateReport() (한국어 마크다운)
-│   │   │   └── engine.go       # Engine 상태 머신; 자율 종목 선정·주문·체결 대기·모니터 등록 사이클
-│   │   └── api/
-│   │       ├── handlers.go     # HTTP 핸들러: 잔고/종목/차트/주문/모니터/서버상태/순위/설정/리포트/로그/디버그
-│   │       └── router.go       # gin.Engine 설정; 라우트 등록; SPA 폴백
-│   ├── data/                   # 로컬 캐시 파일 (git-ignored)
-│   └── go.mod                  # Go 모듈 정의
-├── frontend/                   # React frontend root
+│   │   │   └── monitor.go          # 포지션 실시간 모니터; HandlePrice() 매도 로직, StartIndicatorChecker()
+│   │   ├── ops/
+│   │   │   ├── market.go           # IsMarketOpen(): KST 평일·장 시간·KIS 영업일 3중 체크
+│   │   │   ├── stock_info.go       # GetStockInfo: 현재가 + MA5/MA20 + RSI14 + MACD(12,26,9)
+│   │   │   ├── chart.go            # GetChart: OHLCV 캔들 (1m/5m/1h), 페이지네이션 + 집계
+│   │   │   ├── balance.go          # GetAccountBalance: 잔고 조회 + Firestore 스냅샷 저장
+│   │   │   ├── order.go            # PlaceOrder/CancelOrder/CheckOrderFeasibility
+│   │   │   ├── ranking.go          # 거래량/체결강도/등락률/VI 순위 조회 래퍼
+│   │   │   └── history.go          # KIS 체결 내역 동기화; StartOrderSyncScheduler (5분 ticker)
+│   │   ├── report/
+│   │   │   └── report.go           # GenerateDailyReport: 당일 거래 집계 + Firestore 저장
+│   │   ├── scorer/
+│   │   │   └── scorer.go           # 매수 후보 스코어링 (체결강도·RSI·MACD·호가잔량·VWAP·거래량 가중치 합산)
+│   │   ├── stockmaster/
+│   │   │   ├── downloader.go       # KIS MST 파일 일일 다운로드 (08:40)
+│   │   │   ├── parser.go           # MST 파일 파싱 (종목코드·종목명·상한가 등)
+│   │   │   └── store.go            # 종목 마스터 Firestore 저장 + 인메모리 캐시
+│   │   └── trader/
+│   │       └── engine.go           # Engine 상태 머신; 종목 스캔·스코어링·주문·체결 대기·모니터 등록 사이클
+│   ├── data/                       # 런타임 캐시 파일 (git-ignored)
+│   └── go.mod                      # Go 1.26.1 모듈 정의
+├── frontend/                       # React 18 + Vite frontend
 │   ├── src/
-│   │   ├── main.jsx            # React 진입점; BrowserRouter 설정
-│   │   ├── App.jsx             # 루트 컴포넌트; 네비게이션 + 라우트 정의
-│   │   ├── index.css           # Tailwind 베이스 스타일
+│   │   ├── main.jsx                # React 진입점; BrowserRouter, Firebase 초기화
+│   │   ├── App.jsx                 # 루트 컴포넌트; 네비게이션 + 라우트 정의
+│   │   ├── index.css               # Tailwind 베이스 스타일
+│   │   ├── lib/
+│   │   │   └── firebase.js         # Firebase 앱 초기화 및 Firestore 인스턴스 export
 │   │   ├── hooks/
-│   │   │   └── useApi.js       # 범용 fetch 훅 (loading/error/data/refetch)
+│   │   │   └── useApi.js           # 범용 fetch 훅 (loading/error/data/refetch)
 │   │   ├── components/
-│   │   │   ├── Card.jsx        # 재사용 통계 카드
-│   │   │   └── StatusBadge.jsx # 주문 상태 배지 (색상 코딩)
+│   │   │   └── shared.jsx          # 공통 UI 컴포넌트
+│   │   ├── utils/
+│   │   │   └── api.js              # API 엔드포인트 상수 정의
 │   │   └── pages/
-│   │       ├── Dashboard.jsx       # 잔고 카드 + 보유 종목 + 트레이더 상태
-│   │       ├── Monitor.jsx         # 모니터링 포지션 목록
-│   │       ├── Orders.jsx          # 주문 내역 테이블 (오늘 기준)
-│   │       ├── KISLogs.jsx         # KIS API 에러 로그 뷰어
-│   │       ├── SelectionLogs.jsx   # LLM 종목 선정 로그 뷰어
-│   │       ├── RankingLogs.jsx     # 순위 조회 로그 뷰어
-│   │       └── Settings.jsx        # 거래 파라미터·순위·매도조건·지표·US·Claude 설정
-│   ├── index.html              # Vite HTML 템플릿
-│   ├── vite.config.js          # Vite 설정; /api 프록시 → :8080
-│   ├── tailwind.config.js      # Tailwind content 경로
-│   ├── postcss.config.js       # PostCSS (Tailwind + autoprefixer)
-│   └── package.json            # npm 의존성
+│   │       ├── Dashboard.jsx       # 대시보드: 잔고·포지션·일별 수익 요약
+│   │       ├── Positions.jsx       # 모니터링 중인 보유 종목
+│   │       ├── Orders.jsx          # 주문 내역
+│   │       ├── TradeReports.jsx    # 거래 리포트 (매수·매도 건별)
+│   │       ├── DailyReports.jsx    # 일일 리포트
+│   │       ├── Settings.jsx        # 트레이딩 설정 (Firestore 직접 읽기·쓰기)
+│   │       └── Logs.jsx            # 서비스·KIS·스캔 로그
+│   ├── index.html
+│   ├── vite.config.js              # /api 프록시 → :8080
+│   └── package.json                # React 18, Firebase SDK, react-router-dom, MSW
 ├── docs/
-│   ├── architecture.md         # 이 파일
-│   ├── db_schema.md            # Firestore 컬렉션 스키마 문서
-│   ├── changelog.md            # 변경 이력 (최신 항목이 맨 위)
-│   ├── kis-api/                # KIS API 공식 명세서 (기본시세/순위분석/종목정보/주문계좌/인증/실시간)
-│   ├── plans/                  # 기능 구현 계획 문서
-│   └── reviews/                # 한국어 코드 리뷰 문서
-├── SKILL.md                    # 에이전트 스킬 퀵 레퍼런스
-├── .env.example                # 환경변수 템플릿 (시크릿 미포함)
-├── .gitignore                  # .env, *.db, node_modules, 바이너리 제외
-├── CLAUDE.md                   # AI 에이전트 프로젝트 지침
-└── README.md                   # 프로젝트 개요
+│   ├── architecture.md             # 이 파일
+│   ├── db_schema.md                # Firestore 컬렉션 스키마
+│   ├── changelog.md                # 변경 이력
+│   ├── kis-api/                    # KIS API 공식 명세서
+│   ├── plans/                      # 기능 구현 계획 문서
+│   └── reviews/                    # 한국어 코드 리뷰 문서
+├── deploy/                         # 배포 관련 설정
+├── firestore.rules                 # Firestore 보안 규칙
+├── firebase.json                   # Firebase 프로젝트 설정
+├── .env.example                    # 환경변수 템플릿
+├── .gitignore                      # .env, firebase-credentials.json, data/ 제외
+├── CLAUDE.md                       # AI 에이전트 프로젝트 지침
+└── README.md
 ```
 
 ---
@@ -91,220 +99,233 @@ micro-trading-for-agent/
 ## Component Responsibilities
 
 ### `backend/internal/config`
-- **Role:** 환경변수에서 모든 설정을 로드 (하드코딩 금지).
-- **현재 관리 항목:** KIS 자격증명, Anthropic API 키, HTS ID, 서버 포트, DB 경로
+환경변수 로드 (`.env` via godotenv). 관리 항목: KIS 자격증명, Anthropic API 키, HTS ID, Firebase 프로젝트 ID, 서비스 계정 경로, 서버 포트.
 
 ### `backend/internal/database`
-- **Role:** Firebase Firestore 클라이언트 초기화 및 데이터 액세스 레이어.
-- `GetTradingSettings(ctx)` — Firestore `settings/config` 문서에서 설정 50개 이상을 일괄 조회하여 `TradingSettings` 구조체로 반환 (KR/US 설정, 트레일링 스탑, 상한가 매도, 연속손절 한도, 호가 스프레드 필터 등)
-- `SaveReport(ctx, date, content)` — 일일 리포트 upsert
-- `GetLatestCompletedTradeByStock(ctx, stockCode)` — 특정 종목의 최근 완료 거래 조회 (연속손절 카운터용)
+Firebase Firestore 클라이언트 초기화 및 데이터 액세스 레이어.
+- `GetTradingSettings(ctx)` — `settings/config` 문서에서 설정 50개 이상을 `TradingSettings` 구조체로 반환
+- `SaveReport(ctx, date, content)` — `daily_reports/{date}` upsert
+- `GetLatestCompletedTradeByStock(ctx, code)` — 연속손절 카운터용 최근 완료 거래 조회
 
 ### `backend/internal/models`
-- **Role:** DB 테이블과 1:1 대응하는 공유 데이터 구조체.
-- `Order`, `MonitoredPosition`, `Balance`, `KISAPILog`, `Token`, `Report`, `Setting`
+Firestore 컬렉션과 1:1 대응하는 Go 구조체.  
+`Order`, `TradeReport`, `MonitoredPosition`, `Balance`, `KISAPILog`, `Token`, `DailyReport`, `StockMaster`
 
 ### `backend/internal/kis`
-- **`client.go`** — REST API 요청/응답, 토큰 주입, Rate Limiting; 해외주식 API 7종 추가:
-  - `GetOverseasPrice`, `GetOverseasVolumeRank`
-  - `PlaceOverseasBuyOrder`, `PlaceOverseasSellOrder`
-  - `GetOverseasHoldings`, `GetOverseasAvailableOrder`
-  - `GetOverseasDailyChart`
-- **`websocket.go`** — WebSocket 연결/재연결, `H0STCNT0`(체결가)/`H0STCNI0`(체결통보) 구독, AES-256-CBC 복호화; 해외주식 실시간 가격(`HDFSCNT0`) 구독/해제 지원
-  - `PriceCh chan PriceEvent` — monitor.StartPriceConsumer가 소비
-  - `ExecCh chan ExecEvent` — trader.Engine이 체결 확인에 사용 (단일 소비자)
-- **`token.go`** — OAuth 토큰 발급·갱신·캐시, 자격증명 지문 체크
+- **`client.go`** — REST API 요청/응답, 토큰 주입, Rate Limiting (15 req/s).  
+  `GetOrderBookSnapshot` (호가 스프레드%), `GetStockPrice` (상한가 포함)
+- **`websocket.go`** — WebSocket 연결/자동 재연결, `H0STCNT0`(체결가) / `H0STCNI0`(체결통보) 구독, AES-256-CBC 복호화.  
+  `PriceCh chan PriceEvent` → monitor 소비 | `ExecCh chan ExecEvent` → engine 체결 확인
+- **`token.go`** — OAuth 토큰 발급·갱신·캐시. 잔여 1시간 미만이면 자동 재발급.
 
 ### `backend/internal/monitor`
-- **Role:** 보유 포지션 실시간 모니터링.
-- `MonitoredEntry` — `Market string`("KR"/"US"), `ExchCode string`(해외거래소), `TrailingTriggerPct/TrailingStopPct/PeakPrice/TrailingActivated` 트레일링 스탑 필드, `UpperLimitPrice/SellOnUpperLimit` 상한가 매도 필드 포함
-- `Register(ctx, pos MonitoredEntry)` — 포지션 등록; US 종목은 해외 실시간 가격 WebSocket 구독
-- `HandlePrice(stockCode, price, isTest)` — WebSocket 가격 이벤트 처리; 상한가 도달 매도 → 트레일링 스탑 활성화·갱신 → 목표/손절 도달 시 `executeSell()`(KR) 또는 `executeOverseasSell()`(US) + `SoldCh` 알림
-- `StartIndicatorChecker(ctx, intervalMin, conditions, rsiThreshold, macdBearish, getInfoFn)` — RSI/MACD 주기 평가; `getInfoFn` 콜백으로 순환 임포트 방지
-- `LiquidateAll(ctx, market ...string)` — 전량 시장가 청산; market 인자로 "KR"/"US" 선택 가능 (생략 시 전체)
+보유 포지션 실시간 모니터링.
 
-### `backend/internal/agent`
-- **Role:** KIS API 데이터와 DB를 연결하는 거래 액션 함수 모음.
-- `IsMarketOpen()` — KST 평일·장 운영 시간(9:00~15:30)·KIS 영업일 여부 체크, 당일 캐시
-- `GetStockInfo()` — 현재가 + MA5/MA20 + RSI14 + MACD(12,26,9) 계산
-- `PlaceOrder()`, `CancelOrder()`, `CheckOrderFeasibility()` — 주문 실행 및 가능수량 조회
-- `StartOrderSyncScheduler()` — 5분 간격 KIS 체결 내역 동기화
+**MonitoredEntry 주요 필드:**
+```go
+FilledPrice        float64       // 진입가
+TargetPrice        float64       // 익절가
+StopPrice          float64       // 손절가
+TrailingTriggerPct float64       // 트레일링 스탑 활성화 기준 수익률
+TrailingStopPct    float64       // 트레일링 스탑 고점 대비 허용 하락폭
+PeakPrice          float64       // 보유 중 최고가
+TrailingActivated  bool          // 트레일링 스탑 활성화 여부
+PartialTPDone      bool          // 분할 익절 완료 여부 (1회 한정)
+UpperLimitPrice    float64       // 당일 상한가
+SellOnUpperLimit   bool          // 상한가 도달 시 즉시 매도
+SoldCh             chan<- string // 매도 완료 → 엔진 신호
+```
+
+**HandlePrice() 매도 로직 (우선순위 순):**
+1. 트레일링 스탑 — 활성화 기준 수익 달성 후 고점 대비 하락 시
+2. 분할 익절 — 기준 수익 달성 시 `partialTPRatio` 비율 매도 (1회)
+3. 상한가 — `SellOnUpperLimit=true` 이고 `price >= UpperLimitPrice`
+4. 목표가 — `price >= TargetPrice`
+5. 손절가 — `price <= StopPrice`
+6. 횡보 감지 — 변동폭 임계 내 지속 시 분할 청산
+
+`StartIndicatorChecker(ctx, intervalMin, ...)` — RSI 과매수·MACD 데드크로스 주기 평가, 조건 충족 시 매도.
+
+`LiquidateAll(ctx)` — 전량 시장가 청산 (15:15 자동 호출).
+
+### `backend/internal/ops`
+KIS API와 Firestore를 연결하는 거래 액션 함수 모음.
+- `IsMarketOpen()` — KST 평일·09:00~15:30·KIS 영업일 여부 체크, 당일 캐시
+- `GetStockInfo(code)` — 현재가 + MA5/MA20 + RSI14 + MACD(12,26,9)
+- `PlaceOrder()`, `CancelOrder()`, `CheckOrderFeasibility()`
+- `StartOrderSyncScheduler()` — 5분 간격 KIS 체결 내역 Firestore 동기화
+
+### `backend/internal/scorer`
+매수 후보 종목 스코어링. 체결강도·RSI·MACD·호가잔량·VWAP·거래량을 가중치 합산하여 점수 계산. `min_score_threshold` 미달 종목 제외.
+
+### `backend/internal/stockmaster`
+매일 08:40 KIS MST 파일 다운로드·파싱 후 Firestore `stock_masters` 컬렉션 업데이트. 종목명·상한가 정보를 인메모리 캐시로 제공.
+
+### `backend/internal/report`
+`GenerateDailyReport(ctx)` — 당일 `orders` 컬렉션에서 AGENT 주문 집계 후 일일 리포트 생성 및 `daily_reports/{date}` 저장.
 
 ### `backend/internal/trader`
-- **Role:** Claude API 기반 자율 트레이딩 엔진 (KR/US 듀얼 마켓).
-- **`claude.go`**
-  - `ClaudeClient.SelectStocks(ctx, rankings, availableCash, excludedCodes, market)` → `([]Selection, error)` — `market="KR"|"US"` 에 따라 프롬프트 분기
-  - `ClaudeClient.GenerateReport(ctx, date, trades, totalEval, withdrawable)` → `(markdown, error)`
-- **`engine.go`**
-  - `Engine.market` = `"KR"` | `"US"` (NewEngine 생성 시 지정)
-  - `Engine.Start(ctx)` → 사이클 goroutine 시작, `stop func()` 반환
-  - `Engine.GetState()` → 현재 상태 (`IDLE|SEARCHING|SELECTING|ORDERING|WAITING_FILL|MONITORING`)
-  - `Engine.GenerateDailyReport(ctx)` → 당일 AGENT 주문 로드 후 Claude 리포트 생성
-  - `Engine.SoldCh()` → Monitor에 주입할 매도 완료 채널 반환
-  - **KR 품질 필터 (selectAndBuy):** 매수중단시간대 → 연속손절한도 초과 → 지수필터(-1% 이상 하락) → 거래대금 하한선 → RSI/이격도 하드필터 → HighPriceDiff → MA5<MA20 → 호가스프레드 상한 → 일일손실한도
-  - `consecutiveLosses int` / `consecutiveLossHalt bool` — 연속손절 카운터·중단 상태 엔진 내 관리
-  - `ResetConsecutiveLosses()` — 장 시작(09:00) 시 자동 호출하여 연속손절 카운터 초기화
-  - **US 품질 필터 (selectAndBuyUS):** 거래대금 하한선 → GetOverseasDailyChart MA5/MA20 크로스 확인 + 추가 필터
+자율 트레이딩 엔진.
+- **`engine.go`** — 상태 머신: IDLE → SCANNING → SCORING → ORDERING → WAITING_FILL → MONITORING.  
+  `consecutiveLosses` / `consecutiveLossHalt` — 연속손절 카운터·중단 상태 관리.  
+  `ResetConsecutiveLosses()` — 09:00 장 시작 시 자동 호출.
 
 ### `backend/internal/api`
-- **Role:** HTTP 레이어. 입력 검증 → agent/db/engine 함수 호출 → JSON 응답.
-- `Handler.SetEngine(e)` — main에서 engine 주입
+HTTP 레이어. 입력 검증 → ops/db/engine 호출 → JSON 응답.
 
 ---
 
-## 장운영 스케줄러 (main.go `runMarketScheduler`)
+## 장운영 스케줄러
 
-### KR 마켓 (국내)
-
-```
-08:50 (KST) → tokenManager.IssueToken()
-            → kisClient.GetApprovalKey()
-            → wsClient.StartWithReconnect()
-            → wsClient.SubscribeExecNotice()
-
-09:00 (KST) → db.GetSetting("trading_enabled") 확인
-            → agent.IsMarketOpen() 확인
-            → tradingReady = true (조건 충족 시)
-
-09:15 (KST) → krEngine.Start(ctx)                ← tradingReady == true 시에만
-            → mon.StartIndicatorChecker(ctx, ...)
-
-15:15 (KST) → krEngine stop()
-            → mon.StartIndicatorChecker cancel()
-            → mon.LiquidateAll(ctx, "KR")
-
-15:20 (KST) → krEngine.GenerateDailyReport(ctx)
-            → db.SaveReport(date, report)
-
-16:00 (KST) → wsClient.Disconnect()
-```
-
-### US 마켓 (미장) — 자정 크로스오버 처리 포함
+**타임존:** Asia/Seoul (KST), 평일만 동작
 
 ```
-us_trading_start_time (기본 22:30 KST)
-            → usEngine.Start(ctx)               ← us_trading_enabled == true 시에만
+08:40 → stockmaster.Download()          종목 마스터 파일 갱신
 
-us_trading_end_time (기본 05:00 KST)
-            → usEngine stop()
-            → mon.LiquidateAll(ctx, "US")
+08:50 → token.IssueToken()              KIS 토큰 발급
+      → kisClient.GetApprovalKey()      WebSocket approval key 발급
+      → wsClient.StartWithReconnect()   WebSocket 연결 + 자동 재연결
+      → wsClient.SubscribeExecNotice()  체결통보(H0STCNI0) 구독
+
+09:00 → db.GetSetting("trading_enabled") 확인
+      → ops.IsMarketOpen() 확인
+      → eng.ResetConsecutiveLosses()    연속손절 카운터 초기화
+      → tradingReady = true
+
+trading_start_time (기본 09:15)
+      → krEngine.Start(ctx)             [tradingReady == true 시에만]
+      → mon.StartIndicatorChecker(ctx, ...)
+
+trading_end_time (기본 15:15)
+      → krEngine stop()
+      → indicatorChecker cancel()
+      → mon.LiquidateAll(ctx)
+
+15:20 → report.GenerateDailyReport(ctx)
+
+16:00 → wsClient.Disconnect()
 ```
-
-> `isActiveUSTrading(hhmm, start, end)` — 자정을 넘는 시간대(예: 22:30~05:00) 판별을 위해 종료 시각이 시작 시각보다 작으면 자정 크로스오버로 처리.
 
 ---
 
 ## 트레이딩 엔진 사이클
 
-### KR 사이클 (09:15 ~ 15:15 반복)
-
 ```
 현재 포지션 수 < max_positions?
-  YES → [SEARCHING → SELECTING]
-    1. 당일 거래 종목 코드 제외 목록 조회 (DB)
-    2. 설정된 순위 API 호출 (volume/strength/exec_count/disparity)
-    3. 품질 필터 (순서대로 적용):
+
+  YES → [SCANNING]
+    1. 오늘 거래 종목 제외 목록 조회 (Firestore orders)
+    2. 설정된 ranking_types 순위 API 순차 호출
+    3. 하드 필터 순차 적용:
        a. 매수 중단 시간대(buy_pause_start~end) 해당 시 대기
-       b. 지수 필터 — index_codes 지수 -1% 이상 하락 시 매수 중단
-       c. 거래대금 하한선(min_trading_value) 미달 종목 제거
-       d. 지표 enrichment — GetStockInfo(RSI14, MA5/MA20, 이격도)
-       e. 하드 필터 — RSI 과매수, 이격도 과열, 고가 괴리, MA5<MA20 종목 제거
-       f. 일일 최대 손실 한도 초과 시 매수 중단
-    4. GetInquireBalance() → 가용자금 확인
-    5. ClaudeClient.SelectStocks(rankings, cash, excluded, "KR") → stockCode, reason
-    6. CheckOrderFeasibility(stockCode) → orderableQty
-    7. PlaceOrder(시장가, qty * order_amount_pct%)   [ORDERING]
+       b. 연속손절 한도(max_consecutive_losses) 초과 시 중단
+       c. 지수 필터 — index_codes 지수 임계 하락 시 중단
+       d. 거래대금 하한선(min_trading_value) 미달 제거
+       e. 호가 스프레드 상한(max_bidask_spread_pct) 초과 제거
+       f. RSI/이격도/고가괴리/체결강도 하드 룰 제거
+       g. 일일 손실·목표 한도 초과 시 중단
+
+    4. [SCORING] scorer.Score(candidates) → 상위 종목 선정
+
+    5. GetInquireBalance() → 가용자금 확인
+    6. CheckOrderFeasibility(code) → orderableQty
+    7. PlaceOrder(시장가, qty × order_amount_pct%)   [ORDERING]
     8. ExecCh drain-and-match (KISOrderID 매칭, 최대 5분)   [WAITING_FILL]
-       └─ 타임아웃 → CancelOrder() → 처음으로
-    9. Monitor.Register(pos, SoldCh=engine.soldCh)   [MONITORING]
-   10. 다시 1로 (max_positions 미충족 시 즉시 다음 종목)
+       └─ 타임아웃 → CancelOrder() → 1로
 
-  NO → soldCh 대기 (or 30초 주기 re-check)
-       └─ sold 수신 → 처음으로
-```
+    9. Monitor.Register(pos, SoldCh)   [MONITORING]
+       └─ sell_on_upper_limit=true 이면 GetStockPrice() → UpperLimitPrice 세팅
+   10. updateConsecutiveLosses(code)   손절/익절에 따라 카운터 갱신
+   11. 1로 (max_positions 미충족 시 즉시 다음 종목)
 
-### US 사이클 (us_start ~ us_end 반복)
-
-```
-현재 US 포지션 수 < max_positions?
-  YES → [SEARCHING → SELECTING]
-    1. 당일 거래 종목 코드 제외 목록 조회 (DB)
-    2. GetOverseasVolumeRank(exchange) → 상위 N 종목
-    3. 품질 필터:
-       a. 거래대금 하한선(min_trading_value USD) 미달 종목 제거
-       b. GetOverseasDailyChart — MA5/MA20 데드크로스 종목 제거
-    4. GetOverseasAvailableOrder() → 가용자금 확인
-    5. ClaudeClient.SelectStocks(rankings, cash, excluded, "US") → stockCode, reason
-    6. PlaceOverseasBuyOrder(exchange, stockCode, qty)   [ORDERING]
-    7. ExecCh drain-and-match (최대 5분)   [WAITING_FILL]
-       └─ 타임아웃 → 처음으로
-    8. Monitor.Register(pos{Market:"US", ExchCode:…}, SoldCh=engine.soldCh)   [MONITORING]
-
-  NO → soldCh 대기
-       └─ sold 수신 → 처음으로
+  NO  → soldCh 대기 (or 30초 주기 re-check)
+        └─ sold 수신 → 1로
 ```
 
 ---
 
-## 실시간 가격 모니터링 데이터 플로우
+## 실시간 가격 플로우
 
 ```
 KIS WebSocket (H0STCNT0)
-  ↓ PriceCh (buffered, 256)
+  ↓ PriceCh (buffered 256)
 monitor.StartPriceConsumer()
   ↓ HandlePrice(isTest=false)
-  ├─ price ≥ TargetPrice → executeSell() → KIS 시장가 매도
-  │                      → SoldCh <- stockCode (엔진 신호)
-  │                      → Remove()
-  └─ price ≤ StopPrice  → executeSell() → KIS 시장가 매도
-                         → SoldCh <- stockCode (엔진 신호)
-                         → Remove()
+  ├─ 트레일링 스탑 조건  → executeSell()      → SoldCh → Remove()
+  ├─ 분할 익절 조건      → executePartialSell() → PartialTPDone=true
+  ├─ 상한가 도달         → executeSell()      → SoldCh → Remove()
+  ├─ price ≥ TargetPrice → executeSell()      → SoldCh → Remove()
+  ├─ price ≤ StopPrice   → executeSell()      → SoldCh → Remove()
+  └─ 횡보 감지           → executePartialSell() or executeSell()
 
 KIS WebSocket (H0STCNI0 체결통보)
-  ↓ ExecCh (buffered, 64)
+  ↓ ExecCh (buffered 64)
 trader.Engine.waitForFill() — KISOrderID 매칭, 5분 타임아웃
 
-monitor.StartIndicatorChecker() (5분 주기, 별도 goroutine)
-  → GetStockInfo(code) → RSI14, MACDLine, MACDSignal
-  → rsi_overbought 조건 or macd_bearish 조건 충족 시
-     → executeSell() → SoldCh <- stockCode → Remove()
+monitor.StartIndicatorChecker() (intervalMin 주기, 별도 goroutine)
+  → ops.GetStockInfo(code) → RSI14, MACDLine, MACDSignal
+  → RSI 과매수 or MACD 데드크로스 → executeSell() → SoldCh → Remove()
 
 15:15 LiquidateAll():
-  → GetHoldings → PlaceSellOrder(시장가)
+  → ops.GetHoldings() → PlaceSellOrder(시장가) × 전 종목
 ```
+
+---
+
+## Firestore 컬렉션
+
+| 컬렉션 | 문서 ID | 설명 |
+|--------|---------|------|
+| `settings` | `config` | 모든 트레이딩 설정 (flat key-value) |
+| `orders` | 주문 ID | 매수·매도 주문 기록 |
+| `monitored_positions` | 종목 코드 | 현재 모니터링 중인 포지션 |
+| `balances` | 잔고 ID | 잔고 스냅샷 |
+| `trade_reports` | 리포트 ID | 매수+매도 완료 거래 상세 |
+| `daily_reports` | YYYY-MM-DD | 일별 P&L 요약 리포트 |
+| `service_logs` | 로그 ID | 서비스 운영 이벤트 로그 |
+| `kis_api_logs` | 로그 ID | KIS API 에러 로그 |
+| `scan_logs` | 스캔 ID | 트레이더 스캔 사이클 결과 |
+| `tokens` | `current` | KIS OAuth 토큰 캐시 |
+| `stock_masters` | 종목 코드 | 종목 마스터 데이터 (MST 파일) |
 
 ---
 
 ## API Endpoint Map
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| GET | `/api/balance` | `GetBalance` | 계좌 잔고 조회 |
-| GET | `/api/positions` | `GetPositions` | 실시간 보유 종목 |
-| GET | `/api/stock/:code` | `GetStock` | 현재가 + MA5/MA20 + RSI14 + MACD |
-| GET | `/api/stock/:code/chart` | `GetStockChart` | 캔들 차트 (1m/5m/1h) |
-| GET | `/api/orders` | `GetOrders` | 주문 내역 (`?sync=true` KIS 동기화) |
-| POST | `/api/orders` | `PlaceOrder` | 수동 주문 실행 |
-| POST | `/api/orders/:id/cancel` | `CancelOrder` | KIS 미체결 주문 취소 |
-| DELETE | `/api/orders/:id` | `DeleteOrder` | 주문 단건 삭제 |
-| GET | `/api/orders/feasibility` | `GetFeasibility` | 주문가능수량/금액 조회 |
-| GET | `/api/server/status` | `GetServerStatus` | 서버 통합 상태 (시장·WebSocket·모니터·trader_state) |
-| GET | `/api/monitor/positions` | `GetMonitorPositions` | 모니터링 중인 포지션 목록 |
-| DELETE | `/api/monitor/positions/:code` | `RemoveMonitorPosition` | 모니터링 포지션 제거 |
-| GET | `/api/market/status` | `GetMarketStatus` | 장운영 여부 |
-| GET | `/api/ranking/volume` | `GetVolumeRank` | 거래량 순위 |
-| GET | `/api/ranking/strength` | `GetStrengthRank` | 체결강도 순위 |
-| GET | `/api/ranking/exec-count` | `GetExecCountRank` | 대량체결건수 순위 |
-| GET | `/api/ranking/disparity` | `GetDisparityRank` | 이격도 순위 |
-| GET | `/api/logs/kis` | `GetKISLogs` | KIS API 에러 로그 |
-| DELETE | `/api/logs/kis/:id` | `DeleteKISLog` | 에러 로그 단건 삭제 |
-| GET | `/api/logs/selection` | `GetSelectionLogs` | LLM 종목 선정 로그 (30일 자동 삭제) |
-| GET | `/api/logs/ranking` | `GetRankingLogs` | 순위 조회 로그 (30일 자동 삭제) |
-| GET | `/api/settings` | `GetSettings` | 모든 설정 조회 |
-| PATCH | `/api/settings` | `UpdateSettings` | 설정 변경 |
-| POST | `/api/ws/connect` | `ConnectWebSocket` | WebSocket 수동 연결 |
-| POST | `/api/ws/disconnect` | `DisconnectWebSocket` | WebSocket 수동 해제 |
-| GET | `/health` | (inline) | 헬스 체크 |
-
----
-
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/balance` | 계좌 잔고 |
+| GET | `/api/positions` | 현재 보유 종목 |
+| GET | `/api/stock/:code` | 종목 현재가 + 기술지표 |
+| GET | `/api/stock/:code/chart` | 캔들 차트 |
+| GET | `/api/stocks` | 종목 마스터 목록 |
+| GET | `/api/orders` | 주문 내역 |
+| POST | `/api/orders` | 수동 주문 |
+| POST | `/api/orders/:id/cancel` | 주문 취소 |
+| DELETE | `/api/orders/:id` | 주문 삭제 |
+| GET | `/api/orders/feasibility` | 주문가능수량/금액 |
+| GET | `/api/monitor/positions` | 모니터링 포지션 목록 |
+| DELETE | `/api/monitor/positions/:code` | 포지션 해제 |
+| POST | `/api/monitor/positions/:code/sell` | 강제 매도 |
+| POST | `/api/monitor/liquidate-all` | 전량 청산 |
+| GET | `/api/market/status` | 장운영 여부 |
+| GET | `/api/ranking/volume` | 거래량 순위 |
+| GET | `/api/ranking/strength` | 체결강도 순위 |
+| GET | `/api/ranking/fluctuation` | 등락률 순위 |
+| GET | `/api/ranking/vi-status` | VI 발동 현황 |
+| GET | `/api/settings` | 설정 조회 |
+| PATCH | `/api/settings` | 설정 변경 |
+| GET | `/api/server/status` | 서버 통합 상태 |
+| POST | `/api/trader/force-run` | 트레이더 즉시 실행 |
+| GET | `/api/stats/daily-pnl` | 일별 P&L 집계 |
+| GET | `/api/reports/trades` | 거래 리포트 목록 |
+| GET | `/api/reports/daily` | 일일 리포트 목록 |
+| POST | `/api/reports/daily/generate` | 일일 리포트 수동 생성 |
+| GET | `/api/logs/kis` | KIS API 에러 로그 |
+| DELETE | `/api/logs/kis/:id` | 에러 로그 단건 삭제 |
+| GET | `/api/logs/service` | 서비스 로그 |
+| DELETE | `/api/logs/service/:id` | 서비스 로그 단건 삭제 |
+| GET | `/api/logs/scan` | 스캔 로그 |
+| POST | `/api/ws/connect` | WebSocket 연결 |
+| POST | `/api/ws/disconnect` | WebSocket 해제 |
+| GET | `/health` | 헬스 체크 |

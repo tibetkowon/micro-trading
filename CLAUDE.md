@@ -12,9 +12,10 @@ The system is divided into two main roles:
   - Monitor transaction logs specifically to track KIS (Korea Investment & Securities) API integration errors.
 
 # Tech Stack
-- **Backend:** Go (Golang)
-- **Frontend:** React
-- **Database:** SQLite (Chosen for low memory footprint)
+- **Backend:** Go 1.26.1, Gin
+- **Frontend:** React 18, Vite, Firebase SDK
+- **Database:** Firebase Firestore
+- **Hosting:** Firebase Hosting (Frontend) · GCS + NCP VM (Backend)
 
 # Initial Goals & Architecture
 - Establish a clear separation between Backend and Frontend.

@@ -1,39 +1,32 @@
-# micro-trading-for-agent
+# micro-trading
 
-Claude AI가 KIS(한국투자증권) API를 통해 종목 선정부터 매수·모니터링·매도·일일 리포트까지 완전 자율 수행하는 주식 자동매매 시스템.
+Claude AI가 KIS(한국투자증권) API를 통해 종목 선정부터 매수·모니터링·매도·일일 리포트까지 완전 자율 수행하는 국내 주식 자동매매 시스템.  
 NCP Micro (1GB RAM) 환경에서 효율적으로 동작하도록 설계되었습니다.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.24, Gin, Firebase Firestore |
-| AI | Anthropic Claude API (`anthropic-sdk-go`) |
-| Realtime | KIS WebSocket (`gorilla/websocket`) |
-| Frontend | React 18, Vite, TailwindCSS, Firebase SDK |
+| Backend | Go 1.26.1, Gin |
 | Database | Firebase Firestore |
-| Hosting | Firebase Hosting (frontend), GCS + NCP VM (backend) |
+| AI | Anthropic Claude API |
+| Realtime | KIS WebSocket (gorilla/websocket) |
+| Frontend | React 18, Vite, Firebase SDK |
+| Hosting | Firebase Hosting (Frontend) · GCS + NCP VM (Backend) |
 | CI/CD | GitHub Actions |
 
 ## 시스템 개요
 
-국내(KR) + 미장(US) 동시 운영 듀얼 엔진으로 서버가 Claude API를 활용하여 각 시장 시간 중 다음 사이클을 자율 반복합니다:
+서버가 매일 장 시간 중 다음 사이클을 자율 반복합니다:
 
-**KR (국내):**
 ```
-국내 순위 조회 → 품질 필터(지수·거래대금·RSI/이격도) → Claude 종목 선정 → KIS 시장가 매수
-  → WebSocket 체결 확인 → 포지션 모니터 등록
-  → 목표가/손절가/트레일링스탑/지표 감시 → 자동 매도 → 다음 사이클
-```
-
-**US (미장):**
-```
-해외 거래량 순위 조회 → 품질 필터(MA5/MA20/RSI/MACD/5분봉이격도) → Claude 종목 선정 → 해외 시장가 매수
-  → WebSocket 체결 확인 → 포지션 모니터 등록
-  → 목표가/손절가 감시 → 자동 매도 → 다음 사이클
+순위 조회 → 하드 필터 → 스코어링 → 매수 주문
+→ WebSocket 체결 확인 → 포지션 모니터 등록
+→ 목표가 / 손절가 / 트레일링스탑 / 상한가 / 횡보 감시 → 자동 매도
+→ 다음 사이클
 ```
 
-매일 15:20에 Claude가 당일 거래 내역을 분석한 한국어 마크다운 일일 리포트를 생성하여 DB에 저장합니다.
+매일 15:20에 당일 거래 내역을 분석한 일일 리포트를 Firestore에 저장합니다.
 
 ---
 
@@ -43,7 +36,6 @@ NCP Micro (1GB RAM) 환경에서 효율적으로 동작하도록 설계되었습
 
 ```bash
 cp .env.example .env
-# .env 파일에 필요한 값을 입력하세요
 ```
 
 | 키 | 필수 | 설명 |
@@ -52,12 +44,13 @@ cp .env.example .env
 | `KIS_APP_SECRET` | ✅ | KIS Open API 시크릿 |
 | `KIS_ACCOUNT_NO` | ✅ | 계좌번호 앞 8자리 |
 | `KIS_ACCOUNT_TYPE` | | `01`=종합계좌 (기본값) |
-| `KIS_BASE_URL` | | 실전: `https://openapi.koreainvestment.com:9443` |
+| `KIS_BASE_URL` | ✅ | 실전: `https://openapi.koreainvestment.com:9443` |
 | `KIS_HTS_ID` | | HTS 아이디 — 실시간 체결통보 수신 시 필요 |
-| `ANTHROPIC_API_KEY` | ✅ | Claude API 키 — 자율 트레이딩 엔진 동작에 필요 |
-| `FIREBASE_CREDENTIALS_JSON` | ✅ | Firebase 서비스 계정 JSON (백엔드 Firestore 접근용) |
-
-> `ANTHROPIC_API_KEY` 미설정 시 서버는 기동되지만 자율 매매 엔진이 비활성화됩니다.
+| `FIREBASE_PROJECT_ID` | ✅ | Firebase 프로젝트 ID |
+| `FIREBASE_CREDENTIALS_JSON` | ✅ | 서비스 계정 JSON 파일 경로 |
+| `ANTHROPIC_API_KEY` | | Claude API 키 — 미설정 시 자율 매매 비활성화 |
+| `SERVER_PORT` | | 기본값 `8080` |
+| `FRONTEND_ORIGIN` | | CORS 허용 프론트엔드 도메인 |
 
 ### 2. 백엔드 실행
 
@@ -74,134 +67,149 @@ go run cmd/server/main.go
 cd frontend
 npm install
 npm run dev
-# → http://localhost:3000
 ```
 
 ---
 
-## 자동 스케줄러 동작
+## 자동 스케줄러
 
-| 시각 (KST) | 동작 | 조건 |
-|-----------|------|------|
-| **08:50** | KIS 토큰 갱신 + WebSocket 연결 + 체결통보 구독 | 평일 |
-| **09:00** | `trading_enabled` 확인 + 장 개장 여부 확인 → tradingReady 세팅 | 평일 |
-| **`trading_start_time`** (기본: 09:15) | 자율 트레이딩 엔진 시작 + 지표 감시 시작 | `tradingReady == true` |
-| **`trading_end_time`** (기본: 15:15) | KR 엔진 정지 + 국내 포지션 전량 시장가 청산 | 평일 |
-| **15:20** | Claude 일일 리포트 생성 → DB 저장 | 평일 |
-| **16:00** | WebSocket 연결 해제 | 평일 |
-| 5분 주기 | KIS 체결 내역 → DB 동기화 | 장 중에만 |
-| **`us_trading_start_time`** (기본: 22:30 KST) | US 엔진 시작 | `us_trading_enabled == true` |
-| **`us_trading_end_time`** (기본: 05:00 KST) | US 엔진 정지 + 미국 포지션 전량 청산 | - |
+| 시각 (KST) | 동작 |
+|-----------|------|
+| **08:40** | 종목 마스터(MST) 파일 다운로드 |
+| **08:50** | KIS 토큰 발급 → WebSocket 연결 → 체결통보 구독 |
+| **09:00** | `trading_enabled` 확인 → `tradingReady` 세팅 + 연속손절 카운터 초기화 |
+| **`trading_start_time`** (기본: 09:15) | 자율 트레이딩 엔진 시작 + 지표 감시 시작 |
+| **`trading_end_time`** (기본: 15:15) | 엔진 정지 → 전량 시장가 청산 |
+| **15:20** | 일일 리포트 생성 |
+| **16:00** | WebSocket 연결 해제 |
 
-> 거래 시작·종료 시간은 Settings 화면에서 변경 가능합니다. 변경 시 다음 틱(30초 이내)부터 반영됩니다.
+> 거래 시작·종료 시간은 Settings 화면에서 변경 가능하며, 변경 시 다음 틱(30초 이내) 반영됩니다.
 
 ---
 
-## 트레이딩 엔진 상태 머신
+## 매도 조건 우선순위
 
-```
-IDLE → SEARCHING → SELECTING → ORDERING → WAITING_FILL → MONITORING
-           ↑                                                    │
-           └──────────────── (매도 완료 신호) ───────────────────┘
-```
+`HandlePrice()` 에서 아래 순서로 평가됩니다:
 
-- **SEARCHING**: 포지션 여유 있음 — 매수 종목 탐색 대기 단계
-- **SELECTING**: 순위 API 조회 → 품질 필터 적용 → Claude에 종목 선정 요청
-- **ORDERING**: KIS 시장가 매수 주문 실행
-- **WAITING_FILL**: WebSocket ExecCh에서 체결 확인 (최대 5분 → 타임아웃 시 취소 후 재선정)
-- **MONITORING**: Monitor에 포지션 등록 후 다음 종목 선정 대기
+1. **트레일링 스탑** — `trailing_trigger_pct` 달성 후 고점 대비 `trailing_stop_pct` 하락 시 전량 매도
+2. **분할 익절** — `partial_tp_pct` 달성 시 `partial_tp_ratio` 비율 매도 (1회 한정)
+3. **상한가 매도** — `sell_on_upper_limit=true` 이고 당일 상한가 도달 시 즉시 전량 매도
+4. **목표가 (익절)** — `take_profit_pct` 달성 시 전량 매도
+5. **손절가 (손절)** — `stop_loss_pct` 도달 시 전량 매도
+6. **횡보 감지** — `stagnation_threshold_pct` 범위 내 `stagnation_duration_min` 지속 시 분할 청산
 
 ---
 
 ## 트레이딩 설정
 
-Settings 화면 또는 `PATCH /api/settings` API로 변경합니다.
+Settings 화면 또는 `PATCH /api/settings` 로 변경합니다. 모든 설정은 Firestore `settings/config` 에 저장됩니다.
 
-### 공통 설정
+### 기본 설정
 
 | 설정 키 | 기본값 | 설명 |
 |---------|--------|------|
 | `trading_enabled` | true | OFF 시 주문 API 차단 |
-| `take_profit_pct` | 3.0 | 익절 기준 (%) |
-| `stop_loss_pct` | 2.0 | 손절 기준 (%) |
+| `trading_start_time` | 09:15 | 엔진 시작 시간 (KST) |
+| `trading_end_time` | 15:15 | 엔진 종료 + 전량 청산 시간 (KST) |
 | `max_positions` | 1 | 동시 보유 최대 종목 수 |
-| `order_amount_pct` | 95 | 주문가능금액 대비 실제 주문 비율 (%) |
-| `trading_start_time` | 09:15 | KR 엔진 시작 시간 (KST) |
-| `trading_end_time` | 15:15 | KR 엔진 종료 + 전량 청산 시간 (KST) |
-| `buy_pause_start` | "" | 매수 중단 시작 시간 |
-| `buy_pause_end` | "" | 매수 중단 종료 시간 |
-| `daily_max_loss_pct` | 0 | 일일 최대 손실 한도 (국장 KRW 기준, 0=비활성) |
-| `min_trading_value` | 0 | 최소 거래대금 (국장 KRW 기준, 0=비활성) |
+| `order_amount_pct` | 95.0 | 주문가능금액 대비 실제 주문 비율 (%) |
+| `buy_pause_start` / `buy_pause_end` | "" | 매수 중단 시간대 (HH:MM) |
+| `daily_max_loss_pct` | 0 | 일일 최대 손실 한도 (%, 0=비활성) |
+| `daily_target_profit_pct` | 0 | 일일 목표 수익 한도 (%, 0=비활성) |
+
+### 익절 / 손절
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
+| `take_profit_pct` | 3.0 | 기본 익절 기준 (%) |
+| `stop_loss_pct` | 2.0 | 기본 손절 기준 (%) |
+| `etf_take_profit_pct` | 0.5 | ETF 익절 기준 (%) |
+| `etf_stop_loss_pct` | 1.0 | ETF 손절 기준 (%) |
+| `stock_take_profit_pct` | 1.5 | 주식 익절 기준 (%) |
+| `stock_stop_loss_pct` | 1.0 | 주식 손절 기준 (%) |
+
+### 트레일링 스탑
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
 | `trailing_trigger_pct` | 0 | 트레일링 스탑 활성화 기준 수익률 (0=비활성) |
-| `trailing_stop_pct` | 1.0 | 트레일링 스탑 고점 대비 허용 하락폭 (%) |
-| `stagnation_threshold_pct` | 1.0 | 횡보 감지 기준 변동폭 (%) |
-| `stagnation_duration_min` | 30 | 횡보 지속 기준 시간 (분) |
-| `sell_conditions` | ["target_pct","stop_pct"] | 매도 조건 우선순위 배열 |
-| `sell_on_upper_limit` | false | 당일 상한가 도달 시 즉시 매도 여부 |
-| `max_consecutive_losses` | 0 | 연속 손절 허용 횟수 (0=비활성) — 초과 시 당일 매수 중단 |
-| `consecutive_loss_reset_on_profit` | false | 익절 발생 시 연속손절 카운터 리셋 여부 |
+| `trailing_stop_pct` | 0 | 고점 대비 허용 하락폭 (%) |
+
+### 분할 익절
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
+| `partial_tp_enabled` | false | 분할 익절 사용 여부 |
+| `partial_tp_pct` | 1.0 | 분할 익절 기준 수익률 (%) |
+| `partial_tp_ratio` | 0.5 | 분할 익절 비율 (예: 0.5 = 50%) |
+| `partial_tp_raise_stop` | false | 분할 익절 후 손절가 본전 상향 여부 |
+
+### 매도 조건 제어
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
+| `sell_conditions` | ["take_profit","stop_loss"] | 활성화할 매도 조건 목록 |
+| `sell_on_upper_limit` | false | 당일 상한가 도달 시 즉시 매도 |
+| `max_consecutive_losses` | 0 | 연속 손절 허용 횟수 (0=비활성, 초과 시 당일 매수 중단) |
+| `consecutive_loss_reset_on_profit` | true | 익절 시 연속손절 카운터 리셋 |
+
+### 횡보 감지
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
+| `stagnation_threshold_pct` | 0 | 횡보 기준 변동폭 (%, 0=비활성) |
+| `stagnation_duration_min` | 0 | 횡보 지속 기준 시간 (분) |
+| `stagnation_partial_exit_enabled` | false | 횡보 감지 시 분할 청산 여부 |
+| `stagnation_bidask_sell_threshold` | 1.0 | 호가잔량비율 미만 시 즉시 청산 기준 |
+
+### 지표 감시
+
+| 설정 키 | 기본값 | 설명 |
+|---------|--------|------|
 | `indicator_check_interval_min` | 5 | 지표 확인 주기 (분) |
-| `indicator_rsi_sell_threshold` | 70 | RSI 과매수 기준값 |
+| `indicator_rsi_sell_threshold` | 70.0 | RSI 과매수 기준값 |
 | `indicator_macd_bearish_sell` | false | MACD 데드크로스 시 매도 여부 |
-| `claude_model` | claude-sonnet-4-6 | 종목 선정·리포트에 사용할 모델 |
 
-### 국장(KR) 순위 조회 설정
+### 순위 조회 설정
 
 | 설정 키 | 기본값 | 설명 |
 |---------|--------|------|
-| `ranking_types` | ["volume","strength","exec_count","disparity"] | 순위 유형 |
-| `ranking_condition` | AND | AND=교집합, OR=합집합 |
+| `ranking_types` | ["volume","strength"] | 순위 유형 (volume/strength/fluctuation/vi_status) |
+| `ranking_condition` | OR | AND=교집합, OR=합집합 |
 | `ranking_price_min` | 5000 | 최소 주가 (원) |
-| `ranking_price_max` | 100000 | 최대 주가 (원) |
-| `ranking_top_n` | 20 | 타입별 상위 N개 제한 |
-| `ranking_volume_min_incrrate` | 0 | 거래량 전일대비 최소 증가율 (%) |
-| `ranking_strength_min` | 100 | 최소 체결강도 (%) |
-| `ranking_execcount_net_buy_only` | true | 순매수체결량 > 0 종목만 허용 |
-| `ranking_disparity_d20_min` | 0 | 20일 이격도 최솟값 |
-| `ranking_disparity_d20_max` | 0 | 20일 이격도 최댓값 |
+| `ranking_price_max` | 200000 | 최대 주가 (원) |
+| `ranking_top_n` | 30 | 타입별 상위 N개 |
+| `ranking_exchanges` | ["0001","1001"] | 거래소 코드 |
+| `ranking_exclude_cls` | 1111111111 | 순위 조회 제외 종목 플래그 |
 
-### 국장(KR) 하드 필터
+### 하드 필터 (진입 전 제외 기준)
 
 | 설정 키 | 기본값 | 설명 |
 |---------|--------|------|
-| `filter_rsi_max` | 80 | RSI 상한 (이상이면 후보 제외) |
-| `filter_disparity_m5_max` | 3.0 | 5분봉 이격도 상한 (%) |
-| `filter_high_price_diff_min` | -5.0 | 당일 고점 낙폭 하한 (%) |
-| `filter_open_price_diff_max` | 20.0 | 당일 시가 대비 상승률 상한 (%) |
-| `index_drop_threshold_pct` | -1.0 | 지수 낙폭 임계값 (%) |
-| `index_codes` | [] | 지수 필터 코드 JSON 배열 |
-| `ranking_excl_cls` | 1111111111 | 순위 조회 제외 종목 플래그 |
-| `max_bidask_spread_pct` | 0 | 최대 허용 호가 스프레드 (%, 0=비활성) — 초과 종목 후보 제외 |
+| `max_bidask_spread_pct` | 0 | 최대 허용 호가 스프레드 (%, 0=비활성) |
+| `min_trading_value` | 0 | 최소 거래대금 (원, 0=비활성) |
+| `index_drop_threshold_pct` | -1.0 | 지수 낙폭 임계값 — 초과 시 매수 중단 (%) |
+| `index_codes` | [] | 지수 필터 코드 목록 |
+| `hard_rsi_max` | 70.0 | RSI 상한 |
+| `hard_strength_min` | 100.0 | 최소 체결강도 (%) |
+| `hard_disparity_m5_min` | -1.5 | 5분봉 이격도 하한 (%) |
+| `hard_disparity_m5_max` | 3.0 | 5분봉 이격도 상한 (%) |
+| `hard_high_price_diff_max` | -0.5 | 당일 고점 대비 최대 하락 (%) |
+| `hard_high_price_diff_min` | -5.0 | 당일 고점 대비 최소 하락 (%) |
+| `hard_open_price_diff_max` | 15.0 | 시가 대비 상승률 상한 (%) |
+| `hard_macd_bearish_enabled` | false | MACD 데드크로스 진입 차단 |
 
-### Claude Hard Rejection 룰 (국장 KR)
-
-Claude가 종목 선정 시 적용하는 서버사이드 하드 거부 기준입니다. 해당 조건에 맞는 종목은 후보 전달 전에 자동 제외됩니다.
-
-| 설정 키 | 기본값 | 설명 |
-|---------|--------|------|
-| `hard_disparity_m5_min` | -1.5 | 5분봉 MA5 이격도 하한 (%) — 이하이면 칼날 하락으로 스킵 |
-| `hard_disparity_m5_max` | 3.0 | 5분봉 MA5 이격도 상한 (%) — 이상이면 과열로 스킵 |
-| `hard_high_price_diff_max` | -0.5 | 당일 고점 대비 최대 하락 (%) — 이상이면 고점 추격 위험 |
-| `hard_high_price_diff_min` | -5.0 | 당일 고점 대비 최소 하락 (%) — 이하+거래량 급증이면 추세 이탈 |
-| `hard_prev_vol_ratio_max` | 1.2 | 직전봉 대비 거래량 비율 상한 — 이상이면 대량 매도 징후 |
-| `hard_strength_min` | 100.0 | 최소 체결강도 (%) — 이하이면 매수세 소멸 |
-| `hard_rsi_max` | 70.0 | RSI 상한 — 이상이면 단기 과매수 |
-| `hard_open_price_diff_max` | 15.0 | 시가 대비 상승률 상한 (%) — 이상이면 설거지 위험 |
-| `hard_macd_bearish_enabled` | false | true이면 MACD line < signal 상태에서 진입 차단 |
-| `hard_high_formed_mins_max` | 0 | 고점 형성 후 경과 시간 상한 (분, 0=비활성) — 모멘텀 소진 방지 |
-
-### 미장(US) 설정
+### 스코어링 가중치
 
 | 설정 키 | 기본값 | 설명 |
 |---------|--------|------|
-| `us_trading_enabled` | false | US 엔진 ON/OFF |
-| `us_exchange` | NAS | 거래소 코드 (NAS/NYS/AMS) |
-| `us_trading_start_time` | 22:30 | US 엔진 시작 시간 (KST) |
-| `us_trading_end_time` | 05:00 | US 엔진 종료 + 전량 청산 시간 (KST) |
-| `us_price_min` | "" | 최소 주가 (USD) |
-| `us_price_max` | "" | 최대 주가 (USD) |
-| `us_daily_max_loss_pct` | 0 | 미장 일일 최대 손실 한도 (USD 기준, 0=국장 값 공유) |
-| `us_min_trading_value` | 0 | 미장 최소 거래대금 (USD, 0=국장 값 공유) |
+| `min_score_threshold` | 0 | 최소 점수 기준 (0=비활성) |
+| `score_weight_strength` | 30 | 체결강도 가중치 |
+| `score_weight_rsi` | 20 | RSI 가중치 |
+| `score_weight_macd` | 20 | MACD 가중치 |
+| `score_weight_bidask` | 15 | 호가잔량 가중치 |
+| `score_weight_vwap` | 10 | VWAP 가중치 |
+| `score_weight_volume` | 5 | 거래량 가중치 |
 
 ---
 
@@ -209,13 +217,13 @@ Claude가 종목 선정 시 적용하는 서버사이드 하드 거부 기준입
 
 | 경로 | 페이지 | 설명 |
 |------|--------|------|
-| `/` | 대시보드 | 서버 상태, 잔고, 국장/미장 트레이더 상태 |
-| `/monitor` | 모니터 | 모니터링 중인 포지션 목록 (목표가/손절가/현재가) |
-| `/orders` | 주문 내역 | 전체 주문 이력 (KR/US 배지, 수동 동기화) |
-| `/logs` | 에러 로그 | 서비스 로그(TRADER/MONITOR/SYSTEM) + KIS API 에러 로그 탭 |
-| `/selection-logs` | 선정 로그 | LLM 종목 선정 시도 기록 (후보 목록, LLM 결과, 선정 사유) |
-| `/ranking-logs` | 순위 조회 로그 | 순위 조회 파라미터 + 결과 종목 수 기록 |
-| `/settings` | 설정 | KIS 자격증명 + 모든 트레이딩 설정 변경 |
+| `/` | 대시보드 | 계좌 잔고, 포지션, 일별 수익 요약 |
+| `/positions` | 포지션 | 모니터링 중인 보유 종목 |
+| `/orders` | 주문 내역 | 전체 주문 이력 |
+| `/reports/trades` | 거래 리포트 | 매수·매도 완료 건별 상세 기록 |
+| `/reports/daily` | 일일 리포트 | 일별 P&L 요약 |
+| `/settings` | 설정 | KIS 자격증명 + 모든 트레이딩 설정 |
+| `/logs` | 로그 | 서비스·KIS API·스캔 로그 |
 
 ---
 
@@ -226,24 +234,25 @@ Claude가 종목 선정 시 적용하는 서버사이드 하드 거부 기준입
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/balance` | 계좌 잔고 조회 |
-| GET | `/api/positions` | 실시간 보유 종목 조회 |
+| GET | `/api/positions` | 현재 보유 종목 조회 |
 
 ### 종목 / 차트
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/stock/:code` | 종목 현재가 + MA5/MA20 + RSI14 + MACD |
+| GET | `/api/stock/:code` | 종목 현재가 + 기술지표 (RSI, MACD, MA) |
 | GET | `/api/stock/:code/chart` | 캔들 차트 (`?interval=1m\|5m\|1h`) |
+| GET | `/api/stocks` | 종목 마스터 목록 |
 
 ### 주문
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/orders` | 주문 내역 조회 (`?sync=true` KIS 동기화) |
+| GET | `/api/orders` | 주문 내역 조회 |
 | POST | `/api/orders` | 수동 주문 실행 |
 | POST | `/api/orders/:id/cancel` | KIS 미체결 주문 취소 |
 | DELETE | `/api/orders/:id` | 주문 단건 삭제 |
-| GET | `/api/orders/feasibility?code=` | 주문가능수량 / 주문가능금액 조회 |
+| GET | `/api/orders/feasibility` | 주문가능수량 / 주문가능금액 조회 |
 
 ### 모니터링
 
@@ -251,6 +260,8 @@ Claude가 종목 선정 시 적용하는 서버사이드 하드 거부 기준입
 |--------|------|-------------|
 | GET | `/api/monitor/positions` | 모니터링 중인 포지션 목록 |
 | DELETE | `/api/monitor/positions/:code` | 모니터링 포지션 수동 해제 |
+| POST | `/api/monitor/positions/:code/sell` | 특정 포지션 강제 매도 |
+| POST | `/api/monitor/liquidate-all` | 전량 즉시 청산 |
 
 ### 순위
 
@@ -258,15 +269,8 @@ Claude가 종목 선정 시 적용하는 서버사이드 하드 거부 기준입
 |--------|------|-------------|
 | GET | `/api/ranking/volume` | 거래량 순위 |
 | GET | `/api/ranking/strength` | 체결강도 순위 |
-| GET | `/api/ranking/exec-count` | 대량체결건수 순위 |
-| GET | `/api/ranking/disparity` | 이격도 순위 |
-
-### 서버 / 장 운영 상태
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/server/status` | 통합 서버 상태 |
-| GET | `/api/market/status` | 장운영 여부 (KIS 영업일 기준) |
+| GET | `/api/ranking/fluctuation` | 등락률 순위 |
+| GET | `/api/ranking/vi-status` | VI 발동 현황 |
 
 ### 설정
 
@@ -275,35 +279,35 @@ Claude가 종목 선정 시 적용하는 서버사이드 하드 거부 기준입
 | GET | `/api/settings` | 모든 설정 조회 |
 | PATCH | `/api/settings` | 설정 변경 |
 
-### 일일 리포트
+### 리포트
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/reports` | 리포트 날짜 목록 (최근 30일) |
-| GET | `/api/reports/:date` | 특정 날짜 리포트 전문 (`YYYY-MM-DD`) |
+| GET | `/api/reports/trades` | 거래 리포트 목록 |
+| GET | `/api/reports/daily` | 일일 리포트 목록 |
+| POST | `/api/reports/daily/generate` | 일일 리포트 수동 생성 |
 
 ### 로그
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/logs/kis` | KIS API 에러 로그 (`?summary=true` raw 제외) |
+| GET | `/api/logs/kis` | KIS API 에러 로그 |
 | DELETE | `/api/logs/kis/:id` | 에러 로그 단건 삭제 |
-| GET | `/api/logs/service` | 서비스 전체 로그 (`?limit=100&source=ALL\|TRADER\|MONITOR\|SYSTEM`) |
-| GET | `/api/logs/selection` | LLM 종목 선정 로그 (`?limit=20`, 최신 순, 30일 자동 삭제) |
-| GET | `/api/logs/ranking` | 순위 조회 로그 (최신 순, 30일 자동 삭제) |
+| GET | `/api/logs/service` | 서비스 전체 로그 |
+| DELETE | `/api/logs/service/:id` | 서비스 로그 단건 삭제 |
+| GET | `/api/logs/scan` | 스캔 사이클 로그 |
 
-### WebSocket 제어
+### 서버 / 트레이더
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/api/server/status` | 통합 서버 상태 |
+| GET | `/api/market/status` | 장운영 여부 |
+| POST | `/api/trader/force-run` | 자율 트레이더 즉시 실행 |
+| GET | `/api/stats/daily-pnl` | 일별 P&L 집계 |
 | POST | `/api/ws/connect` | WebSocket 수동 연결 |
 | POST | `/api/ws/disconnect` | WebSocket 수동 해제 |
-
-### 헬스 체크
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | 서버 상태 확인 |
+| GET | `/health` | 헬스 체크 |
 
 ---
 
@@ -317,10 +321,10 @@ DB 스키마 상세: [`docs/db_schema.md`](docs/db_schema.md)
 
 ## Security
 
-- 모든 민감 정보 (API 키, 계좌번호, Anthropic 키, Firebase 서비스 계정)는 `.env` 파일로만 관리
-- `.env` 파일은 `.gitignore`에 의해 절대 커밋되지 않습니다
-- KIS API 에러는 Firestore `kis_api_logs` 컬렉션에, 서비스 운영 이벤트는 `service_logs` 컬렉션에 자동 기록됩니다
-- 트레이딩 설정은 Firestore `settings/config` 문서에 저장되며 UI에서 실시간 반영됩니다
+- 모든 민감 정보 (KIS 자격증명, Anthropic API 키, Firebase 서비스 계정)는 `.env` 파일로만 관리
+- `.env` 및 `firebase-credentials.json`은 `.gitignore`에 의해 커밋에서 제외됩니다
+- 트레이딩 설정은 Firestore `settings/config` 문서에 저장됩니다
+- KIS API 에러는 Firestore `kis_api_logs`에, 서비스 이벤트는 `service_logs`에 자동 기록됩니다
 
 ## License
 
