@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - 'frontend/**'
-      - 'firestore.rules'
   workflow_dispatch:
 
 jobs:
@@ -29,13 +28,6 @@ jobs:
         run: |
           npm ci
           npm run build
-
-      - name: Deploy Firestore Rules
-        uses: w9jds/firebase-action@master
-        with:
-          args: deploy --only firestore:rules
-        env:
-          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
