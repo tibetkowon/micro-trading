@@ -882,6 +882,8 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		HardRSIMax              *float64 `json:"hard_rsi_max"`
 		HardOpenPriceDiffMax    *float64 `json:"hard_open_price_diff_max"`
 		HardMACDBearishEnabled  *bool    `json:"hard_macd_bearish_enabled"`
+		HardMA60SupportEnabled  *bool    `json:"hard_ma60_support_enabled"`
+		HardMA120SupportEnabled *bool    `json:"hard_ma120_support_enabled"`
 		HardHighFormedMinsMax   *float64 `json:"hard_high_formed_mins_max"`
 		HardVolVs3AvgRatioMin   *float64 `json:"hard_vol_vs_3avg_ratio_min"`
 		HardRelativeStrengthMin *float64 `json:"hard_relative_strength_min"`
@@ -1294,6 +1296,24 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			v = "true"
 		}
 		if !save("hard_macd_bearish_enabled", v) {
+			return
+		}
+	}
+	if req.HardMA60SupportEnabled != nil {
+		v := "false"
+		if *req.HardMA60SupportEnabled {
+			v = "true"
+		}
+		if !save("hard_ma60_support_enabled", v) {
+			return
+		}
+	}
+	if req.HardMA120SupportEnabled != nil {
+		v := "false"
+		if *req.HardMA120SupportEnabled {
+			v = "true"
+		}
+		if !save("hard_ma120_support_enabled", v) {
 			return
 		}
 	}
