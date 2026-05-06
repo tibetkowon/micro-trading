@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-06 — fix: ETN 필터링·EGW00316 재시도·로그UI·TradeReport 생성 버그 수정
+
+- **ETN 종목 자동 차단**: `StockMaster`에 `IsETN` 필드 추가 (GroupCode `"EN"` 감지). 엔진 선정 단계에서 ETN 종목 스킵 — `APBK1629` 에러 재발 방지
+- **EGW00316 재시도**: KIS 일시적 서버 오류 코드 `EGW00316`에 대해 지수 백오프(500ms→1s→2s) 재시도 3회 추가
+- **로그 화면 버그**: KIS API 로그 클릭 시 상세 내용이 리스트 맨 아래에 표시되던 문제 수정. `React.Fragment` 기반 인라인 렌더링으로 변경 — 클릭한 행 바로 아래에 표시
+- **TradeReport 누락**: 매수 체결 후 `CreateTradeReport` 미호출로 거래별/일별 리포트가 작성되지 않던 버그 수정. `placeAndMonitor` 완료 시 buy-side 리포트 생성
+- **UpdateTradeReportOnSell**: 매칭 리포트 없을 때 silent nil 반환 → 에러 반환으로 변경하여 누락 즉시 감지
+
 ## 2026-05-05 — docs: README · architecture · CLAUDE.md 전면 재작성
 
 - **README.md**: 처음부터 재작성 — 정확한 Tech Stack (Go 1.26.1, Firestore), 실제 API 엔드포인트, 현재 설정 키 전체, 매도 우선순위, 스케줄러 시각 반영
