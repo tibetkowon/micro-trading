@@ -34,6 +34,8 @@ type StockInfo struct {
 	DisparityM5     float64 `json:"disparity_m5"`    // (현재가-5분봉MA5)/5분봉MA5×100
 	MA5             float64 `json:"ma5"`
 	MA20            float64 `json:"ma20"`
+	MA60            float64 `json:"ma60"`
+	MA120           float64 `json:"ma120"`
 	RSI14           float64 `json:"rsi14"`             // RSI(14) from 5-minute closes; 0 = insufficient data
 	MACDLine        float64 `json:"macd_line"`         // MACD line (EMA12 − EMA26) from 5m candles
 	MACDSignal      float64 `json:"macd_signal"`       // Signal line (EMA9 of MACD line) from 5m candles

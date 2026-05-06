@@ -131,6 +131,8 @@ type TradingSettings struct {
 	HardRSIMax              float64
 	HardOpenPriceDiffMax    float64
 	HardMACDBearishEnabled  bool
+	HardMA60SupportEnabled  bool
+	HardMA120SupportEnabled bool
 	HardHighFormedMinsMax   float64
 	HardVolVs3AvgRatioMin   float64
 	HardRelativeStrengthMin float64
@@ -326,6 +328,8 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.HardRSIMax = pf(m, "hard_rsi_max", 70.0)
 	s.HardOpenPriceDiffMax = pf(m, "hard_open_price_diff_max", 15.0)
 	s.HardMACDBearishEnabled = pb(m, "hard_macd_bearish_enabled", false)
+	s.HardMA60SupportEnabled = pb(m, "hard_ma60_support_enabled", false)
+	s.HardMA120SupportEnabled = pb(m, "hard_ma120_support_enabled", false)
 	s.HardHighFormedMinsMax = pf(m, "hard_high_formed_mins_max", 0.0)
 	s.HardVolVs3AvgRatioMin = pf(m, "hard_vol_vs3_avg_ratio_min", 0.0)
 	s.HardRelativeStrengthMin = pf(m, "hard_relative_strength_min", 0.0)
@@ -1071,6 +1075,8 @@ var defaultSettings = map[string]any{
 	"hard_rsi_max":                     "70",
 	"hard_open_price_diff_max":         "15",
 	"hard_macd_bearish_enabled":        "false",
+	"hard_ma60_support_enabled":        "false",
+	"hard_ma120_support_enabled":       "false",
 	"hard_high_formed_mins_max":        "0",
 	"hard_vol_vs3_avg_ratio_min":       "0",
 	"hard_relative_strength_min":       "0",
