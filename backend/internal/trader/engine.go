@@ -255,9 +255,53 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			continue
 		}
 
-		info, err := ops.GetStockInfo(ctx, e.kisClient, c.StockCode)
+		// ── 1-패스: GetStockPrice(저비용) 사전 필터 ──────────────────────────
+		// 차트 fetch(4~5회 API) 전에 현재가만으로 탈락 여부를 선 확인한다.
+		priceResp, err := e.kisClient.GetStockPrice(ctx, c.StockCode)
 		if err != nil {
-			logger.Warn("engine: GetStockInfo failed",
+			logger.Warn("engine: GetStockPrice (pre-filter) failed",
+				map[string]any{"code": c.StockCode, "error": err.Error()})
+			continue
+		}
+		// 최소 거래대금 필터 (0 = 비활성화)
+		if settings.MinTradingValue > 0 {
+			p, _ := strconv.ParseFloat(priceResp.CurrentPrice, 64)
+			v, _ := strconv.ParseFloat(priceResp.Volume, 64)
+			if tv := p * v; tv < settings.MinTradingValue {
+				logger.Info("engine: pre-filter rejected (trading value)",
+					map[string]any{"code": c.StockCode, "trading_value": tv, "min": settings.MinTradingValue})
+				rejectedCount++
+				continue
+			}
+		}
+		// 최소 체결강도 필터 (0 = 비활성화)
+		if settings.HardStrengthMin > 0 {
+			strength, _ := strconv.ParseFloat(priceResp.Strength, 64)
+			if strength > 0 && strength < settings.HardStrengthMin {
+				logger.Info("engine: pre-filter rejected (strength)",
+					map[string]any{"code": c.StockCode, "strength": strength, "min": settings.HardStrengthMin})
+				rejectedCount++
+				continue
+			}
+		}
+		// 최대 시가대비 상승률 필터 (0 = 비활성화)
+		if settings.FilterOpenPriceDiffMax > 0 {
+			p, _ := strconv.ParseFloat(priceResp.CurrentPrice, 64)
+			o, _ := strconv.ParseFloat(priceResp.DayOpen, 64)
+			if p > 0 && o > 0 {
+				openDiff := (p - o) / o * 100
+				if openDiff > settings.FilterOpenPriceDiffMax {
+					logger.Info("engine: pre-filter rejected (open price diff)",
+						map[string]any{"code": c.StockCode, "open_diff": openDiff, "max": settings.FilterOpenPriceDiffMax})
+					rejectedCount++
+					continue
+				}
+			}
+		}
+		// ── 2-패스: GetStockInfoWithPrice(차트 포함) 전체 지표 ────────────────
+		info, err := ops.GetStockInfoWithPrice(ctx, e.kisClient, c.StockCode, priceResp)
+		if err != nil {
+			logger.Warn("engine: GetStockInfoWithPrice failed",
 				map[string]any{"code": c.StockCode, "error": err.Error()})
 			continue
 		}

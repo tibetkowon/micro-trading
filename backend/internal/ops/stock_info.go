@@ -115,119 +115,169 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 			map[string]any{"code": stockCode})
 	}
 	if chartErr == nil && len(bars) > 0 {
-		// VWAP from 1-min bars (oldest-first after fetchMinuteBars reversal)
-		var sumPV, sumVol float64
-		for _, b := range bars {
-			p, _ := strconv.ParseFloat(b.Close, 64)
-			v, _ := strconv.ParseFloat(b.Volume, 64)
-			if p > 0 && v > 0 {
-				sumPV += p * v
-				sumVol += v
-			}
-		}
-		if sumVol > 0 && len(bars) >= 5 { // 5분 이상 데이터여야 신뢰성 있음
-			info.VWAP = math.Round(sumPV/sumVol*100) / 100
-			if info.VWAP > 0 && price > 0 {
-				info.VWAPDiff = math.Round((price-info.VWAP)/info.VWAP*10000) / 100
-			}
-		}
+		fillChartIndicators(info, bars, price)
+	}
 
-		// 1분봉 캔들 변환 — RSI/MACD/MA/VWAP 계산 기준
-		candles1m := minuteBarsToCandles(bars)
+	return info, nil
+}
+
+// fillChartIndicators populates chart-based indicators on info from 1-minute bars.
+// price must be pre-parsed from info.CurrentPrice.
+func fillChartIndicators(info *StockInfo, bars []kis.ChartBar, price float64) {
+	// VWAP from 1-min bars (oldest-first after fetchMinuteBars reversal)
+	var sumPV, sumVol float64
+	for _, b := range bars {
+		p, _ := strconv.ParseFloat(b.Close, 64)
+		v, _ := strconv.ParseFloat(b.Volume, 64)
+		if p > 0 && v > 0 {
+			sumPV += p * v
+			sumVol += v
+		}
+	}
+	if sumVol > 0 && len(bars) >= 5 { // 5분 이상 데이터여야 신뢰성 있음
+		info.VWAP = math.Round(sumPV/sumVol*100) / 100
+		if info.VWAP > 0 && price > 0 {
+			info.VWAPDiff = math.Round((price-info.VWAP)/info.VWAP*10000) / 100
+		}
+	}
+
+	// 1분봉 캔들 변환 — RSI/MACD/MA/VWAP 계산 기준
+	candles1m := minuteBarsToCandles(bars)
+	if len(candles1m) >= 2 {
+		closes1m := make([]float64, len(candles1m))
+		for i, c := range candles1m {
+			closes1m[i] = c.Close
+		}
+		info.MA5   = calcMA(closes1m, 5)
+		info.MA20  = calcMA(closes1m, 20)
+		info.MA60  = calcMA(closes1m, 60)
+		info.MA120 = calcMA(closes1m, 120)
+		info.RSI14 = calcRSI(closes1m, 14)
+		info.MACDLine, info.MACDSignal, info.MACDHisto = calcMACD(closes1m, 12, 26, 9)
+
+		// DisparityM5: 현재가와 1분봉 MA5의 이격도
+		if info.MA5 > 0 && price > 0 {
+			info.DisparityM5 = math.Round((price-info.MA5)/info.MA5*10000) / 100
+		}
+		info.M5MA10 = calcMA(closes1m, 10)
+
+		// PrevVolumeRatio: 직전 1분봉 대비 현재 1분봉 거래량 비율
 		if len(candles1m) >= 2 {
-			closes1m := make([]float64, len(candles1m))
-			for i, c := range candles1m {
-				closes1m[i] = c.Close
+			curVol := float64(candles1m[len(candles1m)-1].Volume)
+			prevVol := float64(candles1m[len(candles1m)-2].Volume)
+			if prevVol > 0 {
+				info.PrevVolumeRatio = math.Round(curVol/prevVol*100) / 100
 			}
-			info.MA5   = calcMA(closes1m, 5)
-			info.MA20  = calcMA(closes1m, 20)
-			info.MA60  = calcMA(closes1m, 60)
-			info.MA120 = calcMA(closes1m, 120)
-			info.RSI14 = calcRSI(closes1m, 14)
-			info.MACDLine, info.MACDSignal, info.MACDHisto = calcMACD(closes1m, 12, 26, 9)
+		}
 
-			// DisparityM5: 현재가와 1분봉 MA5의 이격도
-			if info.MA5 > 0 && price > 0 {
-				info.DisparityM5 = math.Round((price-info.MA5)/info.MA5*10000) / 100
+		// ── 최근 5개 1분봉 캔들 시퀀스 ──────────────────────────────
+		{
+			n := len(candles1m)
+			start := n - 5
+			if start < 0 {
+				start = 0
 			}
-			info.M5MA10 = calcMA(closes1m, 10)
-
-			// PrevVolumeRatio: 직전 1분봉 대비 현재 1분봉 거래량 비율
-			if len(candles1m) >= 2 {
-				curVol := float64(candles1m[len(candles1m)-1].Volume)
-				prevVol := float64(candles1m[len(candles1m)-2].Volume)
-				if prevVol > 0 {
-					info.PrevVolumeRatio = math.Round(curVol/prevVol*100) / 100
+			recent := candles1m[start:]
+			snaps := make([]CandleSnap, len(recent))
+			for i, c := range recent {
+				dir := "="
+				if c.Close > c.Open {
+					dir = "U"
+				} else if c.Close < c.Open {
+					dir = "D"
+				}
+				snaps[i] = CandleSnap{
+					Close:  math.Round(c.Close*100) / 100,
+					Volume: c.Volume,
+					Dir:    dir,
 				}
 			}
+			info.RecentCandles = snaps
+		}
 
-			// ── 최근 5개 1분봉 캔들 시퀀스 ──────────────────────────────
-			{
-				n := len(candles1m)
-				start := n - 5
-				if start < 0 {
-					start = 0
-				}
-				recent := candles1m[start:]
-				snaps := make([]CandleSnap, len(recent))
-				for i, c := range recent {
-					dir := "="
-					if c.Close > c.Open {
-						dir = "U"
-					} else if c.Close < c.Open {
-						dir = "D"
-					}
-					snaps[i] = CandleSnap{
-						Close:  math.Round(c.Close*100) / 100,
-						Volume: c.Volume,
-						Dir:    dir,
+		// ── 고점 형성 경과 시간 (1분봉 기준, 1봉 = 1분) ──────────
+		{
+			dayHigh, _ := strconv.ParseFloat(info.DayHigh, 64)
+			if dayHigh > 0 && len(candles1m) >= 1 {
+				highIdx := -1
+				for i := len(candles1m) - 1; i >= 0; i-- {
+					if candles1m[i].High >= dayHigh*0.9999 {
+						highIdx = i
+						break
 					}
 				}
-				info.RecentCandles = snaps
+				if highIdx >= 0 {
+					info.HighFormedMinsAgo = len(candles1m) - 1 - highIdx // 1봉 = 1분
+					info.VolAtHigh = candles1m[highIdx].Volume
+				}
 			}
 
-			// ── 고점 형성 경과 시간 (1분봉 기준, 1봉 = 1분) ──────────
-			{
-				dayHigh, _ := strconv.ParseFloat(info.DayHigh, 64)
-				if dayHigh > 0 && len(candles1m) >= 1 {
-					highIdx := -1
-					for i := len(candles1m) - 1; i >= 0; i-- {
-						if candles1m[i].High >= dayHigh*0.9999 {
-							highIdx = i
-							break
-						}
-					}
-					if highIdx >= 0 {
-						info.HighFormedMinsAgo = len(candles1m) - 1 - highIdx // 1봉 = 1분
-						info.VolAtHigh = candles1m[highIdx].Volume
-					}
+			// VolTrend3: 최근 3개 1분봉 거래량 기울기
+			if len(candles1m) >= 3 {
+				v1 := float64(candles1m[len(candles1m)-3].Volume)
+				v3 := float64(candles1m[len(candles1m)-1].Volume)
+				maxV := math.Max(v1, math.Max(float64(candles1m[len(candles1m)-2].Volume), v3))
+				if maxV > 0 {
+					slope := (v3 - v1) / maxV
+					info.VolTrend3 = math.Round(slope*100) / 100
 				}
+			}
 
-				// VolTrend3: 최근 3개 1분봉 거래량 기울기
-				if len(candles1m) >= 3 {
-					v1 := float64(candles1m[len(candles1m)-3].Volume)
-					v3 := float64(candles1m[len(candles1m)-1].Volume)
-					maxV := math.Max(v1, math.Max(float64(candles1m[len(candles1m)-2].Volume), v3))
-					if maxV > 0 {
-						slope := (v3 - v1) / maxV
-						info.VolTrend3 = math.Round(slope*100) / 100
-					}
-				}
-
-				// VolVs3AvgRatio: 현재 1분봉 거래량 / 직전 3봉 평균
-				if len(candles1m) >= 4 {
-					cur := float64(candles1m[len(candles1m)-1].Volume)
-					avg3 := (float64(candles1m[len(candles1m)-2].Volume) +
-						float64(candles1m[len(candles1m)-3].Volume) +
-						float64(candles1m[len(candles1m)-4].Volume)) / 3
-					if avg3 > 0 {
-						info.VolVs3AvgRatio = math.Round(cur/avg3*100) / 100
-					}
+			// VolVs3AvgRatio: 현재 1분봉 거래량 / 직전 3봉 평균
+			if len(candles1m) >= 4 {
+				cur := float64(candles1m[len(candles1m)-1].Volume)
+				avg3 := (float64(candles1m[len(candles1m)-2].Volume) +
+					float64(candles1m[len(candles1m)-3].Volume) +
+					float64(candles1m[len(candles1m)-4].Volume)) / 3
+				if avg3 > 0 {
+					info.VolVs3AvgRatio = math.Round(cur/avg3*100) / 100
 				}
 			}
 		}
 	}
+}
 
+// GetStockInfoWithPrice fetches only the chart data, reusing an already-fetched
+// StockPriceResponse. Use this in a two-pass filter where GetStockPrice was
+// already called for pre-filtering.
+func GetStockInfoWithPrice(ctx context.Context, client *kis.Client, stockCode string, resp *kis.StockPriceResponse) (*StockInfo, error) {
+	if stockCode == "" {
+		return nil, fmt.Errorf("stock_code is required")
+	}
+
+	info := &StockInfo{
+		StockCode:    resp.StockCode,
+		CurrentPrice: resp.CurrentPrice,
+		ChangeRate:   resp.ChangeRate,
+		Volume:       resp.Volume,
+		DayOpen:      resp.DayOpen,
+		DayHigh:      resp.DayHigh,
+		DayLow:       resp.DayLow,
+	}
+
+	price, _ := strconv.ParseFloat(resp.CurrentPrice, 64)
+	vol, _ := strconv.ParseFloat(resp.Volume, 64)
+	if price > 0 && vol > 0 {
+		info.TradingValue = math.Round(price * vol)
+	}
+	if s, err := strconv.ParseFloat(resp.Strength, 64); err == nil && s > 0 {
+		info.Strength = math.Round(s*10) / 10
+	}
+	if high, err := strconv.ParseFloat(resp.DayHigh, 64); err == nil && high > 0 {
+		info.HighPriceDiff = math.Round((price-high)/high*10000) / 100
+	}
+	if open, err := strconv.ParseFloat(resp.DayOpen, 64); err == nil && open > 0 {
+		info.OpenPriceDiff = math.Round((price-open)/open*10000) / 100
+	}
+
+	bars, chartErr := fetchMinuteBars(ctx, client, stockCode, 120)
+	if chartErr != nil {
+		logger.Warn("GetStockInfoWithPrice: minute chart fetch failed",
+			map[string]any{"code": stockCode, "error": chartErr.Error()})
+	}
+	if chartErr == nil && len(bars) > 0 {
+		fillChartIndicators(info, bars, price)
+	}
 	return info, nil
 }
 
