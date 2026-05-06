@@ -45,6 +45,7 @@ func (s *Store) Upsert(ctx context.Context, records []*StockMaster) error {
 				"market_type":            r.MarketType,
 				"group_code":             r.GroupCode,
 				"is_etf":                 r.IsETF,
+				"is_etn":                 r.IsETN,
 				"is_domestic_equity_etf": r.IsDomesticEquityETF,
 				"listed_shares":          r.ListedShares,
 				"updated_at":             now,
@@ -91,6 +92,9 @@ func (s *Store) GetByCode(ctx context.Context, stockCode string) (*StockMaster, 
 	}
 	if v, ok := data["is_etf"].(bool); ok {
 		m.IsETF = v
+	}
+	if v, ok := data["is_etn"].(bool); ok {
+		m.IsETN = v
 	}
 	if v, ok := data["is_domestic_equity_etf"].(bool); ok {
 		m.IsDomesticEquityETF = v

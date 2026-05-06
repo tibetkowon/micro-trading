@@ -30,8 +30,9 @@ type StockMaster struct {
 	StockName           string
 	ISIN                string
 	MarketType          string // "KOSPI" | "KOSDAQ"
-	GroupCode           string // "ST"=주식, "EF"=ETF, "BC"=뮤추얼펀드, "FS"=외국주식, "MF"=매매정지, "RT"=리츠
+	GroupCode           string // "ST"=주식, "EF"=ETF, "EN"=ETN, "BC"=뮤추얼펀드, "FS"=외국주식, "MF"=매매정지, "RT"=리츠
 	IsETF               bool
+	IsETN               bool  // true=ETN (Exchange Traded Note) — 별도 위험고지 등록 필요
 	IsDomesticEquityETF bool  // true=비과세(국내주식형 ETF)
 	ListedShares        int64 // 상장주식수 (0=미파싱). 시가총액 = ListedShares × 현재가
 	UpdatedAt           time.Time
@@ -101,6 +102,7 @@ func parseRecord(rec []byte, market string) (*StockMaster, error) {
 	group := strings.TrimSpace(string(rec[groupOffset : groupOffset+groupLen]))
 
 	isETF := group == "EF"
+	isETN := group == "EN"
 	isDomestic := isETF && classifyDomesticEquityETF(name)
 
 	return &StockMaster{
@@ -110,6 +112,7 @@ func parseRecord(rec []byte, market string) (*StockMaster, error) {
 		MarketType:          market,
 		GroupCode:           group,
 		IsETF:               isETF,
+		IsETN:               isETN,
 		IsDomesticEquityETF: isDomestic,
 		UpdatedAt:           time.Now(),
 	}, nil
