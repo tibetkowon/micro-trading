@@ -427,6 +427,14 @@ func (e *Engine) fetchCandidates(ctx context.Context, settings database.TradingS
 	// Multiple or no exchange → "0000" (all); single exchange → specific code.
 	exchangeCode := exchangeInputCode(settings.RankingExchanges)
 
+	logger.Info("engine: fetchCandidates params", map[string]any{
+		"exclude_cls": excludeCls,
+		"price_min":   priceMin,
+		"price_max":   priceMax,
+		"top_n":       topN,
+		"exchanges":   settings.RankingExchanges,
+	})
+
 	for _, rankType := range settings.RankingTypes {
 		name := strings.ToLower(strings.TrimSpace(rankType))
 
@@ -508,7 +516,49 @@ func (e *Engine) fetchCandidates(ctx context.Context, settings database.TradingS
 		result = append(result, *entry)
 	}
 
+	// Post-filter using stock master to compensate for KIS API not fully honouring
+	// fid_trgt_exls_cls_code for certain stock types (ETF, 우선주).
+	result = e.postFilterByExcludeCls(ctx, result, excludeCls)
+
 	return result, nil
+}
+
+// postFilterByExcludeCls removes candidates whose stock type matches an excluded
+// position in the excludeCls string, using local stock master data as the source
+// of truth instead of relying solely on the KIS API filter parameter.
+func (e *Engine) postFilterByExcludeCls(ctx context.Context, candidates []candidateEntry, excludeCls string) []candidateEntry {
+	if len(excludeCls) < 10 {
+		return candidates
+	}
+	excludeETF := excludeCls[8] == '1'
+	excludePref := excludeCls[6] == '1'
+	if !excludeETF && !excludePref {
+		return candidates
+	}
+
+	filtered := candidates[:0]
+	for _, entry := range candidates {
+		sm, _ := e.mstStore.GetByCode(ctx, entry.StockCode)
+		if sm != nil && excludeETF && sm.IsETF {
+			logger.Info("engine: post-filter excluded ETF",
+				map[string]any{"code": entry.StockCode, "name": entry.StockName})
+			continue
+		}
+		if excludePref && isPriorityStock(entry.StockCode) {
+			logger.Info("engine: post-filter excluded preferred stock",
+				map[string]any{"code": entry.StockCode, "name": entry.StockName})
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
+// isPriorityStock returns true for preferred stocks (우선주).
+// Korean preferred stock codes are 6 digits with the 5th digit (index 4) being '5'.
+// e.g., 005935 = Samsung 우선주 vs 005930 = Samsung 보통주.
+func isPriorityStock(code string) bool {
+	return len(code) == 6 && code[4] == '5'
 }
 
 // addCandidate upserts a candidate into the map, keeping the highest strength seen.
