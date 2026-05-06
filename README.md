@@ -9,7 +9,6 @@ NCP Micro (1GB RAM) 환경에서 효율적으로 동작하도록 설계되었습
 |-------|-----------|
 | Backend | Go 1.26.1, Gin |
 | Database | Firebase Firestore |
-| AI | Anthropic Claude API |
 | Realtime | KIS WebSocket (gorilla/websocket) |
 | Frontend | React 18, Vite, Firebase SDK |
 | Hosting | Firebase Hosting (Frontend) · GCS + NCP VM (Backend) |
@@ -48,7 +47,6 @@ cp .env.example .env
 | `KIS_HTS_ID` | | HTS 아이디 — 실시간 체결통보 수신 시 필요 |
 | `FIREBASE_PROJECT_ID` | ✅ | Firebase 프로젝트 ID |
 | `FIREBASE_CREDENTIALS_JSON` | ✅ | 서비스 계정 JSON 파일 경로 |
-| `ANTHROPIC_API_KEY` | | Claude API 키 — 미설정 시 자율 매매 비활성화 |
 | `SERVER_PORT` | | 기본값 `8080` |
 | `FRONTEND_ORIGIN` | | CORS 허용 프론트엔드 도메인 |
 
@@ -321,7 +319,7 @@ DB 스키마 상세: [`docs/db_schema.md`](docs/db_schema.md)
 
 ## Security
 
-- 모든 민감 정보 (KIS 자격증명, Anthropic API 키, Firebase 서비스 계정)는 `.env` 파일로만 관리
+- 모든 민감 정보 (KIS 자격증명, Firebase 서비스 계정)는 `.env` 파일로만 관리
 - `.env` 및 `firebase-credentials.json`은 `.gitignore`에 의해 커밋에서 제외됩니다
 - 트레이딩 설정은 Firestore `settings/config` 문서에 저장됩니다
 - KIS API 에러는 Firestore `kis_api_logs`에, 서비스 이벤트는 `service_logs`에 자동 기록됩니다
