@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-06 — feat: settings API — MA60/MA120 지지 조건 저장 추가
+
+- **handlers.go**: `UpdateSettings` 핸들러에 `HardMA60SupportEnabled`, `HardMA120SupportEnabled` 필드 추가
+  - 요청 구조체에 두 필드를 `*bool` 포인터로 추가
+  - 기존 `HardMACDBearishEnabled` 저장 패턴과 동일한 구조로 `hard_ma60_support_enabled`, `hard_ma120_support_enabled` 설정값 저장 로직 구현
+  - 빌드 검증 완료 — `go build ./...` 성공
+
 ## 2026-05-06 — test: ops 지표 계산 함수 단위 테스트 추가
 
 - **stock_info_test.go**: `calcMA`, `calcRSI`, `calcMACD` 함수 단위 테스트 추가
