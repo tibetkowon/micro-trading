@@ -35,6 +35,8 @@ function transformSettings(raw) {
       ? pb(raw.indicator_rsi_sell_enabled, false)
       : pf(raw.indicator_rsi_sell_threshold, 0) > 0,
     indicator_macd_bearish_sell: pb(raw.indicator_macd_bearish_sell, false),
+    hard_ma60_support_enabled: pb(raw.hard_ma60_support_enabled, false),
+    hard_ma120_support_enabled: pb(raw.hard_ma120_support_enabled, false),
     buy_pause_start: raw.buy_pause_start || '',
     buy_pause_end: raw.buy_pause_end || '',
     ranking_types: pj(raw.ranking_types, []),
@@ -164,6 +166,8 @@ export default function Settings() {
       flat.daily_max_loss_pct = String(settings.daily_loss_limit_pct ?? 3)
       flat.indicator_rsi_sell_enabled = String(settings.indicator_rsi_sell_enabled ?? false)
       flat.indicator_macd_bearish_sell = String(settings.indicator_macd_bearish_sell ?? false)
+      flat.hard_ma60_support_enabled = String(settings.hard_ma60_support_enabled ?? false)
+      flat.hard_ma120_support_enabled = String(settings.hard_ma120_support_enabled ?? false)
       flat.buy_pause_start = settings.buy_pause_start || ''
       flat.buy_pause_end = settings.buy_pause_end || ''
       flat.ranking_types = JSON.stringify(settings.ranking_types ?? [])
@@ -436,6 +440,18 @@ export default function Settings() {
               </div>
             )
           })}
+          <div className="filter-row" style={{ marginTop: 12 }}>
+            <span className="filter-label">MA60 지지 (현재가 ≥ MA60)</span>
+            <Toggle
+              checked={settings.hard_ma60_support_enabled ?? false}
+              onChange={v => set('hard_ma60_support_enabled', v)} />
+          </div>
+          <div className="filter-row">
+            <span className="filter-label">MA120 지지 (현재가 ≥ MA120)</span>
+            <Toggle
+              checked={settings.hard_ma120_support_enabled ?? false}
+              onChange={v => set('hard_ma120_support_enabled', v)} />
+          </div>
           <div style={{ marginTop: 16 }}>
             <button className="btn btn-outline btn-sm">↺ 필터 초기화</button>
           </div>
