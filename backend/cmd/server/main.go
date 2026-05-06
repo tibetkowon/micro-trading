@@ -321,7 +321,7 @@ func runMarketScheduler(ctx context.Context,
 					settings.IndicatorRSISellThreshold,
 					settings.IndicatorMACDBearishSell,
 					func(iCtx context.Context, code string) (*monitor.IndicatorSnapshot, error) {
-						info, err := ops.GetStockInfo(iCtx, kisClient, code)
+						info, err := ops.GetStockInfoCached(iCtx, kisClient, code)
 						if err != nil {
 							return nil, err
 						}

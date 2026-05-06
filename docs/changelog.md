@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-05-06 — perf: StockInfo 30초 TTL 캐시 추가 — 지표체커 중복 차트 API 호출 제거
+
+- **ops/stock_info_cache.go 신규 생성**: `GetStockInfoCached` (30초 TTL 인메모리 캐시), `InvalidateStockInfoCache` (종목 캐시 무효화) 구현.
+- **중복 호출 제거**: `StartIndicatorChecker` 콜백(`main.go`)의 `ops.GetStockInfo` → `ops.GetStockInfoCached` 변경. 동일 종목이 모니터링 포지션과 스캔 후보에 동시에 나타날 때 30초 이내 차트 API(1분봉 조회) 중복 호출을 캐시 히트로 차단.
+- **단위 테스트 추가**: `ops/stock_info_cache_test.go` — Hit/Invalidate/Expiry 3개 케이스 PASS.
+
 ## 2026-05-07 — feat: 지표 계산 기준 5분봉→1분봉 전환 + MA60/MA120 추가
 
 - **GetStockInfo 1분봉 전환**: RSI(14), MACD(12,26,9), MA5/20, VWAP 계산 기준이 5분봉 집계에서 1분봉 직접 사용으로 변경. 지표 후행성 제거.
