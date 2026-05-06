@@ -7,6 +7,8 @@ import (
 
 func TestStockInfoCache_Hit(t *testing.T) {
 	code := "TEST01"
+	t.Cleanup(func() { InvalidateStockInfoCache(code) })
+
 	info := &StockInfo{StockCode: code, CurrentPrice: "10000"}
 	siCache.mu.Lock()
 	siCache.entries[code] = &cacheEntry{info: info, fetchedAt: time.Now()}
@@ -28,6 +30,8 @@ func TestStockInfoCache_Hit(t *testing.T) {
 
 func TestStockInfoCache_Invalidate(t *testing.T) {
 	code := "TEST02"
+	t.Cleanup(func() { InvalidateStockInfoCache(code) })
+
 	siCache.mu.Lock()
 	siCache.entries[code] = &cacheEntry{info: &StockInfo{StockCode: code}, fetchedAt: time.Now()}
 	siCache.mu.Unlock()
@@ -44,6 +48,8 @@ func TestStockInfoCache_Invalidate(t *testing.T) {
 
 func TestStockInfoCache_Expiry(t *testing.T) {
 	code := "TEST03"
+	t.Cleanup(func() { InvalidateStockInfoCache(code) })
+
 	siCache.mu.Lock()
 	siCache.entries[code] = &cacheEntry{
 		info:      &StockInfo{StockCode: code},

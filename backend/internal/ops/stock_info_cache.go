@@ -18,9 +18,12 @@ type cacheEntry struct {
 	fetchedAt time.Time
 }
 
-var siCache = &stockInfoCache{entries: make(map[string]*cacheEntry)}
-
 const siCacheTTL = 30 * time.Second
+
+// siCache is a package-level singleton. Concurrent cache misses for the same key
+// may result in duplicate GetStockInfo calls (cache stampede), which is acceptable
+// given the low concurrency (one indicator checker goroutine per position).
+var siCache = &stockInfoCache{entries: make(map[string]*cacheEntry)}
 
 // GetStockInfoCached returns a cached StockInfo if available and within TTL,
 // otherwise fetches fresh data and stores it in the cache.
