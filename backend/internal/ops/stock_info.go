@@ -103,10 +103,8 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 		info.OpenPriceDiff = math.Round((price-open)/open*10000) / 100
 	}
 
-	// --- MA5 / MA20 / RSI(14) / MACD(12,26,9) / DisparityM5 from 5-minute candles ---
-	// Fetch 200 1-minute bars → aggregate to ~40 5-minute bars.
-	// 40 bars is sufficient for MACD(12,26,9) which needs 26+9-1 = 34 periods minimum.
-	// MA5/MA20 are also computed from these 5m closes for intraday consistency.
+	// --- MA5/MA20/MA60/MA120/RSI(14)/MACD(12,26,9) from 1-minute candles directly ---
+	// Fetch 200 1-minute bars — sufficient for MA120 and MACD(12,26,9) (needs 34 min).
 	bars, chartErr := fetchMinuteBars(ctx, client, stockCode, 200)
 	if chartErr != nil {
 		logger.Warn("GetStockInfo: minute chart fetch failed",
@@ -133,40 +131,43 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 			}
 		}
 
-		candles5m := aggregateMinuteBars(bars, 5)
-		if len(candles5m) >= 2 {
-			closes5m := make([]float64, len(candles5m))
-			for i, c := range candles5m {
-				closes5m[i] = c.Close
+		// 1분봉 캔들 변환 — RSI/MACD/MA/VWAP 계산 기준
+		candles1m := minuteBarsToCandles(bars)
+		if len(candles1m) >= 2 {
+			closes1m := make([]float64, len(candles1m))
+			for i, c := range candles1m {
+				closes1m[i] = c.Close
 			}
-			info.MA5 = calcMA(closes5m, 5)
-			info.MA20 = calcMA(closes5m, 20)
-			info.RSI14 = calcRSI(closes5m, 14)
-			info.MACDLine, info.MACDSignal, info.MACDHisto = calcMACD(closes5m, 12, 26, 9)
-			// DisparityM5: 현재가와 5분봉 MA5의 이격도
-			if ma5m := calcMA(closes5m, 5); ma5m > 0 && price > 0 {
-				info.DisparityM5 = math.Round((price-ma5m)/ma5m*10000) / 100
-			}
-			info.M5MA10 = calcMA(closes5m, 10)
+			info.MA5   = calcMA(closes1m, 5)
+			info.MA20  = calcMA(closes1m, 20)
+			info.MA60  = calcMA(closes1m, 60)
+			info.MA120 = calcMA(closes1m, 120)
+			info.RSI14 = calcRSI(closes1m, 14)
+			info.MACDLine, info.MACDSignal, info.MACDHisto = calcMACD(closes1m, 12, 26, 9)
 
-			// PrevVolumeRatio: 직전 5분봉 대비 최근 5분봉 거래량 비율
-			if len(candles5m) >= 2 {
-				curVol := float64(candles5m[len(candles5m)-1].Volume)
-				prevVol := float64(candles5m[len(candles5m)-2].Volume)
+			// DisparityM5: 현재가와 1분봉 MA5의 이격도
+			if info.MA5 > 0 && price > 0 {
+				info.DisparityM5 = math.Round((price-info.MA5)/info.MA5*10000) / 100
+			}
+			info.M5MA10 = calcMA(closes1m, 10)
+
+			// PrevVolumeRatio: 직전 1분봉 대비 현재 1분봉 거래량 비율
+			if len(candles1m) >= 2 {
+				curVol := float64(candles1m[len(candles1m)-1].Volume)
+				prevVol := float64(candles1m[len(candles1m)-2].Volume)
 				if prevVol > 0 {
 					info.PrevVolumeRatio = math.Round(curVol/prevVol*100) / 100
 				}
 			}
 
-			// ── 1순위: 최근 5봉 캔들 시퀀스 ──────────────────────────────
-			// 최근 5개 5분봉을 구→신 순서로 저장 (데이터 부족 시 있는 만큼만)
+			// ── 최근 5개 1분봉 캔들 시퀀스 ──────────────────────────────
 			{
-				n := len(candles5m)
+				n := len(candles1m)
 				start := n - 5
 				if start < 0 {
 					start = 0
 				}
-				recent := candles5m[start:]
+				recent := candles1m[start:]
 				snaps := make([]CandleSnap, len(recent))
 				for i, c := range recent {
 					dir := "="
@@ -184,45 +185,40 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 				info.RecentCandles = snaps
 			}
 
-			// ── 2순위: 고점 형성 경과 시간 + 3순위: 거래량 추세 ──────────
+			// ── 고점 형성 경과 시간 (1분봉 기준, 1봉 = 1분) ──────────
 			{
 				dayHigh, _ := strconv.ParseFloat(info.DayHigh, 64)
-				if dayHigh > 0 && len(candles5m) >= 1 {
-					// 고점 봉 탐색 (가장 최근에 고가를 경신한 봉 기준)
+				if dayHigh > 0 && len(candles1m) >= 1 {
 					highIdx := -1
-					for i := len(candles5m) - 1; i >= 0; i-- {
-						if candles5m[i].High >= dayHigh*0.9999 {
+					for i := len(candles1m) - 1; i >= 0; i-- {
+						if candles1m[i].High >= dayHigh*0.9999 {
 							highIdx = i
 							break
 						}
 					}
 					if highIdx >= 0 {
-						// 고점 형성 후 경과 봉 수 × 5분
-						minsAgo := (len(candles5m) - 1 - highIdx) * 5
-						info.HighFormedMinsAgo = minsAgo
-						info.VolAtHigh = candles5m[highIdx].Volume
+						info.HighFormedMinsAgo = len(candles1m) - 1 - highIdx // 1봉 = 1분
+						info.VolAtHigh = candles1m[highIdx].Volume
 					}
 				}
 
-				// VolTrend3: 최근 3봉 거래량 선형 기울기 정규화 (-1~1)
-				if len(candles5m) >= 3 {
-					v1 := float64(candles5m[len(candles5m)-3].Volume)
-					v2 := float64(candles5m[len(candles5m)-2].Volume)
-					v3 := float64(candles5m[len(candles5m)-1].Volume)
-					// 단순 기울기: (v3-v1) / max(v1,v2,v3)
-					maxV := math.Max(v1, math.Max(v2, v3))
+				// VolTrend3: 최근 3개 1분봉 거래량 기울기
+				if len(candles1m) >= 3 {
+					v1 := float64(candles1m[len(candles1m)-3].Volume)
+					v3 := float64(candles1m[len(candles1m)-1].Volume)
+					maxV := math.Max(v1, math.Max(float64(candles1m[len(candles1m)-2].Volume), v3))
 					if maxV > 0 {
 						slope := (v3 - v1) / maxV
 						info.VolTrend3 = math.Round(slope*100) / 100
 					}
 				}
 
-				// VolVs3AvgRatio: 현재봉 거래량 / 직전 3봉 평균 거래량 (거래량 회복 비율)
-				if len(candles5m) >= 4 {
-					cur := float64(candles5m[len(candles5m)-1].Volume)
-					avg3 := (float64(candles5m[len(candles5m)-2].Volume) +
-						float64(candles5m[len(candles5m)-3].Volume) +
-						float64(candles5m[len(candles5m)-4].Volume)) / 3
+				// VolVs3AvgRatio: 현재 1분봉 거래량 / 직전 3봉 평균
+				if len(candles1m) >= 4 {
+					cur := float64(candles1m[len(candles1m)-1].Volume)
+					avg3 := (float64(candles1m[len(candles1m)-2].Volume) +
+						float64(candles1m[len(candles1m)-3].Volume) +
+						float64(candles1m[len(candles1m)-4].Volume)) / 3
 					if avg3 > 0 {
 						info.VolVs3AvgRatio = math.Round(cur/avg3*100) / 100
 					}
