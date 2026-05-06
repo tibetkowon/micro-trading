@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/micro-trading-for-agent/backend/internal/kis"
+	"github.com/micro-trading-for-agent/backend/internal/logger"
 )
 
 // CandleSnap is a compact snapshot of a single 5-minute candle.
@@ -105,6 +106,13 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 	// 40 bars is sufficient for MACD(12,26,9) which needs 26+9-1 = 34 periods minimum.
 	// MA5/MA20 are also computed from these 5m closes for intraday consistency.
 	bars, chartErr := fetchMinuteBars(ctx, client, stockCode, 200)
+	if chartErr != nil {
+		logger.Warn("GetStockInfo: minute chart fetch failed",
+			map[string]any{"code": stockCode, "error": chartErr.Error()})
+	} else if len(bars) == 0 {
+		logger.Warn("GetStockInfo: minute chart returned no bars",
+			map[string]any{"code": stockCode})
+	}
 	if chartErr == nil && len(bars) > 0 {
 		// VWAP from 1-min bars (oldest-first after fetchMinuteBars reversal)
 		var sumPV, sumVol float64

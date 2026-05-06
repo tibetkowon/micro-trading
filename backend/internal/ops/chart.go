@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/kis"
+	"github.com/micro-trading-for-agent/backend/internal/logger"
 )
 
 // Candle holds a single OHLCV candlestick bar.
@@ -52,8 +53,14 @@ func GetChart(ctx context.Context, client *kis.Client, stockCode, interval strin
 	}
 }
 
+// chartPageMaxRetries is the number of additional retries at the fetchMinuteBars level
+// after the KIS client's own TPS retries (3 attempts) are exhausted.
+const chartPageMaxRetries = 2
+
 // fetchMinuteBars fetches 1-minute intraday bars by paginating backward through time.
 // Returns bars in ascending time order (oldest → newest).
+// When a page fails after retries but partial data was already collected, returns
+// that partial data with a warning rather than discarding everything.
 func fetchMinuteBars(ctx context.Context, client *kis.Client, stockCode string, need int) ([]kis.ChartBar, error) {
 	var all []kis.ChartBar
 	seen := make(map[string]struct{}) // dedup by date+time key
@@ -64,11 +71,40 @@ func fetchMinuteBars(ctx context.Context, client *kis.Client, stockCode string, 
 		maxPages = 20
 	}
 
+	fetchErr := error(nil) // tracks the last unrecoverable page error
 	for i := 0; i < maxPages && len(all) < need; i++ {
-		pageBars, err := client.GetMinuteChart(ctx, stockCode, refTime)
-		if err != nil {
-			return nil, err
+		// Retry loop for each page: up to chartPageMaxRetries extra attempts with
+		// exponential backoff (2s, 4s) beyond the client's internal TPS retries.
+		var pageBars []kis.ChartBar
+		var pageErr error
+		for retry := 0; retry <= chartPageMaxRetries; retry++ {
+			if retry > 0 {
+				delay := time.Duration(1<<uint(retry)) * time.Second // 2s, 4s
+				logger.Warn("fetchMinuteBars: page error, retrying",
+					map[string]any{
+						"code":  stockCode,
+						"retry": retry,
+						"delay": delay.String(),
+						"error": pageErr.Error(),
+					})
+				select {
+				case <-ctx.Done():
+					fetchErr = ctx.Err()
+					goto done
+				case <-time.After(delay):
+				}
+			}
+			pageBars, pageErr = client.GetMinuteChart(ctx, stockCode, refTime)
+			if pageErr == nil {
+				break
+			}
 		}
+
+		if pageErr != nil {
+			fetchErr = pageErr
+			break
+		}
+
 		if len(pageBars) == 0 {
 			break
 		}
@@ -94,6 +130,18 @@ func fetchMinuteBars(ctx context.Context, client *kis.Client, stockCode string, 
 			break
 		}
 		refTime = t.Add(-time.Minute).Format("150405")
+	}
+
+done:
+	if fetchErr != nil {
+		if len(all) > 0 {
+			// Partial data available: warn and return what we have so indicators
+			// can be partially computed rather than silently returning nothing.
+			logger.Warn("fetchMinuteBars: using partial data after page error",
+				map[string]any{"code": stockCode, "bars": len(all), "error": fetchErr.Error()})
+		} else {
+			return nil, fetchErr
+		}
 	}
 
 	if len(all) == 0 {
