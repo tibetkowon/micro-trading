@@ -67,6 +67,7 @@ type TradingSettings struct {
 	IndicatorCheckIntervalMin int
 	IndicatorRSISellThreshold float64
 	IndicatorMACDBearishSell  bool
+	ScanIntervalMin           int
 	// 거래 시간
 	TradingStartTime string
 	TradingEndTime   string
@@ -268,6 +269,10 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.IndicatorCheckIntervalMin = pi(m, "indicator_check_interval_min", 5)
 	s.IndicatorRSISellThreshold = pf(m, "indicator_rsi_sell_threshold", 70.0)
 	s.IndicatorMACDBearishSell = pb(m, "indicator_macd_bearish_sell", false)
+	s.ScanIntervalMin = pi(m, "scan_interval", 1)
+	if s.ScanIntervalMin < 1 {
+		s.ScanIntervalMin = 1
+	}
 	s.TradingStartTime = ps(m, "trading_start_time", "09:15")
 	s.TradingEndTime = ps(m, "trading_end_time", "15:15")
 	s.StagnationThresholdPct = pf(m, "stagnation_threshold_pct", 0.0)
@@ -528,7 +533,7 @@ func (db *DB) UpdateTradeReportOnSell(ctx context.Context, buyOrderID, sellOrder
 	defer iter.Stop()
 	snap, err := iter.Next()
 	if err == iterator.Done {
-		return nil // no matching trade report — ignore
+		return fmt.Errorf("UpdateTradeReportOnSell: no trade report found for buy_order_id=%d", buyOrderID)
 	}
 	if err != nil {
 		return err
@@ -1024,6 +1029,7 @@ var defaultSettings = map[string]any{
 	"rank_lease_duration_min":          "0",
 	"sell_conditions":                  `["take_profit","stop_loss"]`,
 	"indicator_check_interval_min":     "5",
+	"scan_interval":                    "1",
 	"indicator_rsi_sell_threshold":     "70",
 	"indicator_macd_bearish_sell":      "false",
 	"trading_start_time":               "09:15",

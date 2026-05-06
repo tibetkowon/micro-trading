@@ -50,7 +50,7 @@ function transformSettings(raw) {
     schedule: {
       trade_start: raw.trading_start_time || '09:15',
       trade_end: raw.trading_end_time || '15:15',
-      scan_interval: pi(raw.scan_interval, 60),
+      scan_interval: pi(raw.scan_interval, 1),
       indicator_check_interval: pi(raw.indicator_check_interval_min, 5),
     },
     sell_on_upper_limit: pb(raw.sell_on_upper_limit, false),
@@ -176,7 +176,7 @@ export default function Settings() {
       flat.min_score_threshold = String(settings.min_score ?? 0)
       flat.trading_start_time = settings.schedule?.trade_start || '09:15'
       flat.trading_end_time = settings.schedule?.trade_end || '15:15'
-      flat.scan_interval = String(settings.schedule?.scan_interval ?? 60)
+      flat.scan_interval = String(settings.schedule?.scan_interval ?? 1)
       flat.indicator_check_interval_min = String(settings.schedule?.indicator_check_interval ?? 5)
       for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume'])
         flat[`weight_${k}`] = String(settings.weights?.[k] ?? 0)
@@ -495,9 +495,9 @@ export default function Settings() {
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">스캔 주기 (초)</label>
-              <input className="form-input" type="number" min="10"
-                value={schedule.scan_interval ?? 60}
+              <label className="form-label">스캔 주기 (분)</label>
+              <input className="form-input" type="number" min="1"
+                value={schedule.scan_interval ?? 1}
                 onChange={e => set('schedule.scan_interval', +e.target.value)} />
             </div>
             <div className="form-group">

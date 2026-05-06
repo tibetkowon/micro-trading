@@ -129,12 +129,13 @@ func (e *Engine) setHaltReason(r string) {
 }
 
 // runCycle is the main event loop.
-// It runs an initial scan on startup, then rescans on sold signals or every 60 seconds.
+// It runs an initial scan on startup, then rescans on sold signals or every scan_interval minutes.
 func (e *Engine) runCycle(ctx context.Context) {
 	logger.Info("engine: cycle started", nil)
 	e.tryBuy(ctx)
 
-	ticker := time.NewTicker(60 * time.Second)
+	scanInterval := e.loadScanInterval(ctx)
+	ticker := time.NewTicker(scanInterval)
 	defer ticker.Stop()
 
 	for {
@@ -146,11 +147,28 @@ func (e *Engine) runCycle(ctx context.Context) {
 			logger.Info("engine: sold signal — rescanning", map[string]any{"stock_code": code})
 			time.Sleep(3 * time.Second)
 			e.updateConsecutiveLosses(ctx, code)
+			// 매도 후 재스캔 시 설정이 바뀌었을 수 있으므로 인터벌 재적용
+			newInterval := e.loadScanInterval(ctx)
+			if newInterval != scanInterval {
+				scanInterval = newInterval
+				ticker.Reset(scanInterval)
+			}
 			e.tryBuy(ctx)
 		case <-ticker.C:
 			e.tryBuy(ctx)
 		}
 	}
+}
+
+// loadScanInterval reads scan_interval from settings (minutes). Falls back to 1 minute.
+func (e *Engine) loadScanInterval(ctx context.Context) time.Duration {
+	settings, err := e.db.GetTradingSettings(ctx)
+	if err != nil || settings.ScanIntervalMin < 1 {
+		return time.Minute
+	}
+	d := time.Duration(settings.ScanIntervalMin) * time.Minute
+	logger.Info("engine: scan interval set", map[string]any{"interval_min": settings.ScanIntervalMin})
+	return d
 }
 
 // tryBuy reads settings, checks available slots and daily limits, then runs a scan cycle.
@@ -246,6 +264,12 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 
 		// Tag asset type from stock master
 		if sm, _ := e.mstStore.GetByCode(ctx, c.StockCode); sm != nil {
+			if sm.IsETN {
+				logger.Info("engine: skipping ETN — account not registered for ETN trading",
+					map[string]any{"code": c.StockCode, "name": c.StockName})
+				rejectedCount++
+				continue
+			}
 			switch {
 			case sm.IsDomesticEquityETF:
 				info.AssetType = "ETF_DOMESTIC"
@@ -679,6 +703,26 @@ func (e *Engine) placeAndMonitor(
 
 	if err := e.mon.Register(ctx, entry); err != nil {
 		return fmt.Errorf("monitor.Register: %w", err)
+	}
+
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	indicatorsJSON, _ := json.Marshal(detail)
+	report := &models.TradeReport{
+		Date:          time.Now().In(kst).Format("2006-01-02"),
+		StockCode:     c.StockCode,
+		StockName:     c.StockName,
+		BuyOrderID:    result.OrderID,
+		BuyPrice:      filledPrice,
+		BuyQty:        qty,
+		BuyAmount:     filledPrice * float64(qty),
+		BuyReason:     detail.String(),
+		BuyIndicators: string(indicatorsJSON),
+	}
+	if _, err := e.db.CreateTradeReport(ctx, report); err != nil {
+		logger.Error("engine: CreateTradeReport failed", map[string]any{
+			"code":  c.StockCode,
+			"error": err.Error(),
+		})
 	}
 
 	logger.Info("engine: position registered", map[string]any{
