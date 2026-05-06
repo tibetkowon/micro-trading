@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-07 — feat: 지표 계산 기준 5분봉→1분봉 전환 + MA60/MA120 추가
+
+- **GetStockInfo 1분봉 전환**: RSI(14), MACD(12,26,9), MA5/20, VWAP 계산 기준이 5분봉 집계에서 1분봉 직접 사용으로 변경. 지표 후행성 제거.
+- **MA60/MA120 신규 추가**: 1분봉 기준 60봉(1시간)·120봉(2시간) 이동평균 계산. `StockInfo.MA60`, `StockInfo.MA120` 필드 추가.
+- **하드 필터 — MA 지지 조건**: `HardMA60SupportEnabled`, `HardMA120SupportEnabled` 설정 추가. 현재가가 MA 아래이면 후보 탈락.
+- **모니터링 자동 반영**: `StartIndicatorChecker`가 `ops.GetStockInfo`를 통해 RSI/MACD를 조회하므로 수정 없이 1분봉 기준 매도 신호 적용.
+- **단위 테스트 추가**: `ops/stock_info_test.go`, `scorer/scorer_test.go`
+
 ## 2026-05-06 — feat: settings API — MA60/MA120 지지 조건 저장 추가
 
 - **handlers.go**: `UpdateSettings` 핸들러에 `HardMA60SupportEnabled`, `HardMA120SupportEnabled` 필드 추가
