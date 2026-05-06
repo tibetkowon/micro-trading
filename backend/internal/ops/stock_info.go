@@ -148,9 +148,9 @@ func fillChartIndicators(info *StockInfo, bars []kis.ChartBar, price float64) {
 		for i, c := range candles1m {
 			closes1m[i] = c.Close
 		}
-		info.MA5   = calcMA(closes1m, 5)
-		info.MA20  = calcMA(closes1m, 20)
-		info.MA60  = calcMA(closes1m, 60)
+		info.MA5 = calcMA(closes1m, 5)
+		info.MA20 = calcMA(closes1m, 20)
+		info.MA60 = calcMA(closes1m, 60)
 		info.MA120 = calcMA(closes1m, 120)
 		info.RSI14 = calcRSI(closes1m, 14)
 		info.MACDLine, info.MACDSignal, info.MACDHisto = calcMACD(closes1m, 12, 26, 9)

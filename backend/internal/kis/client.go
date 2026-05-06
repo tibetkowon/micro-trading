@@ -797,9 +797,9 @@ func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string)
 // --- Internal helpers ---
 
 const (
-	tpsErrCode      = "EGW00201"
+	tpsErrCode       = "EGW00201"
 	transientErrCode = "EGW00316" // 조회 처리 중 일시적 서버 오류 — 재시도로 해결됨
-	tpsMaxRetries   = 3
+	tpsMaxRetries    = 3
 )
 
 // tpsBackoff returns the wait duration for a given retry attempt (0-indexed).
