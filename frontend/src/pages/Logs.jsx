@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { collection, query, orderBy, limit, onSnapshot, getDocs } from 'firebase/firestore'
 import { apiFetch } from '../utils/api'
 import { Badge, Toggle } from '../components/shared'
@@ -125,40 +125,42 @@ export default function Logs() {
                         </td>
                       </tr>
                     ) : kisLogs.map(l => (
-                      <tr key={l._docId} style={{ cursor: 'pointer', background: selectedIds.has(l.id) ? 'rgba(234,108,16,0.07)' : '' }}>
-                        <td onClick={e => toggleSelect(l.id, e)} style={{ cursor: 'default' }}>
-                          <input type="checkbox" checked={selectedIds.has(l.id)} onChange={() => {}}
-                            style={{ cursor: 'pointer', accentColor: 'var(--accent)' }} />
-                        </td>
-                        <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-                          onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
-                          {fmtTs(l.timestamp)}
-                        </td>
-                        <td className="mono" style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: 280 }}
-                          onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
-                          {l.endpoint}
-                        </td>
-                        <td onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
-                          {l.error_code
-                            ? <Badge color="red">{l.error_code}</Badge>
-                            : <span className="muted" style={{ fontSize: 11 }}>—</span>}
-                        </td>
-                        <td style={{ fontSize: 12, color: l.error_code ? 'var(--red)' : 'var(--text)' }}
-                          onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
-                          <span style={{ color: 'var(--text-dim)', fontSize: 10, marginRight: 6 }}>
-                            {expandedId === l._docId ? '▼' : '▶'}
-                          </span>
-                          {l.error_msg}
-                        </td>
-                      </tr>
+                      <Fragment key={l._docId}>
+                        <tr style={{ cursor: 'pointer', background: selectedIds.has(l.id) ? 'rgba(234,108,16,0.07)' : '' }}>
+                          <td onClick={e => toggleSelect(l.id, e)} style={{ cursor: 'default' }}>
+                            <input type="checkbox" checked={selectedIds.has(l.id)} onChange={() => {}}
+                              style={{ cursor: 'pointer', accentColor: 'var(--accent)' }} />
+                          </td>
+                          <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+                            onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
+                            {fmtTs(l.timestamp)}
+                          </td>
+                          <td className="mono" style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: 280 }}
+                            onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
+                            {l.endpoint}
+                          </td>
+                          <td onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
+                            {l.error_code
+                              ? <Badge color="red">{l.error_code}</Badge>
+                              : <span className="muted" style={{ fontSize: 11 }}>—</span>}
+                          </td>
+                          <td style={{ fontSize: 12, color: l.error_code ? 'var(--red)' : 'var(--text)' }}
+                            onClick={() => setExpandedId(expandedId === l._docId ? null : l._docId)}>
+                            <span style={{ color: 'var(--text-dim)', fontSize: 10, marginRight: 6 }}>
+                              {expandedId === l._docId ? '▼' : '▶'}
+                            </span>
+                            {l.error_msg}
+                          </td>
+                        </tr>
+                        {expandedId === l._docId && (
+                          <tr key={`expand-${l._docId}`}>
+                            <td colSpan={5} style={{ padding: '0 12px 12px 40px' }}>
+                              <div className="code-block">{l.raw_response || '(응답 없음)'}</div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     ))}
-                    {kisLogs.map(l => expandedId === l._docId ? (
-                      <tr key={`expand-${l._docId}`}>
-                        <td colSpan={5} style={{ padding: '0 12px 12px 40px' }}>
-                          <div className="code-block">{l.raw_response || '(응답 없음)'}</div>
-                        </td>
-                      </tr>
-                    ) : null)}
                   </tbody>
                 </table>
               </div>
