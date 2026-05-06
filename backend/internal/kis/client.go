@@ -797,8 +797,9 @@ func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string)
 // --- Internal helpers ---
 
 const (
-	tpsErrCode    = "EGW00201"
-	tpsMaxRetries = 3
+	tpsErrCode      = "EGW00201"
+	transientErrCode = "EGW00316" // 조회 처리 중 일시적 서버 오류 — 재시도로 해결됨
+	tpsMaxRetries   = 3
 )
 
 // tpsBackoff returns the wait duration for a given retry attempt (0-indexed).
@@ -849,19 +850,34 @@ func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([
 			Msg     string `json:"msg1"`
 		}
 		if err := json.Unmarshal(raw, &envelope); err == nil && envelope.RtCd == "1" {
-			if envelope.MsgCode == tpsErrCode && attempt < tpsMaxRetries {
-				delay := tpsBackoff(attempt)
-				logger.Info("KIS TPS exceeded — retrying", map[string]any{
-					"attempt": attempt + 1,
-					"delay":   delay.String(),
-				})
-				c.rateLimiter.Throttle(3, 3*time.Second)
-				select {
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				case <-time.After(delay):
+			if attempt < tpsMaxRetries {
+				if envelope.MsgCode == tpsErrCode {
+					delay := tpsBackoff(attempt)
+					logger.Info("KIS TPS exceeded — retrying", map[string]any{
+						"attempt": attempt + 1,
+						"delay":   delay.String(),
+					})
+					c.rateLimiter.Throttle(3, 3*time.Second)
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-time.After(delay):
+					}
+					continue
 				}
-				continue
+				if envelope.MsgCode == transientErrCode {
+					delay := tpsBackoff(attempt)
+					logger.Info("KIS transient server error — retrying", map[string]any{
+						"attempt": attempt + 1,
+						"delay":   delay.String(),
+					})
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-time.After(delay):
+					}
+					continue
+				}
 			}
 			c.logAPIError(endpoint, envelope.MsgCode, string(raw))
 			if envelope.MsgCode == "EGW00123" {
