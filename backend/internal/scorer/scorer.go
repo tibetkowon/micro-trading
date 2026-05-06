@@ -6,6 +6,7 @@ package scorer
 import (
 	"fmt"
 	"math"
+	"strconv"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/ops"
@@ -83,6 +84,22 @@ func ApplyHardFilter(c CandidateInfo, s database.TradingSettings) FilterResult {
 	// MACD 데드크로스 제외
 	if s.HardMACDBearishEnabled && info.MACDLine != 0 && info.MACDLine < info.MACDSignal {
 		return FilterResult{Reason: "MACD bearish (deadcross)"}
+	}
+
+	// MA60 지지선 (1분봉 기준 1시간 추세선) — 현재가 < MA60이면 탈락
+	if s.HardMA60SupportEnabled && info.MA60 > 0 {
+		price, _ := strconv.ParseFloat(info.CurrentPrice, 64)
+		if price > 0 && price < info.MA60 {
+			return FilterResult{Reason: fmt.Sprintf("price %.0f below MA60 %.0f", price, info.MA60)}
+		}
+	}
+
+	// MA120 지지선 (1분봉 기준 2시간 추세선)
+	if s.HardMA120SupportEnabled && info.MA120 > 0 {
+		price, _ := strconv.ParseFloat(info.CurrentPrice, 64)
+		if price > 0 && price < info.MA120 {
+			return FilterResult{Reason: fmt.Sprintf("price %.0f below MA120 %.0f", price, info.MA120)}
+		}
 	}
 
 	// 고점 형성 후 경과 시간 상한 (너무 오래된 고점 제외)
