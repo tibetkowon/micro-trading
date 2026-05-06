@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-05-06 — test: ops 지표 계산 함수 단위 테스트 추가
+
+- **stock_info_test.go**: `calcMA`, `calcRSI`, `calcMACD` 함수 단위 테스트 추가
+  - `TestCalcMA`: 이동평균 5주기 계산 + 데이터 부족 시 0 반환 검증
+  - `TestCalcRSI_Insufficient`: RSI 데이터 부족(14개 미만) 시 0 반환 검증
+  - `TestCalcRSI_AllGain`: 단조 증가 수열에서 RSI = 100 검증
+  - `TestCalcMACD_Insufficient`: MACD 데이터 부족(26개 미만) 시 (0,0,0) 반환 검증
+  - `TestCalcMA60And120`: 150개 데이터에서 MA60/MA120 모두 0 아님 + 크기 관계 검증
+- **Build/Test**: `go build ./...` + `go test ./internal/ops/... -run TestCalc -v` 완료 — 모두 PASS
+
 ## 2026-05-06 — fix: ETN 필터링·EGW00316 재시도·로그UI·TradeReport 생성 버그 수정
 
 - **ETN 종목 자동 차단**: `StockMaster`에 `IsETN` 필드 추가 (GroupCode `"EN"` 감지). 엔진 선정 단계에서 ETN 종목 스킵 — `APBK1629` 에러 재발 방지
