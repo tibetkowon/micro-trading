@@ -587,6 +587,7 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 		VWAPDiff    float64 `json:"vwap_diff"`
 		VolRatio    float64 `json:"vol_ratio"`
 		Total       float64 `json:"total"`
+		HasChart    bool    `json:"has_chart"` // 차트 API 성공 여부
 	}
 
 	kst := ops.KSTLocation()
@@ -614,6 +615,7 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 						"vwap_disparity": e.VWAPDiff,
 						"volume_ratio":   e.VolRatio,
 						"total_score":    e.Total,
+						"has_chart":      e.HasChart,
 					})
 				}
 			} else {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-07 — fix: 차트 지표 데이터 부재 시 has_chart 플래그로 null 처리
+
+- **engine.go `topStockEntry`**: `HasChart bool` 필드 추가 (차트 API 성공 여부)
+- **engine.go `topEntries` 빌드 루프**: `HasChart: info.RSI14 > 0 || info.MACDLine != 0` 조건으로 설정
+- **engine.go scored 루프**: RSI=0 & MACD=0 시 경고 로그 출력 (차트 API 실패 감지)
+- **handlers.go `GetScanLogs`**: `topStockEntry`에 `HasChart` 필드 추가, stocks 매핑에 `has_chart` 키 추가
+- **Dashboard.jsx**: RSI·MACD·VWAP·거래량비율 셀에 `s.has_chart` 가드 적용 — 차트 데이터 없을 때 '—' 표시 (MACD 가짜 BEAR 제거)
+- **빌드 검증**: `go build ./...` 성공, `npm run build` 성공
+
 ## 2026-05-07 — fix: 스캔로그 타임스탬프 UTC→KST 변환
 
 - **handlers.go GetScanLogs**: `ScannedAt`, `CreatedAt` 필드 변환 추가

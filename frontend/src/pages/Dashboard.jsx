@@ -182,15 +182,15 @@ export default function Dashboard() {
                                     {s.stock_name !== s.stock_code && <span className="mono muted" style={{ fontSize: 11, marginLeft: 4 }}>{s.stock_code}</span>}
                                   </td>
                                   <td className="mono">{s.strength > 0 ? s.strength.toFixed(1) : '—'}</td>
-                                  <td className="mono">{s.rsi > 0 ? s.rsi.toFixed(1) : '—'}</td>
+                                  <td className="mono">{s.has_chart && s.rsi > 0 ? s.rsi.toFixed(1) : '—'}</td>
                                   <td>
-                                    {s.macd_bullish != null
+                                    {s.has_chart
                                       ? <Badge color={s.macd_bullish ? 'green' : 'red'}>{s.macd_bullish ? 'BULL' : 'BEAR'}</Badge>
                                       : '—'}
                                   </td>
                                   <td className="mono">{s.bid_ask_ratio > 0 ? s.bid_ask_ratio.toFixed(2) : '—'}</td>
-                                  <td className="mono">{s.vwap_disparity != null ? s.vwap_disparity.toFixed(2) + '%' : '—'}</td>
-                                  <td className="mono">{s.volume_ratio > 0 ? s.volume_ratio.toFixed(2) : '—'}</td>
+                                  <td className="mono">{s.has_chart && s.vwap_disparity != null ? s.vwap_disparity.toFixed(2) + '%' : '—'}</td>
+                                  <td className="mono">{s.has_chart && s.volume_ratio > 0 ? s.volume_ratio.toFixed(2) : '—'}</td>
                                   <td className="mono accent" style={{ fontWeight: 700 }}>{s.total_score?.toFixed(1) ?? '—'}</td>
                                 </tr>
                               ))}

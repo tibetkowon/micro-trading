@@ -360,6 +360,10 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			continue
 		}
 
+		if info.RSI14 == 0 && info.MACDLine == 0 {
+			logger.Warn("engine: chart indicators unavailable (RSI=0, MACD=0) — chart API may have failed",
+				map[string]any{"code": c.StockCode})
+		}
 		detail := scorer.CalcScore(cinfo, settings)
 		passed = append(passed, scored{cinfo, detail})
 	}
@@ -380,6 +384,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		VWAPDiff    float64 `json:"vwap_diff"`
 		VolRatio    float64 `json:"vol_ratio"`
 		Total       float64 `json:"total"`
+		HasChart    bool    `json:"has_chart"` // 차트 API 성공 여부
 	}
 	topEntries := make([]topStockEntry, 0, 5)
 	for i, p := range passed {
@@ -397,6 +402,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			VWAPDiff:    info.VWAPDiff,
 			VolRatio:    info.VolVs3AvgRatio,
 			Total:       p.detail.Total,
+			HasChart:    info.RSI14 > 0 || info.MACDLine != 0, // 차트 데이터 존재 여부
 		})
 	}
 	topJSON, _ := json.Marshal(topEntries)
