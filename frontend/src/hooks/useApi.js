@@ -7,9 +7,12 @@ export function useApi(url, options = {}) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const intervalRef = useRef(null)
+  const isFirstFetch = useRef(true)
 
   const fetchData = useCallback(async () => {
-    setLoading(true)
+    if (isFirstFetch.current) {
+      setLoading(true)
+    }
     setError(null)
     try {
       const res = await fetch(apiUrl(url), fetchOptions)
@@ -22,11 +25,13 @@ export function useApi(url, options = {}) {
       setError(e.message)
     } finally {
       setLoading(false)
+      isFirstFetch.current = false
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url])
 
   useEffect(() => {
+    isFirstFetch.current = true
     fetchData()
     if (pollInterval) {
       intervalRef.current = setInterval(fetchData, pollInterval)

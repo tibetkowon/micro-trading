@@ -49,6 +49,7 @@ type MonitoredEntry struct {
 	// 상한가 매도
 	UpperLimitPrice  float64 // 당일 상한가. 0=비활성
 	SellOnUpperLimit bool    // 상한가 도달 시 자동 매도
+	CreatedAt        time.Time
 }
 
 // Monitor watches registered positions for target/stop price hits and
@@ -133,6 +134,9 @@ func (m *Monitor) SetPartialTPConfig(enabled bool, pct, ratio float64, raiseStop
 // If wsClient is connected, it subscribes to real-time price updates.
 func (m *Monitor) Register(ctx context.Context, pos MonitoredEntry) error {
 	m.mu.Lock()
+	if pos.CreatedAt.IsZero() {
+		pos.CreatedAt = time.Now().UTC()
+	}
 	m.positions[pos.StockCode] = &pos
 	m.mu.Unlock()
 
@@ -772,7 +776,7 @@ func (m *Monitor) List() []models.MonitoredPosition {
 			StopPrice:    pos.StopPrice,
 			OrderID:      pos.OrderID,
 			RemainingQty: pos.Qty,
-			CreatedAt:    time.Now(),
+			CreatedAt:    pos.CreatedAt,
 		})
 	}
 	return result
@@ -988,6 +992,7 @@ func (m *Monitor) LoadFromDB(ctx context.Context, soldCh chan<- string) error {
 			Qty:         p.RemainingQty,
 			Market:      "KR",
 			SoldCh:      soldCh,
+			CreatedAt:   p.CreatedAt,
 		}
 		m.mu.Lock()
 		m.positions[pos.StockCode] = &pos
