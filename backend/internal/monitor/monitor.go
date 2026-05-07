@@ -32,6 +32,7 @@ type MonitoredEntry struct {
 	TargetPrice float64
 	StopPrice   float64
 	OrderID     int64
+	Qty         int    // 현재 보유 수량 (부분 매도 시 감소)
 	Market      string        // "KR" (empty defaults to "KR")
 	AssetType   string        // "STOCK" | "ETF" | "ETF_DOMESTIC" (MST 기반)
 	SoldCh      chan<- string // optional: engine receives sold signal (may be nil)
@@ -136,12 +137,13 @@ func (m *Monitor) Register(ctx context.Context, pos MonitoredEntry) error {
 
 	// Persist for server-restart recovery.
 	dbPos := &models.MonitoredPosition{
-		StockCode:   pos.StockCode,
-		StockName:   pos.StockName,
-		FilledPrice: pos.FilledPrice,
-		TargetPrice: pos.TargetPrice,
-		StopPrice:   pos.StopPrice,
-		OrderID:     pos.OrderID,
+		StockCode:    pos.StockCode,
+		StockName:    pos.StockName,
+		FilledPrice:  pos.FilledPrice,
+		TargetPrice:  pos.TargetPrice,
+		StopPrice:    pos.StopPrice,
+		OrderID:      pos.OrderID,
+		RemainingQty: pos.Qty,
 	}
 	if err := m.db.CreatePosition(ctx, dbPos); err != nil {
 		return fmt.Errorf("persist monitored_position: %w", err)
@@ -495,6 +497,20 @@ func (m *Monitor) executePartialSell(stockCode string, pos *MonitoredEntry, reas
 		}
 	}(pos.OrderID, partialSellOrderID, sellQty, reason)
 
+	// 부분 매도 성공 후 잔여 수량 업데이트
+	m.mu.Lock()
+	if p, ok := m.positions[stockCode]; ok {
+		p.Qty -= sellQty
+		if p.Qty < 0 {
+			p.Qty = 0
+		}
+		remaining := p.Qty
+		m.mu.Unlock()
+		_ = m.db.UpdatePositionQty(ctx, stockCode, remaining)
+	} else {
+		m.mu.Unlock()
+	}
+
 	return sellQty
 }
 
@@ -583,6 +599,20 @@ func (m *Monitor) executePartialSellWithRatio(stockCode string, pos *MonitoredEn
 				map[string]any{"stock_code": stockCode, "error": err.Error()})
 		}
 	}(pos.OrderID, tpSellOrderID, sellQty, reason)
+
+	// 부분 매도 성공 후 잔여 수량 업데이트
+	m.mu.Lock()
+	if p, ok := m.positions[stockCode]; ok {
+		p.Qty -= sellQty
+		if p.Qty < 0 {
+			p.Qty = 0
+		}
+		remaining := p.Qty
+		m.mu.Unlock()
+		_ = m.db.UpdatePositionQty(ctx, stockCode, remaining)
+	} else {
+		m.mu.Unlock()
+	}
 
 	return sellQty
 }
@@ -722,13 +752,14 @@ func (m *Monitor) List() []models.MonitoredPosition {
 	result := make([]models.MonitoredPosition, 0, len(m.positions))
 	for _, pos := range m.positions {
 		result = append(result, models.MonitoredPosition{
-			StockCode:   pos.StockCode,
-			StockName:   pos.StockName,
-			FilledPrice: pos.FilledPrice,
-			TargetPrice: pos.TargetPrice,
-			StopPrice:   pos.StopPrice,
-			OrderID:     pos.OrderID,
-			CreatedAt:   time.Now(),
+			StockCode:    pos.StockCode,
+			StockName:    pos.StockName,
+			FilledPrice:  pos.FilledPrice,
+			TargetPrice:  pos.TargetPrice,
+			StopPrice:    pos.StopPrice,
+			OrderID:      pos.OrderID,
+			RemainingQty: pos.Qty,
+			CreatedAt:    time.Now(),
 		})
 	}
 	return result

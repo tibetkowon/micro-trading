@@ -390,8 +390,9 @@ func (h *Handler) GetMonitorPositions(c *gin.Context) {
 	views := make([]posView, len(positions))
 	for i, p := range positions {
 		heldDays := int(now.Sub(p.CreatedAt.In(kst)).Hours() / 24)
-		qty := 0
-		if p.OrderID > 0 {
+		// RemainingQty 우선 사용, 0이면 원래 주문 수량 fallback
+		qty := p.RemainingQty
+		if qty == 0 && p.OrderID > 0 {
 			if order, err := h.db.GetOrderByID(c.Request.Context(), p.OrderID); err == nil && order != nil {
 				qty = order.Qty
 			}

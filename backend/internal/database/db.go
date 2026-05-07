@@ -607,6 +607,14 @@ func (db *DB) DeletePosition(ctx context.Context, stockCode string) error {
 	return err
 }
 
+// UpdatePositionQty updates the remaining_qty of a monitored position.
+func (db *DB) UpdatePositionQty(ctx context.Context, stockCode string, remainingQty int) error {
+	_, err := db.client.Collection(colPositions).Doc(stockCode).Update(ctx, []firestore.Update{
+		{Path: "remaining_qty", Value: remainingQty},
+	})
+	return err
+}
+
 // ListPositions returns all currently monitored positions.
 func (db *DB) ListPositions(ctx context.Context) ([]models.MonitoredPosition, error) {
 	iter := db.client.Collection(colPositions).Documents(ctx)

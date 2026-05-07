@@ -56,14 +56,15 @@ type Order struct {
 
 // MonitoredPosition is a buy position being watched for target/stop price hits.
 type MonitoredPosition struct {
-	ID          int64     `json:"id" firestore:"id"`
-	StockCode   string    `json:"stock_code" firestore:"stock_code"`
-	StockName   string    `json:"stock_name" firestore:"stock_name"`
-	FilledPrice float64   `json:"filled_price" firestore:"filled_price"`
-	TargetPrice float64   `json:"target_price" firestore:"target_price"`
-	StopPrice   float64   `json:"stop_price" firestore:"stop_price"`
-	OrderID     int64     `json:"order_id" firestore:"order_id"`
-	CreatedAt   time.Time `json:"created_at" firestore:"created_at"`
+	ID           int64     `json:"id" firestore:"id"`
+	StockCode    string    `json:"stock_code" firestore:"stock_code"`
+	StockName    string    `json:"stock_name" firestore:"stock_name"`
+	FilledPrice  float64   `json:"filled_price" firestore:"filled_price"`
+	TargetPrice  float64   `json:"target_price" firestore:"target_price"`
+	StopPrice    float64   `json:"stop_price" firestore:"stop_price"`
+	OrderID      int64     `json:"order_id" firestore:"order_id"`
+	RemainingQty int       `json:"remaining_qty" firestore:"remaining_qty"` // 추가
+	CreatedAt    time.Time `json:"created_at" firestore:"created_at"`
 }
 
 // Balance is a point-in-time snapshot of the account balance.

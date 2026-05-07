@@ -728,6 +728,7 @@ func (e *Engine) placeAndMonitor(
 		TargetPrice:        targetPrice,
 		StopPrice:          stopPrice,
 		OrderID:            result.OrderID,
+		Qty:                qty,
 		Market:             "KR",
 		AssetType:          c.Info.AssetType,
 		SoldCh:             e.soldCh,
