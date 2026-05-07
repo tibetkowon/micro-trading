@@ -1,11 +1,15 @@
 name: Deploy Backend
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
   workflow_dispatch:
 
 jobs:
   deploy:
-    name: Build & Upload to GCS
+    name: Build, Upload & Deploy to VM
     runs-on: ubuntu-latest
 
     steps:
@@ -36,4 +40,18 @@ jobs:
         run: |
           gsutil cp backend/server gs://${{ vars.GCS_BUCKET }}/micro-trading/server
           echo "✓ Uploaded to gs://${{ vars.GCS_BUCKET }}/micro-trading/server"
-          echo "  GCP VM을 재시작하면 최신 바이너리가 자동 적용됩니다."
+
+      - name: Deploy to VM
+        run: |
+          gcloud compute ssh micro-trading-server \
+            --project=micro-trading-495614 \
+            --zone=asia-northeast3-a \
+            --tunnel-through-iap \
+            --quiet \
+            --command="
+              gsutil cp gs://${{ vars.GCS_BUCKET }}/micro-trading/server /tmp/server-new &&
+              sudo mv /tmp/server-new /opt/trading/server &&
+              sudo chmod +x /opt/trading/server &&
+              sudo systemctl restart micro-trading &&
+              echo '✓ Deployment complete'
+            "
