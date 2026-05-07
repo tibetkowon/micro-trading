@@ -71,17 +71,22 @@ func (h *Handler) GetBalance(c *gin.Context) {
 	if v, err2 := strconv.ParseFloat(bal.AssetChangeRate, 64); err2 == nil {
 		assetChangePct = v
 	}
-	// Today's pnl/win_rate from the most recent daily report
+	// 당일 체결 완료 거래에서 실시간 손익 계산
 	kst := ops.KSTLocation()
 	todayStr := time.Now().In(kst).Format("2006-01-02")
 	todayPnl, todayPnlPct, winRate := 0.0, 0.0, 0.0
-	if reports, err2 := h.db.ListDailyReports(c.Request.Context(), 1); err2 == nil && len(reports) > 0 && reports[0].Date == todayStr {
-		r := reports[0]
-		todayPnl = r.TotalProfitAmount
-		todayPnlPct = r.AvgProfitPct
-		if r.TotalTrades > 0 {
-			winRate = float64(r.WinningTrades) / float64(r.TotalTrades) * 100
+	if trades, err2 := h.db.GetCompletedTradesBySoldDate(c.Request.Context(), todayStr); err2 == nil && len(trades) > 0 {
+		var sumProfitPct float64
+		winning := 0
+		for _, t := range trades {
+			todayPnl += t.ProfitAmount
+			sumProfitPct += t.ProfitPct
+			if t.ProfitAmount >= 0 {
+				winning++
+			}
 		}
+		todayPnlPct = sumProfitPct / float64(len(trades))
+		winRate = float64(winning) / float64(len(trades)) * 100
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
