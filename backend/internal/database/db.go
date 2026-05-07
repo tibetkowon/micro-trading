@@ -549,10 +549,10 @@ func (db *DB) UpdateTradeReportOnSell(ctx context.Context, buyOrderID, sellOrder
 
 	now := time.Now().UTC()
 	sellAmount := sellPrice * float64(sellQty)
-	profitAmount := sellAmount - r.BuyAmount
+	profitAmount := (sellPrice - r.BuyPrice) * float64(sellQty)
 	profitPct := 0.0
-	if r.BuyAmount > 0 {
-		profitPct = profitAmount / r.BuyAmount * 100
+	if r.BuyPrice > 0 {
+		profitPct = (sellPrice - r.BuyPrice) / r.BuyPrice * 100
 	}
 
 	updates := map[string]any{
