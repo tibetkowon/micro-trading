@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-07 — fix: 대시보드·엔진 버그 7건 수정 (이슈1~7)
+
+- **이슈1 — 스캔로그 타임스탬프**: `GetScanLogs`에서 RFC3339 UTC → KST "2006-01-02 15:04:05" 형식 변환. T/Z 문자 제거.
+- **이슈2 — 오늘 손익 실시간화**: `GetBalance`에서 `ListDailyReports`(15:20 배치) → `GetCompletedTradesBySoldDate`(당일 체결 실시간) 교체. 장중 P&L이 즉시 반영됨.
+- **이슈3 — 보유 수량 추적**: `MonitoredPosition.RemainingQty`, `MonitoredEntry.Qty` 추가. 부분 매도 시 수량 차감 후 Firestore `UpdatePositionQty` 호출. `LoadFromDB`/`RecoverFromHoldings` 재시작 후에도 수량 복원.
+- **이슈4 — 차트 지표 null 처리**: `has_chart` 플래그(RSI14>0 || MACDLine≠0)로 차트 API 실패 판별. MACD 가짜 BEAR 표시 제거. 프론트 RSI/MACD/VWAP/VolRatio 모두 `s.has_chart` 가드.
+- **이슈5 — skipReason 정확화**: 임계값 미달 시 `skipReason`이 현재 순회 종목 점수가 아닌 `passed[0].detail.Total`(실제 최고 점수)를 사용.
+- **이슈7 — 잔고 부족 주문 폭발 방지**: `WithdrawableAmount`(예수금) → `OrderableAmt`(실제 주문가능금액) 교체. APBK9952 에러 감지 시 주문 루프 즉시 `break` (기존 `continue`로 연속 실패 주문 발생).
+
 ## 2026-05-07 — fix: 차트 지표 데이터 부재 시 has_chart 플래그로 null 처리
 
 - **engine.go `topStockEntry`**: `HasChart bool` 필드 추가 (차트 API 성공 여부)
