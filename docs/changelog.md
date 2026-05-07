@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-07 — fix: 스캔로그 타임스탬프 UTC→KST 변환
+
+- **handlers.go GetScanLogs**: `ScannedAt`, `CreatedAt` 필드 변환 추가
+  - `kst := ops.KSTLocation()` 선언 추가 (line 586)
+  - `l.Timestamp` (RFC3339 UTC 문자열) → KST "2006-01-02 15:04:05" 형식 변환 (line 645-647)
+  - 변환 실패 시 원본 값 유지 (에러 안전성)
+- **빌드 검증**: `go build ./...` 성공
+
 ## 2026-05-06 — perf: StockInfo 30초 TTL 캐시 추가 — 지표체커 중복 차트 API 호출 제거
 
 - **ops/stock_info_cache.go 신규 생성**: `GetStockInfoCached` (30초 TTL 인메모리 캐시), `InvalidateStockInfoCache` (종목 캐시 무효화) 구현.
