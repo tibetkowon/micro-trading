@@ -79,7 +79,11 @@ func main() {
 
 	// --- Position monitor ---
 	mon := monitor.New(db, kisClient, wsClient, mstStore)
-	if err := mon.LoadFromDB(ctx); err != nil {
+
+	// --- Trading engine: created before LoadFromDB to wire soldCh ---
+	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, mstStore)
+
+	if err := mon.LoadFromDB(ctx, tradingEngine.SoldCh()); err != nil {
 		logger.Warn("failed to restore monitored positions from DB",
 			map[string]any{"error": err.Error()})
 	}
@@ -110,9 +114,6 @@ func main() {
 		ops.StartOrderSyncScheduler(ctx, kisClient, db, 5*time.Minute)
 		logger.Info("order sync scheduler started", map[string]any{"interval": "5m"})
 	}
-
-	// --- Trading engine (autonomous trader) ---
-	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, mstStore)
 
 	// KIS 실제 잔고와 대조하여 누락된 포지션 자동 복구.
 	// DB에 등록되지 않은 보유 종목(버그·장애·수동 주문 등)을 모니터링에 추가.

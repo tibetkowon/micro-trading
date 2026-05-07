@@ -962,7 +962,7 @@ func (m *Monitor) ResubscribeAll() {
 }
 
 // LoadFromDB restores monitored positions from the database after a server restart.
-func (m *Monitor) LoadFromDB(ctx context.Context) error {
+func (m *Monitor) LoadFromDB(ctx context.Context, soldCh chan<- string) error {
 	dbPositions, err := m.db.ListPositions(ctx)
 	if err != nil {
 		return fmt.Errorf("load monitored_positions: %w", err)
@@ -978,6 +978,7 @@ func (m *Monitor) LoadFromDB(ctx context.Context) error {
 			OrderID:     p.OrderID,
 			Qty:         p.RemainingQty,
 			Market:      "KR",
+			SoldCh:      soldCh,
 		}
 		m.mu.Lock()
 		m.positions[pos.StockCode] = &pos
