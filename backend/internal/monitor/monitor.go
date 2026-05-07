@@ -506,7 +506,9 @@ func (m *Monitor) executePartialSell(stockCode string, pos *MonitoredEntry, reas
 		}
 		remaining := p.Qty
 		m.mu.Unlock()
-		_ = m.db.UpdatePositionQty(ctx, stockCode, remaining)
+		if err := m.db.UpdatePositionQty(ctx, stockCode, remaining); err != nil {
+			logger.Error("monitor: UpdatePositionQty failed", map[string]any{"stock_code": stockCode, "error": err.Error()})
+		}
 	} else {
 		m.mu.Unlock()
 	}
@@ -609,7 +611,9 @@ func (m *Monitor) executePartialSellWithRatio(stockCode string, pos *MonitoredEn
 		}
 		remaining := p.Qty
 		m.mu.Unlock()
-		_ = m.db.UpdatePositionQty(ctx, stockCode, remaining)
+		if err := m.db.UpdatePositionQty(ctx, stockCode, remaining); err != nil {
+			logger.Error("monitor: UpdatePositionQty failed", map[string]any{"stock_code": stockCode, "error": err.Error()})
+		}
 	} else {
 		m.mu.Unlock()
 	}
@@ -870,6 +874,7 @@ func (m *Monitor) RecoverFromHoldings(ctx context.Context, soldCh chan<- string)
 			TargetPrice: filledPrice * (1 + takePct/100),
 			StopPrice:   filledPrice * (1 - stopPct/100),
 			OrderID:     orderID,
+			Qty:         qty,
 			AssetType:   assetType,
 			SoldCh:      soldCh,
 		}
@@ -971,6 +976,7 @@ func (m *Monitor) LoadFromDB(ctx context.Context) error {
 			TargetPrice: p.TargetPrice,
 			StopPrice:   p.StopPrice,
 			OrderID:     p.OrderID,
+			Qty:         p.RemainingQty,
 			Market:      "KR",
 		}
 		m.mu.Lock()
