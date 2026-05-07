@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-08 — feat: Firestore TTL 전체 컬렉션 적용 (8개)
+
+- **orders**: 1년, **balances**: 1개월, **trade_reports/daily_reports**: 6개월, **tokens**: 2일
+- 모든 모델에 `ExpireAt time.Time` 필드 추가 (firestore 태그: `expireAt`)
+- `CreateOrder`, `CreateBalance`, `CreateTradeReport`, `InsertOrUpdateDailyReport`, `SaveToken` 에 ExpireAt 설정
+- gcloud CLI로 8개 컬렉션 TTL 정책 등록 완료 (콘솔 셀렉트 박스 우회)
+- **빌드 검증**: `go build ./...` 성공
+
 ## 2026-05-07 — feat: Firestore TTL 지원 — scan_logs(7일)·service_logs(14일)·kis_api_logs(3일)
 
 - **models.go**: `ServiceLog`, `KISAPILog`, `ScanLog` 구조체에 `ExpireAt time.Time` 필드 추가 (Firestore 태그: `expireAt`)

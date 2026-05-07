@@ -52,6 +52,7 @@ type Order struct {
 	StopPct     float64     `json:"stop_pct" firestore:"stop_pct"`
 	SellReason  string      `json:"sell_reason" firestore:"sell_reason"`
 	CreatedAt   time.Time   `json:"created_at" firestore:"created_at"`
+	ExpireAt    time.Time   `json:"expire_at" firestore:"expireAt"`
 }
 
 // MonitoredPosition is a buy position being watched for target/stop price hits.
@@ -74,6 +75,7 @@ type Balance struct {
 	TotalEval       float64   `json:"total_eval" firestore:"total_eval"`
 	AvailableAmount float64   `json:"available_amount" firestore:"available_amount"`
 	RecordedAt      time.Time `json:"recorded_at" firestore:"recorded_at"`
+	ExpireAt        time.Time `json:"expire_at" firestore:"expireAt"`
 }
 
 // ServiceLog records service-level events for central display.
@@ -135,6 +137,7 @@ type TradeReport struct {
 	ProfitPct      float64    `json:"profit_pct" firestore:"profit_pct"`
 	CreatedAt      time.Time  `json:"created_at" firestore:"created_at"`
 	SoldAt         *time.Time `json:"sold_at" firestore:"sold_at"`
+	ExpireAt       time.Time  `json:"expire_at" firestore:"expireAt"`
 }
 
 // DailyReport summarizes all completed trades for a single trading day.
@@ -150,6 +153,7 @@ type DailyReport struct {
 	WorstTrade        string    `json:"worst_trade" firestore:"worst_trade"`     // JSON summary
 	TradeSummary      string    `json:"trade_summary" firestore:"trade_summary"` // JSON array
 	CreatedAt         time.Time `json:"created_at" firestore:"created_at"`
+	ExpireAt          time.Time `json:"expire_at" firestore:"expireAt"`
 }
 
 // Token stores the KIS OAuth access token and its validity window.
@@ -158,4 +162,5 @@ type Token struct {
 	AccessToken string    `json:"access_token" firestore:"access_token"`
 	IssuedAt    time.Time `json:"issued_at" firestore:"issued_at"`
 	ExpiresAt   time.Time `json:"expires_at" firestore:"expires_at"`
+	ExpireAt    time.Time `json:"expire_at" firestore:"expireAt"`
 }

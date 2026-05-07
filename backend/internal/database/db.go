@@ -354,6 +354,7 @@ func (db *DB) GetCurrentToken(ctx context.Context) (*models.Token, error) {
 // SaveToken persists the KIS access token, overwriting any previous value.
 func (db *DB) SaveToken(ctx context.Context, tok *models.Token) error {
 	tok.ID = newID()
+	tok.ExpireAt = time.Now().UTC().Add(48 * time.Hour)
 	_, err := db.client.Collection(colTokens).Doc(docToken).Set(ctx, tok)
 	return err
 }
@@ -376,6 +377,7 @@ func (db *DB) CreateOrder(ctx context.Context, o *models.Order) (int64, error) {
 	if o.CreatedAt.IsZero() {
 		o.CreatedAt = time.Now().UTC()
 	}
+	o.ExpireAt = time.Now().UTC().Add(365 * 24 * time.Hour)
 	_, err := db.client.Collection(colOrders).Doc(strconv.FormatInt(id, 10)).Set(ctx, o)
 	return id, err
 }
@@ -642,11 +644,13 @@ func (db *DB) ListPositions(ctx context.Context) ([]models.MonitoredPosition, er
 // CreateBalance records a balance snapshot.
 func (db *DB) CreateBalance(ctx context.Context, totalEval, availableAmt float64) error {
 	id := newID()
+	now := time.Now().UTC()
 	bal := models.Balance{
 		ID:              id,
 		TotalEval:       totalEval,
 		AvailableAmount: availableAmt,
-		RecordedAt:      time.Now().UTC(),
+		RecordedAt:      now,
+		ExpireAt:        now.Add(30 * 24 * time.Hour),
 	}
 	_, err := db.client.Collection(colBalances).Doc(strconv.FormatInt(id, 10)).Set(ctx, bal)
 	return err
@@ -823,6 +827,7 @@ func (db *DB) CreateTradeReport(ctx context.Context, r *models.TradeReport) (int
 	if r.CreatedAt.IsZero() {
 		r.CreatedAt = time.Now().UTC()
 	}
+	r.ExpireAt = time.Now().UTC().Add(180 * 24 * time.Hour)
 	_, err := db.client.Collection(colTradeRpt).Doc(strconv.FormatInt(id, 10)).Set(ctx, r)
 	return id, err
 }
@@ -964,6 +969,7 @@ func (db *DB) InsertOrUpdateDailyReport(ctx context.Context, dr models.DailyRepo
 	if dr.CreatedAt.IsZero() {
 		dr.CreatedAt = time.Now().UTC()
 	}
+	dr.ExpireAt = time.Now().UTC().Add(180 * 24 * time.Hour)
 	_, err := db.client.Collection(colDailyRpt).Doc(dr.Date).Set(ctx, dr)
 	return err
 }
