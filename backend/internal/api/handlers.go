@@ -583,6 +583,7 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 		Total       float64 `json:"total"`
 	}
 
+	kst := ops.KSTLocation()
 	views := make([]scanLogView, len(logs))
 	for i, l := range logs {
 		stocks := []gin.H{}
@@ -641,10 +642,15 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 			}
 		}
 
+		kstTime := l.Timestamp
+		if t, err2 := time.Parse(time.RFC3339, l.Timestamp); err2 == nil {
+			kstTime = t.In(kst).Format("2006-01-02 15:04:05")
+		}
+
 		views[i] = scanLogView{
 			ID:                l.ID,
-			ScannedAt:         l.Timestamp,
-			CreatedAt:         l.Timestamp,
+			ScannedAt:         kstTime,
+			CreatedAt:         kstTime,
 			EvaluatedCount:    l.TotalCandidates,
 			PassedHardFilter:  l.StocksFound,
 			ScoredCount:       len(stocks),
