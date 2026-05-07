@@ -60,6 +60,7 @@ type MonitoredPosition struct {
 	StockCode    string    `json:"stock_code" firestore:"stock_code"`
 	StockName    string    `json:"stock_name" firestore:"stock_name"`
 	FilledPrice  float64   `json:"filled_price" firestore:"filled_price"`
+	CurrentPrice float64   `json:"current_price" firestore:"current_price"`
 	TargetPrice  float64   `json:"target_price" firestore:"target_price"`
 	StopPrice    float64   `json:"stop_price" firestore:"stop_price"`
 	OrderID      int64     `json:"order_id" firestore:"order_id"`

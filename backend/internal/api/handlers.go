@@ -397,17 +397,27 @@ func (h *Handler) GetMonitorPositions(c *gin.Context) {
 				qty = order.Qty
 			}
 		}
+		cp := p.CurrentPrice
+		if cp == 0 {
+			cp = p.FilledPrice
+		}
+		pnlPct := 0.0
+		pnlAmount := 0.0
+		if p.FilledPrice > 0 {
+			pnlPct = (cp - p.FilledPrice) / p.FilledPrice * 100
+			pnlAmount = (cp - p.FilledPrice) * float64(qty)
+		}
 		views[i] = posView{
 			ID:           p.ID,
 			StockCode:    p.StockCode,
 			StockName:    p.StockName,
 			AvgPrice:     p.FilledPrice,
-			CurrentPrice: p.FilledPrice,
+			CurrentPrice: cp,
 			TargetPrice:  p.TargetPrice,
 			StopPrice:    p.StopPrice,
 			Quantity:     qty,
-			PnlPct:       0,
-			PnlAmount:    0,
+			PnlPct:       pnlPct,
+			PnlAmount:    pnlAmount,
 			HeldDays:     heldDays,
 			EntryTime:    p.CreatedAt.In(kst).Format("2006-01-02 15:04"),
 			Status:       "MONITORING",

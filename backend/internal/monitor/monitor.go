@@ -26,10 +26,11 @@ type IndicatorSnapshot struct {
 
 // MonitoredEntry holds a buy position being actively monitored.
 type MonitoredEntry struct {
-	StockCode   string
-	StockName   string
-	FilledPrice float64
-	TargetPrice float64
+	StockCode    string
+	StockName    string
+	FilledPrice  float64
+	CurrentPrice float64
+	TargetPrice  float64
 	StopPrice   float64
 	OrderID     int64
 	Qty         int    // 현재 보유 수량 (부분 매도 시 감소)
@@ -195,6 +196,13 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 	if !ok {
 		return
 	}
+
+	// 현재가 갱신
+	m.mu.Lock()
+	if p, ok2 := m.positions[stockCode]; ok2 {
+		p.CurrentPrice = price
+	}
+	m.mu.Unlock()
 
 	// 트레일링 스탑: 활성화 여부 갱신 및 트리거 체크
 	if pos.TrailingTriggerPct > 0 && pos.FilledPrice > 0 {
@@ -759,6 +767,7 @@ func (m *Monitor) List() []models.MonitoredPosition {
 			StockCode:    pos.StockCode,
 			StockName:    pos.StockName,
 			FilledPrice:  pos.FilledPrice,
+			CurrentPrice: pos.CurrentPrice,
 			TargetPrice:  pos.TargetPrice,
 			StopPrice:    pos.StopPrice,
 			OrderID:      pos.OrderID,
