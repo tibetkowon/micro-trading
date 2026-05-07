@@ -432,8 +432,9 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		}
 		if settings.MinScoreThreshold > 0 && p.detail.Total < settings.MinScoreThreshold {
 			if buyCount == 0 {
+				topScore := passed[0].detail.Total
 				skipReason = fmt.Sprintf("top score %.1f below threshold %.1f",
-					p.detail.Total, settings.MinScoreThreshold)
+					topScore, settings.MinScoreThreshold)
 			}
 			break
 		}
@@ -445,6 +446,13 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		})
 
 		if err := e.placeAndMonitor(ctx, p.cinfo, p.detail, settings); err != nil {
+			if isInsufficientCashError(err) {
+				skipReason = fmt.Sprintf("주문가능금액 부족으로 주문 중단 (종목: %s, 에러: %s)",
+					p.cinfo.StockCode, err.Error())
+				logger.Warn("engine: insufficient cash — stopping order loop",
+					map[string]any{"code": p.cinfo.StockCode, "error": err.Error()})
+				break
+			}
 			logger.Error("engine: placeAndMonitor failed", map[string]any{
 				"code":  p.cinfo.StockCode,
 				"error": err.Error(),
@@ -652,6 +660,11 @@ func addCandidate(
 	appearances[code][rankType] = true
 }
 
+// isInsufficientCashError reports whether the error is a KIS "insufficient funds" rejection (APBK9952).
+func isInsufficientCashError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "APBK9952")
+}
+
 // placeAndMonitor places a buy order, waits for fill, then registers the position.
 func (e *Engine) placeAndMonitor(
 	ctx context.Context,
@@ -672,11 +685,11 @@ func (e *Engine) placeAndMonitor(
 		return fmt.Errorf("invalid current price for %s: %q", c.StockCode, c.Info.CurrentPrice)
 	}
 
-	orderAmt := bal.WithdrawableAmount * settings.OrderAmountPct / 100
+	orderAmt := bal.OrderableAmt * settings.OrderAmountPct / 100
 	qty := int(math.Floor(orderAmt / price))
 	if qty <= 0 {
 		return fmt.Errorf("insufficient cash %.0f KRW for %s at %.0f",
-			bal.WithdrawableAmount, c.StockCode, price)
+			bal.OrderableAmt, c.StockCode, price)
 	}
 
 	// Select take-profit / stop-loss by asset type
