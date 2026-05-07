@@ -43,7 +43,7 @@ jobs:
 
       - name: Deploy to VM
         run: |
-          gcloud compute ssh micro-trading-server \
+          gcloud compute ssh micro-trading-vm \
             --project=micro-trading-495614 \
             --zone=asia-northeast3-a \
             --tunnel-through-iap \
