@@ -84,6 +84,7 @@ type ServiceLog struct {
 	Message   string    `json:"message" firestore:"message"`
 	Detail    string    `json:"detail" firestore:"detail"`
 	Timestamp time.Time `json:"timestamp" firestore:"timestamp"`
+	ExpireAt  time.Time `json:"expire_at" firestore:"expireAt"`
 }
 
 // KISAPILog records every KIS API error response for audit and debugging.
@@ -94,19 +95,21 @@ type KISAPILog struct {
 	ErrorMsg    string    `json:"error_message" firestore:"error_message"`
 	RawResponse string    `json:"raw_response" firestore:"raw_response"`
 	Timestamp   time.Time `json:"timestamp" firestore:"timestamp"`
+	ExpireAt    time.Time `json:"expire_at" firestore:"expireAt"`
 }
 
 // ScanLog records each scanner cycle: rankings → hard filter → score → order decision.
 type ScanLog struct {
-	ID              int64  `json:"id" firestore:"id"`
-	Timestamp       string `json:"timestamp" firestore:"timestamp"`
-	TotalCandidates int    `json:"total_candidates" firestore:"total_candidates"` // 랭킹 API에서 가져온 전체 후보 수
-	StocksFound     int    `json:"stocks_found" firestore:"stocks_found"`         // 하드 필터 통과 후 후보 수
-	TopStocks       string `json:"top_stocks" firestore:"top_stocks"`             // JSON: 상위 점수 종목 목록
-	Ordered         bool   `json:"ordered" firestore:"ordered"`
-	OrderedCode     string `json:"ordered_code" firestore:"ordered_code"`
-	SkipReason      string `json:"skip_reason" firestore:"skip_reason"`
-	ScoreStats      string `json:"score_stats" firestore:"score_stats"` // JSON: 점수 통계
+	ID              int64     `json:"id" firestore:"id"`
+	Timestamp       string    `json:"timestamp" firestore:"timestamp"`
+	TotalCandidates int       `json:"total_candidates" firestore:"total_candidates"` // 랭킹 API에서 가져온 전체 후보 수
+	StocksFound     int       `json:"stocks_found" firestore:"stocks_found"`         // 하드 필터 통과 후 후보 수
+	TopStocks       string    `json:"top_stocks" firestore:"top_stocks"`             // JSON: 상위 점수 종목 목록
+	Ordered         bool      `json:"ordered" firestore:"ordered"`
+	OrderedCode     string    `json:"ordered_code" firestore:"ordered_code"`
+	SkipReason      string    `json:"skip_reason" firestore:"skip_reason"`
+	ScoreStats      string    `json:"score_stats" firestore:"score_stats"` // JSON: 점수 통계
+	ExpireAt        time.Time `json:"expire_at" firestore:"expireAt"`
 }
 
 // TradeReport records each trade lifecycle (buy → sell) with indicators and reasoning.

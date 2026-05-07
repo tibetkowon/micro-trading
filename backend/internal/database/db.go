@@ -677,13 +677,15 @@ func (db *DB) GetLatestBalance(ctx context.Context) (*models.Balance, error) {
 // CreateServiceLog persists a service-level log entry.
 func (db *DB) CreateServiceLog(ctx context.Context, source, level, message, detail string) error {
 	id := newID()
+	now := time.Now().UTC()
 	log := models.ServiceLog{
 		ID:        id,
 		Source:    source,
 		Level:     level,
 		Message:   message,
 		Detail:    detail,
-		Timestamp: time.Now().UTC(),
+		Timestamp: now,
+		ExpireAt:  now.Add(14 * 24 * time.Hour),
 	}
 	_, err := db.client.Collection(colServiceLogs).Doc(strconv.FormatInt(id, 10)).Set(ctx, log)
 	return err
@@ -726,13 +728,15 @@ func (db *DB) DeleteServiceLog(ctx context.Context, id int64) error {
 // CreateKISAPILog persists a KIS API error log entry.
 func (db *DB) CreateKISAPILog(ctx context.Context, endpoint, errCode, errMsg, raw string) error {
 	id := newID()
+	now := time.Now().UTC()
 	log := models.KISAPILog{
 		ID:          id,
 		Endpoint:    endpoint,
 		ErrorCode:   errCode,
 		ErrorMsg:    errMsg,
 		RawResponse: raw,
-		Timestamp:   time.Now().UTC(),
+		Timestamp:   now,
+		ExpireAt:    now.Add(3 * 24 * time.Hour),
 	}
 	_, err := db.client.Collection(colKISAPILogs).Doc(strconv.FormatInt(id, 10)).Set(ctx, log)
 	return err
@@ -779,6 +783,7 @@ func (db *DB) CreateScanLog(ctx context.Context, sl *models.ScanLog) (int64, err
 	if sl.Timestamp == "" {
 		sl.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	}
+	sl.ExpireAt = time.Now().UTC().Add(7 * 24 * time.Hour)
 	_, err := db.client.Collection(colScanLogs).Doc(strconv.FormatInt(id, 10)).Set(ctx, sl)
 	return id, err
 }

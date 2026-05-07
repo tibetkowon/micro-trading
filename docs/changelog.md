@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-07 — feat: Firestore TTL 지원 — scan_logs(7일)·service_logs(14일)·kis_api_logs(3일)
+
+- **models.go**: `ServiceLog`, `KISAPILog`, `ScanLog` 구조체에 `ExpireAt time.Time` 필드 추가 (Firestore 태그: `expireAt`)
+- **db.go `CreateServiceLog`**: `ExpireAt = now + 14일` 설정
+- **db.go `CreateKISAPILog`**: `ExpireAt = now + 3일` 설정
+- **db.go `CreateScanLog`**: `sl.ExpireAt = now + 7일` 설정
+- GCP Console에서 각 컬렉션에 TTL 정책(`expireAt` 필드) 수동 등록 필요
+- **빌드 검증**: `go build ./...` 성공
+
 ## 2026-05-07 — fix: 대시보드·엔진 버그 7건 수정 (이슈1~7)
 
 - **이슈1 — 스캔로그 타임스탬프**: `GetScanLogs`에서 RFC3339 UTC → KST "2006-01-02 15:04:05" 형식 변환. T/Z 문자 제거.
