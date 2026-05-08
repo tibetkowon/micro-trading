@@ -136,6 +136,10 @@ type TradingSettings struct {
 	HardHighFormedMinsMax   float64
 	HardVolVs3AvgRatioMin   float64
 	HardRelativeStrengthMin float64
+	// 재진입 관련
+	BlockReentryOnLoss  bool
+	ReentryScorePenalty float64
+	ReentryCooldownMin  int
 }
 
 // DB is the Firestore-backed data layer.
@@ -333,6 +337,9 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.HardHighFormedMinsMax = pf(m, "hard_high_formed_mins_max", 0.0)
 	s.HardVolVs3AvgRatioMin = pf(m, "hard_vol_vs3_avg_ratio_min", 0.0)
 	s.HardRelativeStrengthMin = pf(m, "hard_relative_strength_min", 0.0)
+	s.BlockReentryOnLoss = pb(m, "block_reentry_on_loss", true)
+	s.ReentryScorePenalty = pf(m, "reentry_score_penalty", 10.0)
+	s.ReentryCooldownMin = pi(m, "reentry_cooldown_min", 15)
 	return s, nil
 }
 
@@ -1099,6 +1106,9 @@ var defaultSettings = map[string]any{
 	"hard_high_formed_mins_max":        "0",
 	"hard_vol_vs3_avg_ratio_min":       "0",
 	"hard_relative_strength_min":       "0",
+	"block_reentry_on_loss":            "true",
+	"reentry_score_penalty":            "10.0",
+	"reentry_cooldown_min":             "15",
 }
 
 // initDefaults writes default settings on first run (using Set with MergeAll so existing values are preserved).

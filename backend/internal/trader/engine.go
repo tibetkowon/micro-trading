@@ -242,8 +242,9 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 	}
 
 	type scored struct {
-		cinfo  scorer.CandidateInfo
-		detail scorer.ScoreDetail
+		cinfo   scorer.CandidateInfo
+		detail  scorer.ScoreDetail
+		penalty float64
 	}
 
 	var passed []scored
@@ -253,6 +254,34 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		// Skip stocks already being monitored
 		if e.mon.Has(c.StockCode) {
 			continue
+		}
+
+		// ── 1-패스: 재진입 검증 로직 (손절 차단 / 익절 쿨타임 및 페널티) ──────────────────────────
+		penalty := 0.0
+		if trade, err := e.db.GetLatestCompletedTradeByStock(ctx, c.StockCode); err == nil && trade != nil {
+			kst, _ := time.LoadLocation("Asia/Seoul")
+			today := time.Now().In(kst).Format("2006-01-02")
+			if trade.Date == today {
+				if trade.ProfitAmount < 0 {
+					if settings.BlockReentryOnLoss {
+						logger.Info("engine: pre-filter rejected (block reentry on loss)",
+							map[string]any{"code": c.StockCode})
+						rejectedCount++
+						continue
+					}
+				} else {
+					if trade.SoldAt != nil {
+						cooldown := time.Duration(settings.ReentryCooldownMin) * time.Minute
+						if time.Since(*trade.SoldAt) < cooldown {
+							logger.Info("engine: pre-filter rejected (reentry cooldown)",
+								map[string]any{"code": c.StockCode, "cooldown_min": settings.ReentryCooldownMin})
+							rejectedCount++
+							continue
+						}
+						penalty = settings.ReentryScorePenalty
+					}
+				}
+			}
 		}
 
 		// ── 1-패스: GetStockPrice(저비용) 사전 필터 ──────────────────────────
@@ -365,7 +394,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 				map[string]any{"code": c.StockCode})
 		}
 		detail := scorer.CalcScore(cinfo, settings)
-		passed = append(passed, scored{cinfo, detail})
+		passed = append(passed, scored{cinfo, detail, penalty})
 	}
 
 	// Sort by composite score descending
@@ -430,23 +459,25 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		if buyCount >= slots {
 			break
 		}
-		if settings.MinScoreThreshold > 0 && p.detail.Total < settings.MinScoreThreshold {
+		threshold := settings.MinScoreThreshold + p.penalty
+		if threshold > 0 && p.detail.Total < threshold {
 			if buyCount == 0 {
 				topScore := passed[0].detail.Total
 				if p.cinfo.StockCode == passed[0].cinfo.StockCode {
 					// 1위 종목 자체가 임계값 미달
-					skipReason = fmt.Sprintf("top score %.1f below threshold %.1f",
-						topScore, settings.MinScoreThreshold)
+					skipReason = fmt.Sprintf("top score %.1f below threshold %.1f (penalty %.1f)",
+						topScore, threshold, p.penalty)
 				} else {
 					// 1위는 임계값 이상이나 주문 실패 후 하위 종목이 임계값 미달
 					skipReason = fmt.Sprintf("top score %.1f above threshold but all orders failed; next candidate %.1f below threshold %.1f",
-						topScore, p.detail.Total, settings.MinScoreThreshold)
+						topScore, p.detail.Total, threshold)
 				}
 				logger.Warn("engine: score threshold not met", map[string]any{
 					"top_score":     topScore,
 					"failing_score": p.detail.Total,
 					"failing_code":  p.cinfo.StockCode,
-					"threshold":     settings.MinScoreThreshold,
+					"threshold":     threshold,
+					"penalty":       p.penalty,
 				})
 			}
 			break

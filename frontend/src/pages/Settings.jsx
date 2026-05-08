@@ -70,6 +70,9 @@ function transformSettings(raw) {
       bidask_sell_threshold: pf(raw.stagnation_bidask_sell_threshold, 1.0),
     },
     sell_conditions: pj(raw.sell_conditions, []),
+    block_reentry_on_loss: pb(raw.block_reentry_on_loss, true),
+    reentry_score_penalty: pf(raw.reentry_score_penalty, 10),
+    reentry_cooldown_min: pi(raw.reentry_cooldown_min, 15),
   }
 }
 
@@ -200,6 +203,9 @@ export default function Settings() {
       flat.stagnation_partial_exit_enabled = String(settings.stagnation?.partial_exit_enabled ?? false)
       flat.stagnation_bidask_sell_threshold = String(settings.stagnation?.bidask_sell_threshold ?? 1.0)
       flat.sell_conditions = JSON.stringify(settings.sell_conditions ?? [])
+      flat.block_reentry_on_loss = String(settings.block_reentry_on_loss ?? true)
+      flat.reentry_score_penalty = String(settings.reentry_score_penalty ?? 10)
+      flat.reentry_cooldown_min = String(settings.reentry_cooldown_min ?? 15)
       await setDoc(doc(db, 'settings', 'config'), flat, { merge: true })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -279,6 +285,26 @@ export default function Settings() {
                 value={settings.daily_loss_limit_pct ?? 3}
                 onChange={e => set('daily_loss_limit_pct', +e.target.value)} />
             </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">익절 종목 재진입 페널티 (점)</label>
+              <input className="form-input" type="number" min="0" step="1"
+                value={settings.reentry_score_penalty ?? 10}
+                onChange={e => set('reentry_score_penalty', +e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">익절 종목 재진입 쿨타임 (분)</label>
+              <input className="form-input" type="number" min="0" step="1"
+                value={settings.reentry_cooldown_min ?? 15}
+                onChange={e => set('reentry_cooldown_min', +e.target.value)} />
+            </div>
+          </div>
+          <div className="filter-row">
+            <span className="filter-label">손절 종목 당일 재매수 금지</span>
+            <Toggle
+              checked={settings.block_reentry_on_loss ?? true}
+              onChange={v => set('block_reentry_on_loss', v)} />
           </div>
           <div className="filter-row">
             <span className="filter-label">RSI 과매수 자동 매도</span>
