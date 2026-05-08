@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-05-08 — fix: 차트 API TPS 초과 → 단일호출 전환, 스캔로그 지표 미표시, 임계값 메시지 개선
+
+### 이슈 원인
+- **차트 API TPS 초과 (EGW00201)**: `fetchMinuteBars`가 `inquire-time-itemchartprice`를 120봉 확보에 4~6회 호출 → 22종목 동시 스캔 시 최대 132회 연속 호출 → TPS 초과
+- **스캔로그 지표 미표시**: 차트 API 실패 → RSI/MACD/VWAP/VolRatio 전부 0 → `has_chart=false` → UI에서 `—` 표시
+- **임계값 제외 사유 혼란**: buyCount==0이지만 주문 실패 후 하위 종목이 임계값 미달인 경우, 1위 종목 점수를 "top score"로 표시해 혼란 야기
+
+### 변경 사항
+- **`kis/chart.go`**: `GetDayMinuteChart` 추가 — `inquire-time-dailychartprice` (TR_ID: `FHKST03010230`) 단일 호출로 최대 120봉 반환
+- **`ops/chart.go`**: `fetchCurrentDayBars` 추가 — 신규 API 우선 시도, 실패 시 페이지네이션 폴백
+- **`ops/stock_info.go`**: `GetStockInfo` / `GetStockInfoWithPrice` → `fetchMinuteBars(120)` → `fetchCurrentDayBars` 전환
+- **`engine.go`**: `has_chart` 판정에 `info.VWAP > 0` 추가 — 봉 수 부족으로 RSI/MACD 미계산 시에도 VWAP 표시 가능
+- **`engine.go`**: 임계값 스킵 메시지 개선 — 1위 종목이 임계값 미달인 경우와 주문 실패 후 하위 종목이 미달인 경우를 구분하여 명시
+- **`docs/kis-api/기본시세.md`**: `inquire-time-dailychartprice` 명세 추가, 레거시 API 경고 추가
+
 ## 2026-05-08 — feat: Firestore TTL 전체 컬렉션 적용 (8개)
 
 - **orders**: 1년, **balances**: 1개월, **trade_reports/daily_reports**: 6개월, **tokens**: 2일

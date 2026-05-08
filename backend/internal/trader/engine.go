@@ -402,7 +402,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			VWAPDiff:    info.VWAPDiff,
 			VolRatio:    info.VolVs3AvgRatio,
 			Total:       p.detail.Total,
-			HasChart:    info.RSI14 > 0 || info.MACDLine != 0, // 차트 데이터 존재 여부
+			HasChart:    info.RSI14 > 0 || info.MACDLine != 0 || info.VWAP > 0, // 차트 데이터 존재 여부
 		})
 	}
 	topJSON, _ := json.Marshal(topEntries)
@@ -433,8 +433,21 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		if settings.MinScoreThreshold > 0 && p.detail.Total < settings.MinScoreThreshold {
 			if buyCount == 0 {
 				topScore := passed[0].detail.Total
-				skipReason = fmt.Sprintf("top score %.1f below threshold %.1f",
-					topScore, settings.MinScoreThreshold)
+				if p.cinfo.StockCode == passed[0].cinfo.StockCode {
+					// 1위 종목 자체가 임계값 미달
+					skipReason = fmt.Sprintf("top score %.1f below threshold %.1f",
+						topScore, settings.MinScoreThreshold)
+				} else {
+					// 1위는 임계값 이상이나 주문 실패 후 하위 종목이 임계값 미달
+					skipReason = fmt.Sprintf("top score %.1f above threshold but all orders failed; next candidate %.1f below threshold %.1f",
+						topScore, p.detail.Total, settings.MinScoreThreshold)
+				}
+				logger.Warn("engine: score threshold not met", map[string]any{
+					"top_score":      topScore,
+					"failing_score":  p.detail.Total,
+					"failing_code":   p.cinfo.StockCode,
+					"threshold":      settings.MinScoreThreshold,
+				})
 			}
 			break
 		}

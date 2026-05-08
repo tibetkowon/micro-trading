@@ -57,6 +57,32 @@ func GetChart(ctx context.Context, client *kis.Client, stockCode, interval strin
 // after the KIS client's own TPS retries (3 attempts) are exhausted.
 const chartPageMaxRetries = 2
 
+// fetchCurrentDayBars fetches 1-minute bars for the current trading session using
+// inquire-time-dailychartprice (single API call, up to 120 bars).
+// Falls back to paginated fetchMinuteBars if the new API fails or returns no data.
+func fetchCurrentDayBars(ctx context.Context, client *kis.Client, stockCode string) ([]kis.ChartBar, error) {
+	now := time.Now()
+	bars, err := client.GetDayMinuteChart(ctx, stockCode, now.Format("20060102"), now.Format("150405"))
+	if err != nil {
+		logger.Warn("fetchCurrentDayBars: day chart API failed, falling back to pagination",
+			map[string]any{"code": stockCode, "error": err.Error()})
+		return fetchMinuteBars(ctx, client, stockCode, 120)
+	}
+	if len(bars) == 0 {
+		logger.Warn("fetchCurrentDayBars: no bars returned, falling back to pagination",
+			map[string]any{"code": stockCode})
+		return fetchMinuteBars(ctx, client, stockCode, 120)
+	}
+
+	// KIS returns bars newest-first; reverse to ascending order.
+	for i, j := 0, len(bars)-1; i < j; i, j = i+1, j-1 {
+		bars[i], bars[j] = bars[j], bars[i]
+	}
+	logger.Info("fetchCurrentDayBars: day chart fetched",
+		map[string]any{"code": stockCode, "bars": len(bars)})
+	return bars, nil
+}
+
 // fetchMinuteBars fetches 1-minute intraday bars by paginating backward through time.
 // Returns bars in ascending time order (oldest → newest).
 // When a page fails after retries but partial data was already collected, returns

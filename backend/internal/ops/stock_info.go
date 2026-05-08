@@ -103,10 +103,8 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 		info.OpenPriceDiff = math.Round((price-open)/open*10000) / 100
 	}
 
-	// --- MA5/MA20/MA60/MA120/RSI(14)/MACD(12,26,9) from 1-minute candles directly ---
-	// Fetch 120 1-minute bars — sufficient for MA120 (needs 120 periods) and
-	// MACD(12,26,9) (needs 34 periods minimum). Reduces KIS API calls by ~30%.
-	bars, chartErr := fetchMinuteBars(ctx, client, stockCode, 120)
+	// Fetch current-day 1-minute bars using the single-call API (reduces TPS load).
+	bars, chartErr := fetchCurrentDayBars(ctx, client, stockCode)
 	if chartErr != nil {
 		logger.Warn("GetStockInfo: minute chart fetch failed",
 			map[string]any{"code": stockCode, "error": chartErr.Error()})
@@ -270,9 +268,9 @@ func GetStockInfoWithPrice(ctx context.Context, client *kis.Client, stockCode st
 		info.OpenPriceDiff = math.Round((price-open)/open*10000) / 100
 	}
 
-	bars, chartErr := fetchMinuteBars(ctx, client, stockCode, 120)
+	bars, chartErr := fetchCurrentDayBars(ctx, client, stockCode)
 	if chartErr != nil {
-		logger.Warn("GetStockInfoWithPrice: minute chart fetch failed",
+		logger.Warn("GetStockInfoWithPrice: chart fetch failed",
 			map[string]any{"code": stockCode, "error": chartErr.Error()})
 	}
 	if chartErr == nil && len(bars) > 0 {
