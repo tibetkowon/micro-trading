@@ -443,10 +443,10 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 						topScore, p.detail.Total, settings.MinScoreThreshold)
 				}
 				logger.Warn("engine: score threshold not met", map[string]any{
-					"top_score":      topScore,
-					"failing_score":  p.detail.Total,
-					"failing_code":   p.cinfo.StockCode,
-					"threshold":      settings.MinScoreThreshold,
+					"top_score":     topScore,
+					"failing_score": p.detail.Total,
+					"failing_code":  p.cinfo.StockCode,
+					"threshold":     settings.MinScoreThreshold,
 				})
 			}
 			break

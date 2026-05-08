@@ -31,12 +31,12 @@ type MonitoredEntry struct {
 	FilledPrice  float64
 	CurrentPrice float64
 	TargetPrice  float64
-	StopPrice   float64
-	OrderID     int64
-	Qty         int    // 현재 보유 수량 (부분 매도 시 감소)
-	Market      string        // "KR" (empty defaults to "KR")
-	AssetType   string        // "STOCK" | "ETF" | "ETF_DOMESTIC" (MST 기반)
-	SoldCh      chan<- string // optional: engine receives sold signal (may be nil)
+	StopPrice    float64
+	OrderID      int64
+	Qty          int           // 현재 보유 수량 (부분 매도 시 감소)
+	Market       string        // "KR" (empty defaults to "KR")
+	AssetType    string        // "STOCK" | "ETF" | "ETF_DOMESTIC" (MST 기반)
+	SoldCh       chan<- string // optional: engine receives sold signal (may be nil)
 	// 트레일링 스탑
 	TrailingTriggerPct float64 // 활성화 기준 수익률 (%). 0=비활성
 	TrailingStopPct    float64 // 최고가 대비 하락 허용폭 (%)
