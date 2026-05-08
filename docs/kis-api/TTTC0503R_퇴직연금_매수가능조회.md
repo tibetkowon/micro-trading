@@ -1,0 +1,85 @@
+# 퇴직연금 매수가능조회
+
+| 항목 | 값 |
+|------|---|
+| 통신방식 | `REST` |
+| API 명 | `퇴직연금 매수가능조회` |
+| API ID | `v1_국내주식-034` |
+| 실전 TR_ID | `TTTC0503R` |
+| 모의 TR_ID | `모의투자 미지원` |
+| Method | `GET` |
+| URL | `/uapi/domestic-stock/v1/trading/pension/inquire-psbl-order` |
+
+- 실전: `https://openapi.koreainvestment.com:9443`
+- 모의: `모의투자 미지원`
+
+> ​※ 55번 계좌(DC가입자계좌)의 경우 해당 API 이용이 불가합니다.
+KIS Developers API의 경우 HTS ID에 반드시 연결되어있어야만 API 신청 및 앱정보 발급이 가능한 서비스로 개발되어서 실물계좌가 아닌 55번 계좌는 API 이용이 불가능한 점 양해 부탁드립니다.
+
+## Request Header
+
+> 공통 헤더는 [_공통헤더.md](_공통헤더.md) 참조
+
+| Element | 한글명 | Type | Required | Description |
+|---------|--------|------|----------|-------------|
+| `CANO` | 종합계좌번호 | string | Y |  |
+| `ACNT_PRDT_CD` | 계좌상품코드 | string | Y | 29 |
+| `PDNO` | 상품번호 | string | Y |  |
+| `ACCA_DVSN_CD` | 적립금구분코드 | string | Y | 00 |
+| `CMA_EVLU_AMT_ICLD_YN` | CMA평가금액포함여부 | string | Y |  |
+| `ORD_DVSN` | 주문구분 | string | Y | 00 : 지정가 / 01 : 시장가 |
+| `ORD_UNPR` | 주문단가 | string | Y |  |
+
+## Response Header
+
+| Element | 한글명 | Type | Required | Description |
+|---------|--------|------|----------|-------------|
+| `content-type` | 컨텐츠타입 | string | Y | application/json; charset=utf-8 |
+| `tr_id` | 거래ID | string | Y | 요청한 tr_id |
+| `tr_cont` | 연속 거래 여부 | string | N | tr_cont를 이용한 다음조회 불가 API |
+| `gt_uid` | Global UID | string | N | [법인 전용] 거래고유번호로 사용하므로 거래별로 UNIQUE해야 함 |
+
+## Response Body
+
+| Element | 한글명 | Type | Required | Description |
+|---------|--------|------|----------|-------------|
+| `rt_cd` | 성공 실패 여부 | string | Y |  |
+| `msg_cd` | 응답코드 | string | Y |  |
+| `msg1` | 응답메세지 | string | Y |  |
+| `output` | 응답상세1 | object | Y |  |
+| `ord_psbl_cash` | 주문가능현금 | string | Y |  |
+| `ruse_psbl_amt` | 재사용가능금액 | string | Y |  |
+| `psbl_qty_calc_unpr` | 가능수량계산단가 | string | Y |  |
+| `max_buy_amt` | 최대매수금액 | string | Y |  |
+| `max_buy_qty` | 최대매수수량 | string | Y |  |
+
+## Example
+
+### Request Example (Python)
+```json
+{
+	"CANO":"63512345",
+	"ACNT_PRDT_CD":"29",
+	"PDNO":"029513",
+	"ORD_UNPR":"55000",
+	"ORD_DVSN":"00",
+	"CMA_EVLU_AMT_ICLD_YN":"N",
+	"ACCA_DVSN_CD":"00"
+}
+```
+
+### Response Example
+```json
+{
+    "output": {
+        "ord_psbl_cash": "11054042",
+        "ruse_psbl_amt": "0",
+        "psbl_qty_calc_unpr": "55000",
+        "max_buy_amt": "11054042",
+        "max_buy_qty": "200"
+    },
+    "rt_cd": "0",
+    "msg_cd": "KIOK0510",
+    "msg1": "조회가 완료되었습니다                                                           "
+}
+```

@@ -1,57 +1,53 @@
-# Project Overview
-This project is an automated AI trading system designed to run efficiently on a low-specification server (NCP Micro, 1GB RAM). 
-The system is divided into two main roles:
-- **AI Agent Role:**
-  - Fetch stock information required for selection.
-  - Check account balance, available trading amounts, and applied fees.
-  - Execute trade orders.
-  - Retrieve order history and execution status for future trading decisions.
-- **User Role:**
-  - Manage real account settings and credentials via a configuration UI.
-  - Monitor trading information including order history, balance, and profit rate.
-  - Monitor transaction logs specifically to track KIS (Korea Investment & Securities) API integration errors.
+# 프로젝트 개요
+저사양 서버에서 효율적으로 동작하는 **규칙 기반 자동매매 시스템**.
 
-# Tech Stack
+**매매 사이클 (반복):**
+1. 종목 순위 조회 (KIS API)
+2. 하드 필터링 (조건 미달 종목 제거)
+3. 스코어링 (지표 기반 점수 산출)
+4. 목표 점수 이상 종목 선정
+   - 선정 → 해당 종목 매수
+   - 미선정 → 다음 스케줄까지 대기
+5. 매수 후 종목 모니터링 (목표가 / 손절가 / 지표)
+6. 매도 조건 도달 시 매도
+7. 반복
+
+**사용자 역할:**
+- 설정 UI를 통한 계좌 정보 및 API 키 관리
+- 주문 내역, 잔고, 수익률 모니터링
+- KIS API 연동 에러 로그 모니터링
+
+# 기술 스택
 - **Backend:** Go 1.26.1, Gin
 - **Frontend:** React 18, Vite, Firebase SDK
 - **Database:** Firebase Firestore
 - **Hosting:** Firebase Hosting (Frontend) · GCS + NCP VM (Backend)
 
-# Initial Goals & Architecture
-- Establish a clear separation between Backend and Frontend.
-- Set up a CI/CD pipeline using GitHub Actions.
-- Design a secure configuration management system for account details and API keys.
-- **KIS API Integration Design:**
-  - Implement an automatic Access Token refresh mechanism strictly set to a 20-hour interval (to safely preempt the 24-hour expiration).
-  - Implement robust API Rate Limiting (TPS control) to comply with KIS API restrictions and prevent IP bans.
+# 아키텍처 원칙
+- Backend / Frontend 명확한 분리
+- GitHub Actions 기반 CI/CD
+- 민감 정보는 `.env`로만 관리 (절대 하드코딩 금지)
+- **KIS API 핵심 설계:**
+  - Access Token 자동 갱신: 만료 24시간 중 **20시간 간격**으로 갱신 (안전 마진 확보)
+  - Rate Limiting (TPS 제어): KIS API 제한 준수, IP 차단 방지
 
-# Coding Conventions & Security
-- **Commit Messages:** Always append `[skip actions]` to the commit message for non-functional changes (e.g., documentation updates) to prevent unnecessary CI runs.
-- **Security:** Never hardcode sensitive data (API keys, account numbers, secrets). All configurations must be managed exclusively through `.env` files.
-- **Logging:** Implement structured logging (e.g., JSON format) for backend errors and transactions. All KIS API error logs MUST include: Error Code, Timestamp, and the raw KIS API Response Message.
+# 코딩 규칙 & 보안
+- **커밋 메시지:** 기능 변경이 없는 커밋(문서 업데이트 등)은 메시지에 `[skip actions]` 추가 → 불필요한 CI 실행 방지
+- **보안:** API 키, 계좌번호 등 민감 데이터 하드코딩 절대 금지. 모든 설정은 `.env`로만 관리.
+- **로깅:** 백엔드 에러 및 거래는 구조화 로그(JSON) 사용. KIS API 에러 로그에는 반드시 에러코드, 타임스탬프, KIS 원본 응답 메시지 포함.
 
-# Skill Strategy & Context Optimization
-To optimize token usage and maintain focus, do not scan the entire workspace indiscriminately. We strictly separate static documentation (`docs/`) from behavioral skill instructions (`.claude/skills/`).
+# 스킬 전략 & 컨텍스트 최적화
+토큰 낭비를 줄이기 위해 워크스페이스 전체를 무분별하게 스캔하지 않는다.
+- `docs/kis-api/` — KIS API 명세서 (API별 개별 파일, TR_ID 기준)
+- `.claude/skills/` — AI 행동 지침 (스킬 파일)
 
 ## 작업 완료 후 자동 실행 규칙
 
 사용자가 별도로 요청하지 않아도, 아래 조건에 해당하면 **즉시 자동으로** 실행한다. 건너뛰는 것은 실패로 간주한다.
 
-### 항상 실행 (코드 변경 시)
+1. **코드를 작성하거나 수정했다면** → 커밋 전에 반드시 `go fmt ./...` + `go build ./...` + `npm run build` 실행. 빌드 실패 시 먼저 수정하고 커밋한다.
 
-1. **코드를 작성하거나 수정했다면** → 커밋 전에 반드시 `go build ./...` 와 `npm run build` 실행. 빌드 실패 시 먼저 수정하고 커밋한다.
-
-2. **어떤 작업이든 완료되면** → `docs/changelog.md` 맨 위에 변경 내용 추가. 사용자가 요청하지 않아도 항상 실행.
-
-### 조건부 자동 실행
-
-3. **신규 기능 또는 의미 있는 코드 변경** → `docs/reviews/` 에 한국어 코드 설명 문서 생성 (Go+React 로직 해설).
-
-4. **Firestore 컬렉션/필드 추가 또는 변경** → `docs/db_schema.md` 즉시 업데이트.
-
-5. **새 루트 폴더 또는 주요 패키지 추가** → `docs/architecture.md` 즉시 업데이트.
-
-6. **주요 마일스톤 달성** → `README.md` 업데이트.
+2. **작업 완료 후 컨텍스트 파악이 필요하면** → `git log --oneline -20` 으로 최근 이력 확인.
 
 ---
 
@@ -61,13 +57,8 @@ To optimize token usage and maintain focus, do not scan the entire workspace ind
 
 | 상황 | 실행할 스킬 |
 |------|------------|
-| 신규 기능 또는 아키텍처 변경 요청 → **코딩 전** | `.claude/skills/plan_feature.md` — `docs/plans/` 에 계획 작성 후 승인 대기 |
 | 코드 작성/수정 완료 → **커밋 전** | `.claude/skills/verify_implementation.md` — Go 빌드/테스트, React 린트/빌드 실행 |
-| 작업 또는 버그 수정 완료 | `.claude/skills/record_changelog.md` — `docs/changelog.md` 업데이트 |
-| 신규 기능 구현 완료 | `.claude/skills/write_code_tutor.md` — `docs/reviews/` 에 한국어 설명 문서 생성 |
+| 세션 시작 후 최근 작업 파악 필요 시 | `.claude/skills/read_git_context.md` — `git log` 로 최근 이력 확인 |
 | KIS API 에러 조사 또는 자동매매 실패 | `.claude/skills/analyze_trade_logs.md` — 로그 스마트 추출 및 분석 |
-| Firestore 컬렉션/필드 생성 또는 변경 | `.claude/skills/update_db_schema.md` — `docs/db_schema.md` 업데이트 |
-| 새 루트 폴더 또는 주요 패키지 추가 | `.claude/skills/update_architecture.md` — `docs/architecture.md` 업데이트 |
-| 주요 마일스톤 달성 | `.claude/skills/update_readme.md` — `README.md` 업데이트 |
 | 새 API 패턴/버그 패턴/프로젝트 규칙 발견 | `.claude/skills/manage_skills.md` — 스킬 또는 문서에 기록 |
 | KIS API 신규 기능 구현 또는 기존 기능 수정 | `.claude/skills/implement_kis_feature.md` — `docs/kis-api/` 명세 확인 후 구현 |
