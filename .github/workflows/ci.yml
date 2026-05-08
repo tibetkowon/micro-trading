@@ -22,12 +22,14 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+      # workflow_dispatch(수동)일 때는 항상 true, 그 외엔 paths-filter 결과 사용
+      backend: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.backend }}
+      frontend: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         with:
           filters: |
             backend:
@@ -103,8 +105,8 @@ jobs:
   deploy-backend:
     name: Deploy Backend → GCS
     needs: [backend-ci]
-    # backend-ci가 성공했고, PR이 아닌 main push일 때만 실행
-    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # backend-ci가 성공했고, main push 또는 수동 실행일 때 실행
+    if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -138,8 +140,8 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend → Firebase Hosting
     needs: [frontend-ci]
-    # frontend-ci가 성공했고, PR이 아닌 main push일 때만 실행
-    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # frontend-ci가 성공했고, main push 또는 수동 실행일 때 실행
+    if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
