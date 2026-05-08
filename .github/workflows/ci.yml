@@ -22,12 +22,14 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+      # workflow_dispatch(수동)일 때는 항상 true, 그 외엔 paths-filter 결과 사용
+      backend: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.backend }}
+      frontend: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         with:
           filters: |
             backend:
@@ -103,8 +105,8 @@ jobs:
   deploy-backend:
     name: Deploy Backend → GCS
     needs: [backend-ci]
-    # backend-ci가 성공했고, PR이 아닌 main push일 때만 실행
-    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # backend-ci가 성공했고, main push 또는 수동 실행일 때 실행
+    if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -135,11 +137,41 @@ jobs:
           gsutil cp backend/server gs://${{ vars.GCS_BUCKET }}/micro-trading/server
           echo "✓ Uploaded to gs://${{ vars.GCS_BUCKET }}/micro-trading/server"
 
+      - name: Check VM status
+        id: vm-status
+        run: |
+          STATUS=$(gcloud compute instances describe micro-trading-vm \
+            --project=micro-trading-495614 \
+            --zone=asia-northeast3-a \
+            --format='get(status)')
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "VM status: $STATUS"
+
+      - name: Deploy to VM
+        if: steps.vm-status.outputs.status == 'RUNNING'
+        run: |
+          gcloud compute ssh micro-trading-vm \
+            --project=micro-trading-495614 \
+            --zone=asia-northeast3-a \
+            --tunnel-through-iap \
+            --quiet \
+            --command="
+              gsutil cp gs://${{ vars.GCS_BUCKET }}/micro-trading/server /tmp/server-new &&
+              sudo mv /tmp/server-new /opt/trading/server &&
+              sudo chmod +x /opt/trading/server &&
+              sudo systemctl restart micro-trading &&
+              echo '✓ Deployment complete'
+            "
+
+      - name: VM not running — skip restart
+        if: steps.vm-status.outputs.status != 'RUNNING'
+        run: echo "VM is ${{ steps.vm-status.outputs.status }}. Binary uploaded to GCS. Will be applied on next startup."
+
   deploy-frontend:
     name: Deploy Frontend → Firebase Hosting
     needs: [frontend-ci]
-    # frontend-ci가 성공했고, PR이 아닌 main push일 때만 실행
-    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # frontend-ci가 성공했고, main push 또는 수동 실행일 때 실행
+    if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
