@@ -3,11 +3,12 @@ import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore'
 import { fmtPct, fmtSigned, fmt } from '../components/shared'
 import { db } from '../lib/firebase'
 
+const parseSafe = (s) => { try { return JSON.parse(s || 'null') } catch { return null } }
+
 function transformReport(d) {
   const r = { _docId: d.id, ...d.data() }
   const totalTrades = r.total_trades || 0
   const winningTrades = r.winning_trades || 0
-  const parseSafe = (s) => { try { return JSON.parse(s || 'null') } catch { return null } }
   return {
     _docId: r._docId,
     date: r.date,
@@ -105,10 +106,12 @@ function TradeDetail({ r }) {
               {trades.map((t, i) => {
                 const isProfit = (t.profit_amount ?? 0) >= 0
                 return (
-                  <tr key={t.id ?? i} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <tr key={`${t.stock_code ?? ''}-${i}`} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '5px 8px', fontWeight: 500 }}>
                       <div>{t.stock_name || t.stock_code}</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>{t.stock_code}</div>
+                      {t.stock_name && (
+                        <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>{t.stock_code}</div>
+                      )}
                     </td>
                     <td style={{ padding: '5px 8px', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
                       {fmt(t.buy_price)}
