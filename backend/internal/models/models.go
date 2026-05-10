@@ -164,7 +164,7 @@ type BuyIndicatorsSnapshot struct {
 	MACDBullish   bool    `json:"macd_bullish"`
 	VWAPDisparity float64 `json:"vwap_disparity"`
 	Strength      float64 `json:"strength"`
-	BidAskRatio   float64 `json:"bid_ask_ratio"`
+	BidAskRatio   float64 `json:"bid_ask_ratio"` // 0 when bid-ask fetch is skipped (score weight = 0 and spread filter disabled)
 	TotalScore    float64 `json:"total_score"`
 }
 
