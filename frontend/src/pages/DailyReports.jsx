@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore'
-import { fmtPct, fmtSigned } from '../components/shared'
+import { fmtPct, fmtSigned, fmt } from '../components/shared'
 import { db } from '../lib/firebase'
 
 function transformReport(d) {
   const r = { _docId: d.id, ...d.data() }
   const totalTrades = r.total_trades || 0
   const winningTrades = r.winning_trades || 0
+  const parseSafe = (s) => { try { return JSON.parse(s || 'null') } catch { return null } }
   return {
     _docId: r._docId,
     date: r.date,
@@ -16,8 +17,130 @@ function transformReport(d) {
     pnl: r.total_profit_amount || 0,
     pnl_pct: r.avg_profit_pct || 0,
     win_rate: totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0,
-    report_summary: r.trade_summary || '',
+    trades: parseSafe(r.trade_summary) || [],
+    best_trade: parseSafe(r.best_trade),
+    worst_trade: parseSafe(r.worst_trade),
   }
+}
+
+function TradeHighlight({ trade, label, color }) {
+  if (!trade) return null
+  const isProfit = (trade.profit_amount ?? 0) >= 0
+  return (
+    <div style={{
+      background: color,
+      border: `1px solid ${isProfit ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+      borderRadius: 6,
+      padding: '10px 12px',
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{trade.stock_name || trade.stock_code}</div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+        <span style={{ color: isProfit ? 'var(--up)' : 'var(--down)', fontWeight: 600 }}>
+          {fmtSigned(trade.profit_amount ?? 0)}
+        </span>
+        <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>
+          ({fmtPct(trade.profit_pct ?? 0)})
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function TradeDetail({ r }) {
+  const hasBest = r.best_trade != null
+  const hasWorst = r.worst_trade != null
+  const trades = Array.isArray(r.trades) ? r.trades : []
+
+  return (
+    <div style={{
+      padding: '12px 14px',
+      background: 'var(--bg)',
+      borderBottom: '1px solid var(--border)',
+    }}>
+      {(hasBest || hasWorst) && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: hasBest && hasWorst ? '1fr 1fr' : '1fr',
+          gap: 8,
+          marginBottom: 12,
+        }}>
+          {hasBest && (
+            <TradeHighlight
+              trade={r.best_trade}
+              label="🏆 최고 거래"
+              color="rgba(34,197,94,0.08)"
+            />
+          )}
+          {hasWorst && (
+            <TradeHighlight
+              trade={r.worst_trade}
+              label="최악 거래"
+              color="rgba(239,68,68,0.08)"
+            />
+          )}
+        </div>
+      )}
+
+      {trades.length > 0 ? (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                {['종목명', '매수가→매도가', '수량', '손익금액', '손익률', '매도이유'].map(h => (
+                  <th key={h} style={{
+                    textAlign: 'left',
+                    padding: '4px 8px',
+                    fontWeight: 600,
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {trades.map((t, i) => {
+                const isProfit = (t.profit_amount ?? 0) >= 0
+                return (
+                  <tr key={t.id ?? i} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '5px 8px', fontWeight: 500 }}>
+                      <div>{t.stock_name || t.stock_code}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>{t.stock_code}</div>
+                    </td>
+                    <td style={{ padding: '5px 8px', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                      {fmt(t.buy_price)}
+                      <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>→</span>
+                      {fmt(t.sell_price)}
+                    </td>
+                    <td style={{ padding: '5px 8px', fontFamily: 'var(--font-mono)' }}>
+                      {t.qty ?? '—'}
+                    </td>
+                    <td style={{ padding: '5px 8px', fontFamily: 'var(--font-mono)', color: isProfit ? 'var(--up)' : 'var(--down)', fontWeight: 600 }}>
+                      {fmtSigned(t.profit_amount ?? 0)}
+                    </td>
+                    <td style={{ padding: '5px 8px', fontFamily: 'var(--font-mono)', color: isProfit ? 'var(--up)' : 'var(--down)' }}>
+                      {fmtPct(t.profit_pct ?? 0)}
+                    </td>
+                    <td style={{ padding: '5px 8px', color: 'var(--text-muted)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={t.sell_reason || ''}>
+                      {t.sell_reason || '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0' }}>
+          거래 내역이 없습니다
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function DailyReports() {
@@ -126,18 +249,7 @@ export default function DailyReports() {
                       {fmtPct(pnlPct)}
                     </div>
                   </div>
-                  {expandedDate === r.date && (
-                    <div style={{
-                      padding: '12px 14px',
-                      background: 'var(--bg)',
-                      borderBottom: '1px solid var(--border)',
-                      fontSize: 12,
-                      color: 'var(--text-muted)',
-                      fontFamily: 'var(--font-mono)',
-                    }}>
-                      {r.report_summary || `${r.date} 요약: 총 ${tradeCount}건 거래 중 ${wins}건 이익, ${losses}건 손실. 승률 ${winRate.toFixed(1)}%, 당일 손익 ${fmtSigned(pnl)} (${fmtPct(pnlPct)})`}
-                    </div>
-                  )}
+                  {expandedDate === r.date && <TradeDetail r={r} />}
                 </div>
               )
             })}
