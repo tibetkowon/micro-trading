@@ -103,21 +103,21 @@ func (tm *TokenManager) IssueToken(ctx context.Context) (*models.Token, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		code := fmt.Sprintf("HTTP-%d", resp.StatusCode)
-		logger.KISError(tokenEndpoint, code, string(raw))
-		tm.db.CreateKISAPILog(ctx, tokenEndpoint, code, string(raw), string(raw))
+		logger.KISError(tokenEndpoint, code, string(raw), "")
+		tm.db.CreateKISAPILog(ctx, tokenEndpoint, code, string(raw), string(raw), "")
 		return nil, fmt.Errorf("KIS token API returned %d", resp.StatusCode)
 	}
 
 	var res issueTokenResponse
 	if err := json.Unmarshal(raw, &res); err != nil {
-		logger.KISError(tokenEndpoint, "PARSE_ERROR", string(raw))
-		tm.db.CreateKISAPILog(ctx, tokenEndpoint, "PARSE_ERROR", string(raw), string(raw))
+		logger.KISError(tokenEndpoint, "PARSE_ERROR", string(raw), "")
+		tm.db.CreateKISAPILog(ctx, tokenEndpoint, "PARSE_ERROR", string(raw), string(raw), "")
 		return nil, fmt.Errorf("parse token response: %w", err)
 	}
 
 	if res.AccessToken == "" {
-		logger.KISError(tokenEndpoint, res.MsgCode, string(raw))
-		tm.db.CreateKISAPILog(ctx, tokenEndpoint, res.MsgCode, string(raw), string(raw))
+		logger.KISError(tokenEndpoint, res.MsgCode, string(raw), "")
+		tm.db.CreateKISAPILog(ctx, tokenEndpoint, res.MsgCode, string(raw), string(raw), "")
 		return nil, fmt.Errorf("empty access token: %s", res.Msg)
 	}
 

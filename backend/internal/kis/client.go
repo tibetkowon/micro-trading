@@ -236,7 +236,7 @@ func (c *Client) GetStockPrice(ctx context.Context, stockCode string) (*StockPri
 		Msg     string             `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse stock price: %w", err)
 	}
 	return &result.Output, nil
@@ -441,7 +441,7 @@ func (c *Client) GetAvailableOrder(ctx context.Context, stockCode string) (*Avai
 		Msg     string                 `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse available order: %w", err)
 	}
 	return &result.Output, nil
@@ -466,7 +466,7 @@ func (c *Client) GetInquireBalance(ctx context.Context) (*InquireBalanceOutput2,
 		Msg     string                  `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse inquire balance: %w", err)
 	}
 	if len(result.Output2) == 0 {
@@ -503,7 +503,7 @@ func (c *Client) GetHoldings(ctx context.Context) ([]HoldingItem, error) {
 		MsgCode string        `json:"msg_cd"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse holdings: %w", err)
 	}
 	if result.Output1 == nil {
@@ -544,7 +544,7 @@ func (c *Client) GetVolumeRank(ctx context.Context, market, inputIscd, sort, pri
 		MsgCode string           `json:"msg_cd"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse volume rank: %w", err)
 	}
 	if result.Output == nil {
@@ -571,7 +571,7 @@ func (c *Client) GetStrengthRank(ctx context.Context, market, priceMin, priceMax
 		MsgCode string             `json:"msg_cd"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse strength rank: %w", err)
 	}
 	if result.Output == nil {
@@ -602,7 +602,7 @@ func (c *Client) GetFluctuationRank(ctx context.Context, market, priceMin, price
 		MsgCode string                `json:"msg_cd"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse fluctuation rank: %w", err)
 	}
 	if result.Output == nil {
@@ -629,7 +629,7 @@ func (c *Client) GetVIStatus(ctx context.Context, date string) ([]VIStatusItem, 
 		MsgCode string         `json:"msg_cd"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse vi status: %w", err)
 	}
 	if result.Output == nil {
@@ -680,7 +680,7 @@ func (c *Client) GetCancellableOrders(ctx context.Context) ([]CancellableOrderIt
 		Msg     string                 `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse cancellable orders: %w", err)
 	}
 	if result.Output == nil {
@@ -732,7 +732,7 @@ func (c *Client) CancelKISOrder(ctx context.Context, krxOrgNo, kisOrderID, ordDv
 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw))
+		c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw), "ORGN_ODNO="+kisOrderID)
 		return nil, fmt.Errorf("KIS POST %s returned %d", endpoint, resp.StatusCode)
 	}
 
@@ -743,12 +743,12 @@ func (c *Client) CancelKISOrder(ctx context.Context, krxOrgNo, kisOrderID, ordDv
 		Msg     string        `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), "ORGN_ODNO="+kisOrderID)
 		return nil, fmt.Errorf("parse cancel order response: %w", err)
 	}
 
 	if result.RtCd != "0" {
-		c.logAPIError(endpoint, result.MsgCode, string(raw))
+		c.logAPIError(endpoint, result.MsgCode, string(raw), "ORGN_ODNO="+kisOrderID)
 		return nil, fmt.Errorf("KIS cancel error [%s]: %s", result.MsgCode, result.Msg)
 	}
 
@@ -787,7 +787,7 @@ func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string)
 		Output1 []map[string]any `json:"output1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), "INQR_STRT_DT="+startDate+"&INQR_END_DT="+endDate)
 		return nil, fmt.Errorf("parse order history: %w", err)
 	}
 
@@ -838,7 +838,7 @@ func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([
 
 		raw, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != http.StatusOK {
-			c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw))
+			c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw), queryParams)
 			return nil, fmt.Errorf("KIS GET %s returned %d", endpoint, resp.StatusCode)
 		}
 
@@ -879,7 +879,7 @@ func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([
 					continue
 				}
 			}
-			c.logAPIError(endpoint, envelope.MsgCode, string(raw))
+			c.logAPIError(endpoint, envelope.MsgCode, string(raw), queryParams)
 			if envelope.MsgCode == "EGW00123" {
 				logger.Info("KIS token expired (EGW00123) — triggering immediate refresh", nil)
 				if _, refreshErr := c.tokenManager.IssueToken(ctx); refreshErr != nil {
@@ -929,7 +929,7 @@ func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoin
 
 		raw, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != http.StatusOK {
-			c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw))
+			c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw), "PDNO="+req.StockCode)
 			return nil, fmt.Errorf("KIS POST %s returned %d", endpoint, resp.StatusCode)
 		}
 
@@ -940,7 +940,7 @@ func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoin
 			Msg     string        `json:"msg1"`
 		}
 		if err := json.Unmarshal(raw, &result); err != nil {
-			c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+			c.logAPIError(endpoint, "PARSE_ERROR", string(raw), "PDNO="+req.StockCode)
 			return nil, fmt.Errorf("parse order response: %w", err)
 		}
 
@@ -960,7 +960,7 @@ func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoin
 				}
 				continue
 			}
-			c.logAPIError(endpoint, result.MsgCode, string(raw))
+			c.logAPIError(endpoint, result.MsgCode, string(raw), "PDNO="+req.StockCode)
 			return nil, fmt.Errorf("KIS order error [%s]: %s", result.MsgCode, result.Msg)
 		}
 
@@ -979,10 +979,11 @@ func (c *Client) setHeaders(req *http.Request, accessToken, trID string) {
 
 // logAPIError persists a KIS API error to the database and structured logger.
 // Per CLAUDE.md: Error Code + Timestamp + raw KIS API Response Message are REQUIRED.
-func (c *Client) logAPIError(endpoint, errorCode, rawResponse string) {
-	logger.KISError(endpoint, errorCode, rawResponse)
+// requestContext should contain the query parameters or stock code context (e.g. "?FID_INPUT_ISCD=005930").
+func (c *Client) logAPIError(endpoint, errorCode, rawResponse, requestContext string) {
+	logger.KISError(endpoint, errorCode, rawResponse, requestContext)
 	ctx := context.Background()
-	if err := c.db.CreateKISAPILog(ctx, endpoint, errorCode, extractMsg(rawResponse), rawResponse); err != nil {
+	if err := c.db.CreateKISAPILog(ctx, endpoint, errorCode, extractMsg(rawResponse), rawResponse, requestContext); err != nil {
 		logger.Error("failed to persist KIS API error log", map[string]any{"error": err.Error()})
 	}
 }

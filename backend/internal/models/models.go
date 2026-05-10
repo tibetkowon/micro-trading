@@ -91,13 +91,14 @@ type ServiceLog struct {
 
 // KISAPILog records every KIS API error response for audit and debugging.
 type KISAPILog struct {
-	ID          int64     `json:"id" firestore:"id"`
-	Endpoint    string    `json:"endpoint" firestore:"endpoint"`
-	ErrorCode   string    `json:"error_code" firestore:"error_code"`
-	ErrorMsg    string    `json:"error_message" firestore:"error_message"`
-	RawResponse string    `json:"raw_response" firestore:"raw_response"`
-	Timestamp   time.Time `json:"timestamp" firestore:"timestamp"`
-	ExpireAt    time.Time `json:"expire_at" firestore:"expireAt"`
+	ID             int64     `json:"id" firestore:"id"`
+	Endpoint       string    `json:"endpoint" firestore:"endpoint"`
+	ErrorCode      string    `json:"error_code" firestore:"error_code"`
+	ErrorMsg       string    `json:"error_message" firestore:"error_message"`
+	RawResponse    string    `json:"raw_response" firestore:"raw_response"`
+	RequestContext string    `json:"request_context" firestore:"request_context"`
+	Timestamp      time.Time `json:"timestamp" firestore:"timestamp"`
+	ExpireAt       time.Time `json:"expire_at" firestore:"expireAt"`
 }
 
 // ScanLog records each scanner cycle: rankings → hard filter → score → order decision.
@@ -154,6 +155,17 @@ type DailyReport struct {
 	TradeSummary      string    `json:"trade_summary" firestore:"trade_summary"` // JSON array
 	CreatedAt         time.Time `json:"created_at" firestore:"created_at"`
 	ExpireAt          time.Time `json:"expire_at" firestore:"expireAt"`
+}
+
+// BuyIndicatorsSnapshot holds the raw indicator values at the time of a buy order.
+// Stored as JSON in TradeReport.BuyIndicators for frontend consumption.
+type BuyIndicatorsSnapshot struct {
+	RSI           float64 `json:"rsi"`
+	MACDBullish   bool    `json:"macd_bullish"`
+	VWAPDisparity float64 `json:"vwap_disparity"`
+	Strength      float64 `json:"strength"`
+	BidAskRatio   float64 `json:"bid_ask_ratio"`
+	TotalScore    float64 `json:"total_score"`
 }
 
 // Token stores the KIS OAuth access token and its validity window.

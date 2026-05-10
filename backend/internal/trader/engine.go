@@ -814,7 +814,14 @@ func (e *Engine) placeAndMonitor(
 	}
 
 	kst, _ := time.LoadLocation("Asia/Seoul")
-	indicatorsJSON, _ := json.Marshal(detail)
+	indicatorsJSON, _ := json.Marshal(models.BuyIndicatorsSnapshot{
+		RSI:           c.Info.RSI14,
+		MACDBullish:   c.Info.MACDLine > c.Info.MACDSignal,
+		VWAPDisparity: c.Info.VWAPDiff,
+		Strength:      c.Strength,
+		BidAskRatio:   c.Info.BidAskRatio,
+		TotalScore:    detail.Total,
+	})
 	report := &models.TradeReport{
 		Date:          time.Now().In(kst).Format("2006-01-02"),
 		StockCode:     c.StockCode,
