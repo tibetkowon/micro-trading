@@ -737,17 +737,18 @@ func (db *DB) DeleteServiceLog(ctx context.Context, id int64) error {
 // ─── KISAPILogs ───────────────────────────────────────────────────────────────
 
 // CreateKISAPILog persists a KIS API error log entry.
-func (db *DB) CreateKISAPILog(ctx context.Context, endpoint, errCode, errMsg, raw string) error {
+func (db *DB) CreateKISAPILog(ctx context.Context, endpoint, errCode, errMsg, raw, requestContext string) error {
 	id := newID()
 	now := time.Now().UTC()
 	log := models.KISAPILog{
-		ID:          id,
-		Endpoint:    endpoint,
-		ErrorCode:   errCode,
-		ErrorMsg:    errMsg,
-		RawResponse: raw,
-		Timestamp:   now,
-		ExpireAt:    now.Add(3 * 24 * time.Hour),
+		ID:             id,
+		Endpoint:       endpoint,
+		ErrorCode:      errCode,
+		ErrorMsg:       errMsg,
+		RawResponse:    raw,
+		RequestContext: requestContext,
+		Timestamp:      now,
+		ExpireAt:       now.Add(3 * 24 * time.Hour),
 	}
 	_, err := db.client.Collection(colKISAPILogs).Doc(strconv.FormatInt(id, 10)).Set(ctx, log)
 	return err

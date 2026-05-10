@@ -24,10 +24,11 @@ type Entry struct {
 	Level     Level  `json:"level"`
 	Message   string `json:"message"`
 	// Optional fields
-	ErrorCode   string `json:"error_code,omitempty"`
-	Endpoint    string `json:"endpoint,omitempty"`
-	RawResponse string `json:"raw_response,omitempty"`
-	Extra       any    `json:"extra,omitempty"`
+	ErrorCode      string `json:"error_code,omitempty"`
+	Endpoint       string `json:"endpoint,omitempty"`
+	RawResponse    string `json:"raw_response,omitempty"`
+	RequestContext string `json:"request_context,omitempty"`
+	Extra          any    `json:"extra,omitempty"`
 }
 
 func write(e Entry) {
@@ -65,12 +66,14 @@ func Error(msg string, extra ...any) {
 
 // KISError logs a KIS API error with mandatory fields per CLAUDE.md spec:
 // Error Code, Timestamp, and raw KIS API Response Message MUST be included.
-func KISError(endpoint, errorCode, rawResponse string) {
+// requestContext captures the query parameters or stock code context for diagnostics.
+func KISError(endpoint, errorCode, rawResponse, requestContext string) {
 	write(Entry{
-		Level:       LevelError,
-		Message:     "KIS API error",
-		Endpoint:    endpoint,
-		ErrorCode:   errorCode,
-		RawResponse: rawResponse,
+		Level:          LevelError,
+		Message:        "KIS API error",
+		Endpoint:       endpoint,
+		ErrorCode:      errorCode,
+		RawResponse:    rawResponse,
+		RequestContext: requestContext,
 	})
 }
