@@ -230,16 +230,6 @@ func (db *DB) SetSetting(ctx context.Context, key, value string) error {
 	return err
 }
 
-// BulkUpdateSettings updates multiple settings in a single Firestore write.
-func (db *DB) BulkUpdateSettings(ctx context.Context, updates map[string]string) error {
-	data := make(map[string]any, len(updates))
-	for k, v := range updates {
-		data[k] = v
-	}
-	_, err := db.client.Collection(colSettings).Doc(docSettings).Set(ctx, data, firestore.MergeAll)
-	return err
-}
-
 // GetTradingSettings reads all autonomous trading settings from Firestore in one call.
 func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	m, err := db.GetAllSettings(ctx)
