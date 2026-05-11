@@ -1,4 +1,4 @@
-# micro-trading-for-agent
+# micro-trading
 
 저사양 서버에서 동작하는 **규칙 기반 자동매매 시스템** (한국 주식 KRX).
 
@@ -132,8 +132,8 @@
 ### 1. 저장소 클론
 
 ```bash
-git clone https://github.com/your-org/micro-trading-for-agent.git
-cd micro-trading-for-agent
+git clone https://github.com/your-org/micro-trading.git
+cd micro-trading
 ```
 
 ### 2. 환경 변수 설정
@@ -235,7 +235,7 @@ firebase deploy --only hosting
 ## 디렉토리 구조
 
 ```
-micro-trading-for-agent/
+micro-trading/
 ├── backend/
 │   ├── cmd/server/          # 서버 진입점, 시장 스케줄러
 │   └── internal/
