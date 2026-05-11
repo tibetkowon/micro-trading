@@ -437,16 +437,20 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 
 	// Build summary for scan log
 	type topStockEntry struct {
-		Code        string  `json:"code"`
-		Name        string  `json:"name"`
-		Strength    float64 `json:"strength"`
-		RSI         float64 `json:"rsi"`
-		MACDBullish bool    `json:"macd_bullish"`
-		BidAsk      float64 `json:"bid_ask"`
-		VWAPDiff    float64 `json:"vwap_diff"`
-		VolRatio    float64 `json:"vol_ratio"`
-		Total       float64 `json:"total"`
-		HasChart    bool    `json:"has_chart"` // 차트 API 성공 여부
+		Code          string  `json:"code"`
+		Name          string  `json:"name"`
+		Strength      float64 `json:"strength"`
+		RSI           float64 `json:"rsi"`
+		MACDBullish   bool    `json:"macd_bullish"`
+		BidAsk        float64 `json:"bid_ask"`
+		VWAPDiff      float64 `json:"vwap_diff"`
+		VolRatio      float64 `json:"vol_ratio"`
+		ProgramNetBuy float64 `json:"program_net_buy"` // 프로그램 순매수 수량 (raw)
+		MicroBidAsk   float64 `json:"micro_bid_ask"`   // 미시 호가비율 (raw)
+		VIDisparity   float64 `json:"vi_disparity"`    // VI 이격도 % (raw)
+		Volume        string  `json:"volume"`          // 거래량 (raw)
+		Total         float64 `json:"total"`
+		HasChart      bool    `json:"has_chart"` // 차트 API 성공 여부
 	}
 	topEntries := make([]topStockEntry, 0, 5)
 	for i, p := range passed {
@@ -455,25 +459,51 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		}
 		info := p.cinfo.Info
 		topEntries = append(topEntries, topStockEntry{
-			Code:        p.cinfo.StockCode,
-			Name:        p.cinfo.StockName,
-			Strength:    p.cinfo.Strength,
-			RSI:         info.RSI14,
-			MACDBullish: info.MACDLine > info.MACDSignal,
-			BidAsk:      info.BidAskRatio,
-			VWAPDiff:    info.VWAPDiff,
-			VolRatio:    info.VolVs3AvgRatio,
-			Total:       p.detail.Total,
-			HasChart:    info.RSI14 > 0 || info.MACDLine != 0 || info.VWAP > 0, // 차트 데이터 존재 여부
+			Code:          p.cinfo.StockCode,
+			Name:          p.cinfo.StockName,
+			Strength:      p.cinfo.Strength,
+			RSI:           info.RSI14,
+			MACDBullish:   info.MACDLine > info.MACDSignal,
+			BidAsk:        info.BidAskRatio,
+			VWAPDiff:      info.VWAPDiff,
+			VolRatio:      info.VolVs3AvgRatio,
+			ProgramNetBuy: info.ProgramNetBuy,
+			MicroBidAsk:   info.MicroBidAskRatio,
+			VIDisparity:   info.VIDisparity,
+			Volume:        info.Volume,
+			Total:         p.detail.Total,
+			HasChart:      info.RSI14 > 0 || info.MACDLine != 0 || info.VWAP > 0,
 		})
 	}
 	topJSON, _ := json.Marshal(topEntries)
+
+	// Build raw data snapshot: full StockInfo + ScoreDetail for top-5 (on-demand drilldown via API)
+	type stockRawEntry struct {
+		Code   string             `json:"code"`
+		Name   string             `json:"name"`
+		Info   *ops.StockInfo     `json:"info"`
+		Scores scorer.ScoreDetail `json:"scores"`
+	}
+	rawEntries := make([]stockRawEntry, 0, 5)
+	for i, p := range passed {
+		if i >= 5 {
+			break
+		}
+		rawEntries = append(rawEntries, stockRawEntry{
+			Code:   p.cinfo.StockCode,
+			Name:   p.cinfo.StockName,
+			Info:   p.cinfo.Info,
+			Scores: p.detail,
+		})
+	}
+	rawJSON, _ := json.Marshal(rawEntries)
 
 	scanLog := &models.ScanLog{
 		Timestamp:       time.Now().UTC().Format(time.RFC3339),
 		TotalCandidates: len(candidates),
 		StocksFound:     len(passed),
 		TopStocks:       string(topJSON),
+		StockRawData:    string(rawJSON),
 	}
 
 	logger.Info("engine: scan complete", map[string]any{

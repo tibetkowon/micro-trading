@@ -19,6 +19,8 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/report"
 	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Handler holds shared dependencies for all HTTP handlers.
@@ -585,19 +587,24 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 		SelectedStockCode string  `json:"selected_stock_code"`
 		SelectedStockName string  `json:"selected_stock_name"`
 		RejectionSummary  string  `json:"rejection_summary"`
+		HasRawData        bool    `json:"has_raw_data"`
 		Stocks            []gin.H `json:"stocks"`
 	}
 	type topStockEntry struct {
-		Code        string  `json:"code"`
-		Name        string  `json:"name"`
-		Strength    float64 `json:"strength"`
-		RSI         float64 `json:"rsi"`
-		MACDBullish bool    `json:"macd_bullish"`
-		BidAsk      float64 `json:"bid_ask"`
-		VWAPDiff    float64 `json:"vwap_diff"`
-		VolRatio    float64 `json:"vol_ratio"`
-		Total       float64 `json:"total"`
-		HasChart    bool    `json:"has_chart"` // 차트 API 성공 여부
+		Code          string  `json:"code"`
+		Name          string  `json:"name"`
+		Strength      float64 `json:"strength"`
+		RSI           float64 `json:"rsi"`
+		MACDBullish   bool    `json:"macd_bullish"`
+		BidAsk        float64 `json:"bid_ask"`
+		VWAPDiff      float64 `json:"vwap_diff"`
+		VolRatio      float64 `json:"vol_ratio"`
+		ProgramNetBuy float64 `json:"program_net_buy"`
+		MicroBidAsk   float64 `json:"micro_bid_ask"`
+		VIDisparity   float64 `json:"vi_disparity"`
+		Volume        string  `json:"volume"`
+		Total         float64 `json:"total"`
+		HasChart      bool    `json:"has_chart"` // 차트 API 성공 여부
 	}
 
 	kst := ops.KSTLocation()
@@ -616,16 +623,20 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 						}
 					}
 					stocks = append(stocks, gin.H{
-						"stock_code":     e.Code,
-						"stock_name":     stockName,
-						"strength":       e.Strength,
-						"rsi":            e.RSI,
-						"macd_bullish":   e.MACDBullish,
-						"bid_ask_ratio":  e.BidAsk,
-						"vwap_disparity": e.VWAPDiff,
-						"volume_ratio":   e.VolRatio,
-						"total_score":    e.Total,
-						"has_chart":      e.HasChart,
+						"stock_code":      e.Code,
+						"stock_name":      stockName,
+						"strength":        e.Strength,
+						"rsi":             e.RSI,
+						"macd_bullish":    e.MACDBullish,
+						"bid_ask_ratio":   e.BidAsk,
+						"vwap_disparity":  e.VWAPDiff,
+						"volume_ratio":    e.VolRatio,
+						"program_net_buy": e.ProgramNetBuy,
+						"micro_bid_ask":   e.MicroBidAsk,
+						"vi_disparity":    e.VIDisparity,
+						"volume":          e.Volume,
+						"total_score":     e.Total,
+						"has_chart":       e.HasChart,
 					})
 				}
 			} else {
@@ -675,10 +686,43 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 			SelectedStockCode: l.OrderedCode,
 			SelectedStockName: selectedName,
 			RejectionSummary:  l.SkipReason,
+			HasRawData:        l.StockRawData != "",
 			Stocks:            stocks,
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"data": views})
+}
+
+// GetScanLogRaw returns the full raw StockInfo + ScoreDetail for each top stock in a scan log.
+func (h *Handler) GetScanLogRaw(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	l, err := h.db.GetScanLog(c.Request.Context(), id)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	if l.StockRawData == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "no_raw_data"})
+		return
+	}
+
+	var raw []json.RawMessage
+	if err := json.Unmarshal([]byte(l.StockRawData), &raw); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "parse_error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": raw})
 }
 
 // splitTrimmed splits s by sep and trims whitespace from each element.

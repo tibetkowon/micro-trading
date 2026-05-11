@@ -28,16 +28,16 @@ type FilterResult struct {
 
 // ScoreDetail holds per-indicator raw scores (0-100) and the weighted composite total.
 type ScoreDetail struct {
-	Strength    float64
-	RSI         float64
-	MACD        float64
-	BidAsk      float64
-	VWAP        float64
-	Volume      float64
-	ProgramBuy  float64
-	MicroBidAsk float64
-	VIDisparity float64
-	Total       float64 // weighted sum normalised to 0-100
+	Strength    float64 `json:"strength"`
+	RSI         float64 `json:"rsi"`
+	MACD        float64 `json:"macd"`
+	BidAsk      float64 `json:"bid_ask"`
+	VWAP        float64 `json:"vwap"`
+	Volume      float64 `json:"volume"`
+	ProgramBuy  float64 `json:"program_buy"`
+	MicroBidAsk float64 `json:"micro_bid_ask"`
+	VIDisparity float64 `json:"vi_disparity"`
+	Total       float64 `json:"total"` // weighted sum normalised to 0-100
 }
 
 // String returns a compact log-friendly representation.

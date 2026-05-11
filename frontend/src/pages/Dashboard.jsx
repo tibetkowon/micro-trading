@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import useApi from '../hooks/useApi'
 import { fmt, fmtPct, fmtSigned, Badge, BotStateBadge, PriceProgressBar } from '../components/shared'
+import ScanRawModal from '../components/ScanRawModal'
 
 export default function Dashboard() {
   const { data: balance, loading: balLoading } = useApi('/api/balance')
@@ -9,6 +10,7 @@ export default function Dashboard() {
   const { data: scanLogs } = useApi('/api/logs/scan?limit=5')
 
   const [expanded, setExpanded] = useState({})
+  const [rawModal, setRawModal] = useState(null)
 
   const toggleExpand = useCallback((id) => {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
@@ -165,22 +167,31 @@ export default function Dashboard() {
                             <thead>
                               <tr>
                                 <th>종목</th>
+                                <th>거래량</th>
                                 <th>체결강도</th>
                                 <th>RSI</th>
                                 <th>MACD</th>
                                 <th>호가비율</th>
+                                <th>미시호가</th>
                                 <th>VWAP</th>
                                 <th>거래량비율</th>
+                                <th>순매수</th>
+                                <th>VI이격</th>
                                 <th>총점</th>
+                                <th>상세</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {stocks.map(s => (
+                              {stocks.map(s => {
+                                const volNum = s.volume ? parseInt(s.volume, 10) : 0
+                                const pgb = s.program_net_buy ?? 0
+                                return (
                                 <tr key={s.stock_code}>
                                   <td>
                                     <span style={{ fontWeight: 600 }}>{s.stock_name !== s.stock_code ? s.stock_name : s.stock_code}</span>
                                     {s.stock_name !== s.stock_code && <span className="mono muted" style={{ fontSize: 11, marginLeft: 4 }}>{s.stock_code}</span>}
                                   </td>
+                                  <td className="mono">{volNum > 0 ? volNum.toLocaleString('ko-KR') : '—'}</td>
                                   <td className="mono">{s.strength > 0 ? s.strength.toFixed(1) : '—'}</td>
                                   <td className="mono">{s.has_chart && s.rsi > 0 ? s.rsi.toFixed(1) : '—'}</td>
                                   <td>
@@ -189,11 +200,22 @@ export default function Dashboard() {
                                       : '—'}
                                   </td>
                                   <td className="mono">{s.bid_ask_ratio > 0 ? s.bid_ask_ratio.toFixed(2) : '—'}</td>
+                                  <td className="mono">{s.micro_bid_ask > 0 ? s.micro_bid_ask.toFixed(2) : '—'}</td>
                                   <td className="mono">{s.has_chart && s.vwap_disparity != null ? s.vwap_disparity.toFixed(2) + '%' : '—'}</td>
                                   <td className="mono">{s.has_chart && s.volume_ratio > 0 ? s.volume_ratio.toFixed(2) : '—'}</td>
+                                  <td className="mono" style={{ color: pgb > 0 ? 'var(--up)' : pgb < 0 ? 'var(--down)' : undefined }}>
+                                    {pgb !== 0 ? pgb.toLocaleString('ko-KR') : '—'}
+                                  </td>
+                                  <td className="mono">{s.vi_disparity != null && s.vi_disparity !== 0 ? s.vi_disparity.toFixed(2) + '%' : '—'}</td>
                                   <td className="mono accent" style={{ fontWeight: 700 }}>{s.total_score?.toFixed(1) ?? '—'}</td>
+                                  <td>
+                                    {log.has_raw_data
+                                      ? <button style={{ fontSize: 11, padding: '2px 8px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--accent)', cursor: 'pointer' }} onClick={e => { e.stopPropagation(); setRawModal({ logId: log.id, stockCode: s.stock_code, stockName: s.stock_name }) }}>상세</button>
+                                      : <span className="muted" style={{ fontSize: 11 }}>—</span>}
+                                  </td>
                                 </tr>
-                              ))}
+                                )
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -206,6 +228,14 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+      {rawModal && (
+        <ScanRawModal
+          logId={rawModal.logId}
+          stockCode={rawModal.stockCode}
+          stockName={rawModal.stockName}
+          onClose={() => setRawModal(null)}
+        />
+      )}
     </div>
   )
 }

@@ -16,7 +16,7 @@ export function fmtSigned(v) {
   return sign + '₩' + Math.round(Math.abs(v)).toLocaleString('ko-KR')
 }
 
-export function Modal({ title, children, actions, onClose }) {
+export function Modal({ title, children, actions, onClose, className = 'modal' }) {
   useEffect(() => {
     const h = e => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', h)
@@ -24,7 +24,7 @@ export function Modal({ title, children, actions, onClose }) {
   }, [onClose])
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal">
+      <div className={className}>
         <div className="modal-title">{title}</div>
         <div className="modal-body">{children}</div>
         <div className="modal-actions">{actions}</div>
