@@ -45,8 +45,9 @@ func NewClient(
 		accountType:  accountType,
 		tokenManager: tokenManager,
 		// KIS allows up to 20 TPS nominally, but sustained loads above ~5 RPS
-		// often trigger EGW00201. burst=1 enforces strict per-request spacing (~200ms).
-		rateLimiter: NewRateLimiter(5, 1),
+		// often trigger EGW00201. 3 RPS (burst=1) gives ~333ms spacing — conservative
+		// safety margin that prevents TPS cascades when chart pagination fallback fires.
+		rateLimiter: NewRateLimiter(3, 1),
 		db:          db,
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}

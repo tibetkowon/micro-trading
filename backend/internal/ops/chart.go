@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/kis"
@@ -64,8 +65,21 @@ func fetchCurrentDayBars(ctx context.Context, client *kis.Client, stockCode stri
 	now := time.Now()
 	bars, err := client.GetDayMinuteChart(ctx, stockCode, now.Format("20060102"), now.Format("150405"))
 	if err != nil {
-		logger.Warn("fetchCurrentDayBars: day chart API failed, falling back to pagination",
-			map[string]any{"code": stockCode, "error": err.Error()})
+		// TPS 에러로 인한 폴백은 API 부하를 4-6배 증가시키므로 추가 딜레이를 준다.
+		// 비-TPS 에러(TR_ID 미지원 등)는 즉시 폴백.
+		isTPS := strings.Contains(err.Error(), "EGW00201") || strings.Contains(err.Error(), "TPS exceeded")
+		if isTPS {
+			logger.Warn("fetchCurrentDayBars: day chart TPS error, waiting before fallback",
+				map[string]any{"code": stockCode, "error": err.Error()})
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		} else {
+			logger.Warn("fetchCurrentDayBars: day chart API failed, falling back to pagination",
+				map[string]any{"code": stockCode, "error": err.Error()})
+		}
 		return fetchMinuteBars(ctx, client, stockCode, 120)
 	}
 	if len(bars) == 0 {
