@@ -20,8 +20,8 @@ function transformSettings(raw) {
     }
   }
   const weights = {}
-  for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume']) {
-    weights[k] = pi(raw[`weight_${k}`], 0)
+  for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume', 'program_buy', 'micro_bidask', 'vi_disparity']) {
+    weights[k] = pi(raw[`score_weight_${k}`] ?? raw[`weight_${k}`], 0)
   }
   return {
     max_positions: pi(raw.max_positions, 1),
@@ -37,6 +37,7 @@ function transformSettings(raw) {
     indicator_macd_bearish_sell: pb(raw.indicator_macd_bearish_sell, false),
     hard_ma60_support_enabled: pb(raw.hard_ma60_support_enabled, false),
     hard_ma120_support_enabled: pb(raw.hard_ma120_support_enabled, false),
+    hard_program_buy_min: pf(raw.hard_program_buy_min, 0),
     buy_pause_start: raw.buy_pause_start || '',
     buy_pause_end: raw.buy_pause_end || '',
     ranking_types: pj(raw.ranking_types, []),
@@ -73,6 +74,11 @@ function transformSettings(raw) {
     block_reentry_on_loss: pb(raw.block_reentry_on_loss, true),
     reentry_score_penalty: pf(raw.reentry_score_penalty, 10),
     reentry_cooldown_min: pi(raw.reentry_cooldown_min, 15),
+    stream: {
+      bypass_enabled: pb(raw.stream_bypass_enabled, true),
+      big_trade_amount: pf(raw.stream_big_trade_amount, 30000000),
+      velocity_threshold: pf(raw.stream_velocity_threshold, 5.0),
+    },
   }
 }
 
@@ -121,12 +127,15 @@ const HARD_FILTERS = [
 ]
 
 const WEIGHT_LABELS = [
-  ['strength', '체결강도 (Strength)'],
-  ['rsi',      'RSI'],
-  ['macd',     'MACD'],
-  ['bidask',   '매수호가비율 (BidAsk)'],
-  ['vwap',     'VWAP 이격'],
-  ['volume',   '거래량 증가율'],
+  ['strength',     '체결강도 (Strength)'],
+  ['rsi',          'RSI'],
+  ['macd',         'MACD'],
+  ['bidask',       '10호가비율 (BidAsk)'],
+  ['vwap',         'VWAP 이격'],
+  ['volume',       '거래량 증가율'],
+  ['program_buy',  '프로그램 순매수 비중'],
+  ['micro_bidask', '1~3호가 매수/매도 비율'],
+  ['vi_disparity', 'VI 정적 이격도 (1~2%)'],
 ]
 
 export default function Settings() {
@@ -171,6 +180,7 @@ export default function Settings() {
       flat.indicator_macd_bearish_sell = String(settings.indicator_macd_bearish_sell ?? false)
       flat.hard_ma60_support_enabled = String(settings.hard_ma60_support_enabled ?? false)
       flat.hard_ma120_support_enabled = String(settings.hard_ma120_support_enabled ?? false)
+      flat.hard_program_buy_min = String(settings.hard_program_buy_min ?? 0)
       flat.buy_pause_start = settings.buy_pause_start || ''
       flat.buy_pause_end = settings.buy_pause_end || ''
       flat.ranking_types = JSON.stringify(settings.ranking_types ?? [])
@@ -185,8 +195,8 @@ export default function Settings() {
       flat.trading_end_time = settings.schedule?.trade_end || '15:15'
       flat.scan_interval = String(settings.schedule?.scan_interval ?? 1)
       flat.indicator_check_interval_min = String(settings.schedule?.indicator_check_interval ?? 5)
-      for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume'])
-        flat[`weight_${k}`] = String(settings.weights?.[k] ?? 0)
+      for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume', 'program_buy', 'micro_bidask', 'vi_disparity'])
+        flat[`score_weight_${k}`] = String(settings.weights?.[k] ?? 0)
       for (const k of ['rsi_upper_limit', 'strength_lower', 'vwap_min', 'vwap_max',
           'high_disparity', 'open_rise_limit', 'high_elapsed_min', 'volume_ratio_lower']) {
         flat[`filter_${k}_enabled`] = String(settings.filters?.[k]?.enabled ?? false)
@@ -206,6 +216,9 @@ export default function Settings() {
       flat.block_reentry_on_loss = String(settings.block_reentry_on_loss ?? true)
       flat.reentry_score_penalty = String(settings.reentry_score_penalty ?? 10)
       flat.reentry_cooldown_min = String(settings.reentry_cooldown_min ?? 15)
+      flat.stream_bypass_enabled = String(settings.stream?.bypass_enabled ?? true)
+      flat.stream_big_trade_amount = String(settings.stream?.big_trade_amount ?? 30000000)
+      flat.stream_velocity_threshold = String(settings.stream?.velocity_threshold ?? 5.0)
       await setDoc(doc(db, 'settings', 'config'), flat, { merge: true })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -229,7 +242,7 @@ export default function Settings() {
   return (
     <div>
       <div className="tab-bar">
-        {['거래조건', '순위조회', '하드필터', '점수시스템', '스케줄', '매도관리'].map(t => (
+        {['거래조건', '하이재킹', '순위조회', '하드필터', '점수시스템', '스케줄', '매도관리'].map(t => (
           <div key={t} className={`tab-item ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>{t}</div>
         ))}
       </div>
@@ -317,6 +330,44 @@ export default function Settings() {
             <Toggle
               checked={settings.indicator_macd_bearish_sell ?? false}
               onChange={v => set('indicator_macd_bearish_sell', v)} />
+          </div>
+        </div>
+      )}
+
+      {tab === '하이재킹' && (
+        <div style={{ maxWidth: 600 }}>
+          <div style={{ marginBottom: 24 }}>
+            <div className="form-label" style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--accent)' }}>
+              WebSocket 실시간 바이패스(Hijacking)
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              순위조회를 통과한 관심 종목에 대해 10초간 실시간 체결을 추적하여 대량 체결 및 체결 속도 급등 시 30초 스캔 주기를 무시하고 즉각 우선 매수합니다 (단, 하드필터는 거칩니다).
+            </div>
+            <div className="filter-row">
+              <span className="filter-label">하이재킹 기능 활성화</span>
+              <Toggle
+                checked={settings.stream?.bypass_enabled ?? true}
+                onChange={v => set('stream.bypass_enabled', v)} />
+            </div>
+          </div>
+          
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Big Trade 기준 금액 (원)</label>
+              <input className="form-input" type="number" step="1000000" min="0"
+                value={settings.stream?.big_trade_amount ?? 30000000}
+                onChange={e => set('stream.big_trade_amount', +e.target.value)} />
+              <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>해당 금액 이상의 건이 10초 내 2회 이상 발생 시 발동</div>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">체결 속도 임계치 (건/초)</label>
+              <input className="form-input" type="number" step="1" min="1"
+                value={settings.stream?.velocity_threshold ?? 5.0}
+                onChange={e => set('stream.velocity_threshold', +e.target.value)} />
+              <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>최근 10초간 초당 체결 건수가 이 값을 초과하면 발동</div>
+            </div>
           </div>
         </div>
       )}
@@ -467,6 +518,13 @@ export default function Settings() {
             )
           })}
           <div className="filter-row" style={{ marginTop: 12 }}>
+            <span className="filter-label">당일 프로그램 순매수 하한선 (수량)</span>
+            <input className="form-input" type="number" step="100"
+              value={settings.hard_program_buy_min ?? 0}
+              onChange={e => set('hard_program_buy_min', +e.target.value)}
+              style={{ width: 120 }} />
+          </div>
+          <div className="filter-row">
             <span className="filter-label">MA60 지지 (현재가 ≥ MA60)</span>
             <Toggle
               checked={settings.hard_ma60_support_enabled ?? false}

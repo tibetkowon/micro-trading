@@ -28,19 +28,22 @@ type FilterResult struct {
 
 // ScoreDetail holds per-indicator raw scores (0-100) and the weighted composite total.
 type ScoreDetail struct {
-	Strength float64
-	RSI      float64
-	MACD     float64
-	BidAsk   float64
-	VWAP     float64
-	Volume   float64
-	Total    float64 // weighted sum normalised to 0-100
+	Strength    float64
+	RSI         float64
+	MACD        float64
+	BidAsk      float64
+	VWAP        float64
+	Volume      float64
+	ProgramBuy  float64
+	MicroBidAsk float64
+	VIDisparity float64
+	Total       float64 // weighted sum normalised to 0-100
 }
 
 // String returns a compact log-friendly representation.
 func (d ScoreDetail) String() string {
-	return fmt.Sprintf("total=%.1f str=%.1f rsi=%.1f macd=%.1f bid=%.1f vwap=%.1f vol=%.1f",
-		d.Total, d.Strength, d.RSI, d.MACD, d.BidAsk, d.VWAP, d.Volume)
+	return fmt.Sprintf("total=%.1f str=%.1f rsi=%.1f macd=%.1f bid=%.1f vwap=%.1f vol=%.1f pgb=%.1f mbid=%.1f vi=%.1f",
+		d.Total, d.Strength, d.RSI, d.MACD, d.BidAsk, d.VWAP, d.Volume, d.ProgramBuy, d.MicroBidAsk, d.VIDisparity)
 }
 
 // ApplyHardFilter returns whether the candidate passes all configured hard filters.
@@ -56,6 +59,11 @@ func ApplyHardFilter(c CandidateInfo, s database.TradingSettings) FilterResult {
 	// 체결강도 하한
 	if s.HardStrengthMin > 0 && c.Strength > 0 && c.Strength < s.HardStrengthMin {
 		return FilterResult{Reason: fmt.Sprintf("strength %.1f < min %.1f", c.Strength, s.HardStrengthMin)}
+	}
+
+	// 프로그램 순매수 하한
+	if info.ProgramNetBuy < s.HardProgramBuyMin {
+		return FilterResult{Reason: fmt.Sprintf("program net buy %.0f < min %.0f", info.ProgramNetBuy, s.HardProgramBuyMin)}
 	}
 
 	// 5분봉 이격도 범위
@@ -138,16 +146,20 @@ func ApplyHardFilter(c CandidateInfo, s database.TradingSettings) FilterResult {
 func CalcScore(c CandidateInfo, s database.TradingSettings) ScoreDetail {
 	info := c.Info
 	d := ScoreDetail{
-		Strength: scoreStrength(c.Strength),
-		RSI:      scoreRSI(info.RSI14),
-		MACD:     scoreMACD(info.MACDLine, info.MACDSignal),
-		BidAsk:   scoreBidAsk(info.BidAskRatio),
-		VWAP:     scoreVWAP(info.VWAPDiff, info.VWAP),
-		Volume:   scoreVolume(info.VolVs3AvgRatio),
+		Strength:    scoreStrength(c.Strength),
+		RSI:         scoreRSI(info.RSI14),
+		MACD:        scoreMACD(info.MACDLine, info.MACDSignal),
+		BidAsk:      scoreBidAsk(info.BidAskRatio),
+		VWAP:        scoreVWAP(info.VWAPDiff, info.VWAP),
+		Volume:      scoreVolume(info.VolVs3AvgRatio),
+		ProgramBuy:  scoreProgramBuy(info.ProgramNetBuy, info.Volume),
+		MicroBidAsk: scoreMicroBidAsk(info.MicroBidAskRatio),
+		VIDisparity: scoreVIDisparity(info.VIDisparity),
 	}
 
 	totalWeight := float64(s.ScoreWeightStrength + s.ScoreWeightRSI + s.ScoreWeightMACD +
-		s.ScoreWeightBidAsk + s.ScoreWeightVWAP + s.ScoreWeightVolume)
+		s.ScoreWeightBidAsk + s.ScoreWeightVWAP + s.ScoreWeightVolume +
+		s.ScoreWeightProgramBuy + s.ScoreWeightMicroBidAsk + s.ScoreWeightVIDisparity)
 	if totalWeight == 0 {
 		return d // all weights zero → total stays 0
 	}
@@ -157,7 +169,10 @@ func CalcScore(c CandidateInfo, s database.TradingSettings) ScoreDetail {
 		d.MACD*float64(s.ScoreWeightMACD)+
 		d.BidAsk*float64(s.ScoreWeightBidAsk)+
 		d.VWAP*float64(s.ScoreWeightVWAP)+
-		d.Volume*float64(s.ScoreWeightVolume))/totalWeight*10) / 10
+		d.Volume*float64(s.ScoreWeightVolume)+
+		d.ProgramBuy*float64(s.ScoreWeightProgramBuy)+
+		d.MicroBidAsk*float64(s.ScoreWeightMicroBidAsk)+
+		d.VIDisparity*float64(s.ScoreWeightVIDisparity))/totalWeight*10) / 10
 
 	return d
 }
@@ -249,6 +264,56 @@ func scoreVolume(v float64) float64 {
 		return 0
 	}
 	return clamp((v-1.0)/2.0*100, 0, 100)
+}
+
+// scoreProgramBuy: (순매수 / 총거래량 * 100)
+// >= 10.0% -> 100, <= 0.0% -> 0. 0 = no data -> 50.
+func scoreProgramBuy(netBuy float64, volStr string) float64 {
+	vol, _ := strconv.ParseFloat(volStr, 64)
+	if vol <= 0 {
+		return 50
+	}
+	ratio := netBuy / vol * 100
+	if ratio >= 10.0 {
+		return 100
+	}
+	if ratio <= 0 {
+		return 0
+	}
+	return clamp(ratio*10, 0, 100)
+}
+
+// scoreMicroBidAsk: >= 3.0 -> 100, < 1.0 -> 0. 0 = no data -> 50.
+func scoreMicroBidAsk(v float64) float64 {
+	if v <= 0 {
+		return 50
+	}
+	if v >= 3.0 {
+		return 100
+	}
+	if v < 1.0 {
+		return 0
+	}
+	return clamp((v-1.0)/2.0*100, 0, 100)
+}
+
+// scoreVIDisparity: 1.0%~2.0% -> 100. <0.5% -> 0. >=5.0% -> 0. 0 = no data -> 50.
+func scoreVIDisparity(v float64) float64 {
+	if v <= 0 {
+		return 50 // Could be no data, or below 0 (downward VI? We only care about upward).
+	}
+	switch {
+	case v < 0.5:
+		return 0
+	case v >= 0.5 && v < 1.0:
+		return clamp((v-0.5)*200, 0, 100)
+	case v >= 1.0 && v <= 2.0:
+		return 100
+	case v > 2.0 && v < 5.0:
+		return clamp((5.0-v)/3.0*100, 0, 100)
+	default:
+		return 0
+	}
 }
 
 func clamp(v, lo, hi float64) float64 {

@@ -36,6 +36,7 @@ const (
 type PriceEvent struct {
 	StockCode string
 	Price     float64
+	Qty       int
 	Timestamp time.Time
 }
 
@@ -482,10 +483,15 @@ func (c *WebSocketClient) parsePriceData(data string) {
 		return
 	}
 
+	qtyStr := fields[12]
+	var qty int
+	fmt.Sscanf(qtyStr, "%d", &qty)
+
 	select {
 	case c.PriceCh <- PriceEvent{
 		StockCode: stockCode,
 		Price:     price,
+		Qty:       qty,
 		Timestamp: time.Now(),
 	}:
 	default:

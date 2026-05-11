@@ -44,8 +44,11 @@ type StockInfo struct {
 	VWAPDiff        float64 `json:"vwap_diff"`         // (현재가-VWAP)/VWAP×100 (%)
 	M5MA10          float64 `json:"m5_ma10"`           // 5분봉 MA10; 0=데이터부족
 	PrevVolumeRatio float64 `json:"prev_volume_ratio"` // 직전봉 대비 현재봉 거래량 비율; 0=데이터부족
-	BidAskRatio     float64 `json:"bid_ask_ratio"`     // 총 매수잔량 / 총 매도잔량; 0=API 실패 또는 데이터 없음
-	BidAskSpread    float64 `json:"bid_ask_spread"`    // (매도1호가-매수1호가)/매도1호가×100 (%); 0=API 실패
+	BidAskRatio      float64 `json:"bid_ask_ratio"`       // 총 매수잔량 / 총 매도잔량; 0=API 실패 또는 데이터 없음
+	MicroBidAskRatio float64 `json:"micro_bid_ask_ratio"` // 최우선 1~3호가 매수/매도 잔량 비율
+	BidAskSpread     float64 `json:"bid_ask_spread"`      // (매도1호가-매수1호가)/매도1호가×100 (%); 0=API 실패
+	ProgramNetBuy    float64 `json:"program_net_buy"`     // 당일 프로그램 순매수 수량
+	VIDisparity      float64 `json:"vi_disparity"`        // 상승 정적 VI 이격도 (%)
 	// 자산 타입 (MST 기반 — engine이 태깅)
 	AssetType string `json:"asset_type"` // "STOCK" | "ETF" | "ETF_DOMESTIC"
 
@@ -101,6 +104,15 @@ func GetStockInfo(ctx context.Context, client *kis.Client, stockCode string) (*S
 	}
 	if open, err := strconv.ParseFloat(resp.DayOpen, 64); err == nil && open > 0 {
 		info.OpenPriceDiff = math.Round((price-open)/open*10000) / 100
+	}
+
+	// --- ProgramNetBuy & VIDisparity ---
+	if pgb, err := strconv.ParseFloat(resp.ProgramNetBuyQty, 64); err == nil {
+		info.ProgramNetBuy = pgb
+	}
+	if refPrc, err := strconv.ParseFloat(resp.ReferencePrice, 64); err == nil && refPrc > 0 && price > 0 {
+		viPrice := refPrc * 1.10
+		info.VIDisparity = math.Round((viPrice-price)/price*10000) / 100
 	}
 
 	// Fetch current-day 1-minute bars using the single-call API (reduces TPS load).
@@ -269,6 +281,13 @@ func GetStockInfoWithPrice(ctx context.Context, client *kis.Client, stockCode st
 	}
 	if open, err := strconv.ParseFloat(resp.DayOpen, 64); err == nil && open > 0 {
 		info.OpenPriceDiff = math.Round((price-open)/open*10000) / 100
+	}
+	if pgb, err := strconv.ParseFloat(resp.ProgramNetBuyQty, 64); err == nil {
+		info.ProgramNetBuy = pgb
+	}
+	if refPrc, err := strconv.ParseFloat(resp.ReferencePrice, 64); err == nil && refPrc > 0 && price > 0 {
+		viPrice := refPrc * 1.10
+		info.VIDisparity = math.Round((viPrice-price)/price*10000) / 100
 	}
 
 	bars, chartErr := fetchCurrentDayBars(ctx, client, stockCode)

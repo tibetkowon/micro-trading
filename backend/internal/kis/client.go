@@ -64,8 +64,10 @@ type StockPriceResponse struct {
 	DayOpen         string `json:"stck_oprc"`      // 당일 시가
 	DayHigh         string `json:"stck_hgpr"`      // 당일 고가
 	DayLow          string `json:"stck_lwpr"`      // 당일 저가
-	Strength        string `json:"tday_rltv"`      // 체결강도 (당일)
-	UpperLimitPrice string `json:"stck_mxpr"`      // 당일 상한가
+	Strength         string `json:"tday_rltv"`      // 체결강도 (당일)
+	UpperLimitPrice  string `json:"stck_mxpr"`      // 당일 상한가
+	ReferencePrice   string `json:"stck_sdpr"`      // 주식 기준가 (VI 계산용)
+	ProgramNetBuyQty string `json:"pgtr_ntby_qty"`  // 프로그램매매 순매수 수량
 }
 
 // AvailableOrderResponse holds response from inquire-psbl-order (매수가능조회 TTTC8908R).
@@ -278,8 +280,9 @@ func (c *Client) GetIndexPrice(ctx context.Context, indexCode string) (*StockPri
 
 // OrderBookSnapshot holds enriched order book data from FHKST01010200.
 type OrderBookSnapshot struct {
-	BidAskRatio     float64 // 총 매수잔량 / 총 매도잔량
-	NearBidAskRatio float64 // 현재가 ±2% 범위 내 호가만의 매수/매도 비율; 0=계산불가
+	BidAskRatio      float64 // 총 매수잔량 / 총 매도잔량
+	MicroBidAskRatio float64 // 최우선 1~3호가 매수잔량합 / 매도잔량합
+	NearBidAskRatio  float64 // 현재가 ±2% 범위 내 호가만의 매수/매도 비율; 0=계산불가
 	TopAskWall      float64 // 가장 큰 매도 벽의 현재가 대비 위치 (%); 0=데이터없음
 	TopAskWallSize  int64   // 가장 큰 매도 벽의 잔량
 	SpreadPct       float64 // (매도1호가 - 매수1호가) / 매도1호가 × 100; 0=계산불가
@@ -377,6 +380,20 @@ func (c *Client) GetOrderBookSnapshot(ctx context.Context, stockCode string, cur
 		o1.BidP6, o1.BidP7, o1.BidP8, o1.BidP9, o1.BidP10}
 	bidRsqns := [10]string{o1.BidR1, o1.BidR2, o1.BidR3, o1.BidR4, o1.BidR5,
 		o1.BidR6, o1.BidR7, o1.BidR8, o1.BidR9, o1.BidR10}
+
+	// MicroBidAskRatio: 최우선 1~3호가
+	var microAsk, microBid float64
+	for i := 0; i < 3; i++ {
+		ar, _ := strconv.ParseFloat(askRsqns[i], 64)
+		br, _ := strconv.ParseFloat(bidRsqns[i], 64)
+		microAsk += ar
+		microBid += br
+	}
+	if microAsk > 0 {
+		snap.MicroBidAskRatio = math.Round(microBid/microAsk*100) / 100
+	} else if microBid > 0 {
+		snap.MicroBidAskRatio = 99.9 // Max out if no ask
+	}
 
 	nearBand := currentPrice * 0.02 // ±2%
 	var nearAsk, nearBid float64

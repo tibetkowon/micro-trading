@@ -100,15 +100,21 @@ type TradingSettings struct {
 	FilterHighPriceDiffMin float64
 	FilterOpenPriceDiffMax float64
 	// 점수 시스템 (v2)
-	MinScoreThreshold   float64
-	ScoreWeightStrength int
-	ScoreWeightRSI      int
-	ScoreWeightMACD     int
-	ScoreWeightBidAsk   int
-	ScoreWeightVWAP     int
-	ScoreWeightVolume   int
+	MinScoreThreshold      float64
+	ScoreWeightStrength    int
+	ScoreWeightRSI         int
+	ScoreWeightMACD        int
+	ScoreWeightBidAsk      int
+	ScoreWeightVWAP        int
+	ScoreWeightVolume      int
+	ScoreWeightProgramBuy  int
+	ScoreWeightMicroBidAsk int
+	ScoreWeightVIDisparity int
 	// 기타
-	MinTradingValue       float64
+	MinTradingValue         float64
+	StreamBypassEnabled     bool
+	StreamBigTradeAmount    float64
+	StreamVelocityThreshold float64
 	BuyPauseStart         string
 	BuyPauseEnd           string
 	IndexCodes            []string
@@ -130,6 +136,7 @@ type TradingSettings struct {
 	HardStrengthMin         float64
 	HardRSIMax              float64
 	HardOpenPriceDiffMax    float64
+	HardProgramBuyMin       float64
 	HardMACDBearishEnabled  bool
 	HardMA60SupportEnabled  bool
 	HardMA120SupportEnabled bool
@@ -299,8 +306,14 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.ScoreWeightBidAsk = pi(m, "score_weight_bidask", 15)
 	s.ScoreWeightVWAP = pi(m, "score_weight_vwap", 10)
 	s.ScoreWeightVolume = pi(m, "score_weight_volume", 5)
+	s.ScoreWeightProgramBuy = pi(m, "score_weight_program_buy", 10)
+	s.ScoreWeightMicroBidAsk = pi(m, "score_weight_micro_bidask", 10)
+	s.ScoreWeightVIDisparity = pi(m, "score_weight_vi_disparity", 10)
 	// misc
 	s.MinTradingValue = pf(m, "min_trading_value", 0.0)
+	s.StreamBypassEnabled = pb(m, "stream_bypass_enabled", true)
+	s.StreamBigTradeAmount = pf(m, "stream_big_trade_amount", 30000000.0)
+	s.StreamVelocityThreshold = pf(m, "stream_velocity_threshold", 5.0)
 	s.BuyPauseStart = ps(m, "buy_pause_start", "")
 	s.BuyPauseEnd = ps(m, "buy_pause_end", "")
 	s.IndexCodes = pjsonStrSlice(m, "index_codes", nil)
@@ -321,6 +334,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.HardStrengthMin = pf(m, "hard_strength_min", 100.0)
 	s.HardRSIMax = pf(m, "hard_rsi_max", 70.0)
 	s.HardOpenPriceDiffMax = pf(m, "hard_open_price_diff_max", 15.0)
+	s.HardProgramBuyMin = pf(m, "hard_program_buy_min", 0.0)
 	s.HardMACDBearishEnabled = pb(m, "hard_macd_bearish_enabled", false)
 	s.HardMA60SupportEnabled = pb(m, "hard_ma60_support_enabled", false)
 	s.HardMA120SupportEnabled = pb(m, "hard_ma120_support_enabled", false)

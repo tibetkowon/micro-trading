@@ -56,6 +56,10 @@ type Engine struct {
 	soldCh              chan string
 	consecutiveLosses   int
 	consecutiveLossHalt bool
+
+	hijackCh        chan string
+	streamMon       *StreamMonitor
+	wsSubscriptions map[string]bool
 }
 
 // NewEngine creates a new Engine with all required dependencies.
@@ -71,11 +75,14 @@ func NewEngine(
 		kisClient: kisClient,
 		wsClient:  wsClient,
 		mon:       mon,
-		mstStore:  mstStore,
-		state:     StateIdle,
-		soldCh:    make(chan string, 16),
+		mstStore:        mstStore,
+		state:           StateIdle,
+		soldCh:          make(chan string, 16),
+		hijackCh:        make(chan string, 100),
+		wsSubscriptions: make(map[string]bool),
 	}
-}
+	e.streamMon = NewStreamMonitor(30000000.0, 5.0, e.hijackCh)
+	return e
 
 // GetState returns the current engine state (thread-safe).
 func (e *Engine) GetState() EngineState {
@@ -108,6 +115,8 @@ func (e *Engine) ForceRun(ctx context.Context) {
 func (e *Engine) Start(ctx context.Context) (stop func()) {
 	cycleCtx, cancel := context.WithCancel(ctx)
 	go e.runCycle(cycleCtx)
+	go e.processPriceEvents(cycleCtx)
+	go e.processHijackEvents(cycleCtx)
 	return func() {
 		cancel()
 		e.setState(StateIdle)
@@ -239,6 +248,29 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		logger.Info("engine: no candidates from rankings", nil)
 		e.setState(StateSearching)
 		return
+	}
+
+	// Subscribe candidates to WebSocket price feed for real-time monitoring
+	if settings.StreamBypassEnabled {
+		e.streamMon.UpdateConfig(settings.StreamBigTradeAmount, settings.StreamVelocityThreshold)
+		newSubs := make(map[string]bool)
+		for _, c := range candidates {
+			newSubs[c.StockCode] = true
+		}
+		
+		e.mu.Lock()
+		for code := range e.wsSubscriptions {
+			if !newSubs[code] && !e.mon.Has(code) { // Keep monitored ones if they exist
+				e.wsClient.UnsubscribePrice(code)
+			}
+		}
+		for code := range newSubs {
+			if !e.wsSubscriptions[code] {
+				e.wsClient.SubscribePrice(code)
+			}
+		}
+		e.wsSubscriptions = newSubs
+		e.mu.Unlock()
 	}
 
 	type scored struct {
@@ -995,4 +1027,101 @@ func exchangeInputCode(exchanges []string) string {
 		}
 	}
 	return "0000"
+}
+
+// ─── WebSocket Bypass / Hijack Logic ────────────────────────────────────────
+
+func (e *Engine) processPriceEvents(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev := <-e.wsClient.PriceCh:
+			if e.streamMon != nil {
+				e.streamMon.AddTick(ev)
+			}
+		}
+	}
+}
+
+func (e *Engine) processHijackEvents(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case stockCode := <-e.hijackCh:
+			go e.tryBuyHijack(ctx, stockCode)
+		}
+	}
+}
+
+func (e *Engine) tryBuyHijack(ctx context.Context, stockCode string) {
+	settings, err := e.db.GetTradingSettings(ctx)
+	if err != nil || !settings.StreamBypassEnabled {
+		return
+	}
+
+	// 1. Check slots and conditions
+	if settings.MaxPositions-e.mon.Count() <= 0 {
+		return
+	}
+	if e.inBuyPause(settings.BuyPauseStart, settings.BuyPauseEnd) {
+		return
+	}
+	if settings.DailyMaxLossPct > 0 && e.dailyLossExceeded(ctx, settings.DailyMaxLossPct) {
+		return
+	}
+
+	logger.Info("engine: hijack triggered", map[string]any{"code": stockCode})
+
+	// 2. Fetch data & check hard filters
+	priceResp, err := e.kisClient.GetStockPrice(ctx, stockCode)
+	if err != nil {
+		logger.Warn("engine: hijack GetStockPrice failed", map[string]any{"code": stockCode, "error": err.Error()})
+		return
+	}
+	info, err := ops.GetStockInfoWithPrice(ctx, e.kisClient, stockCode, priceResp)
+	if err != nil {
+		logger.Warn("engine: hijack GetStockInfoWithPrice failed", map[string]any{"code": stockCode, "error": err.Error()})
+		return
+	}
+
+	cinfo := scorer.CandidateInfo{
+		StockCode: stockCode,
+		StockName: stockCode, // Fallback
+		Info:      info,
+		Strength:  info.Strength,
+	}
+
+	if sm, _ := e.mstStore.GetByCode(ctx, stockCode); sm != nil {
+		cinfo.StockName = sm.Name
+		if sm.IsETN {
+			logger.Info("engine: hijack rejected (ETN)", map[string]any{"code": stockCode})
+			return
+		}
+		switch {
+		case sm.IsDomesticEquityETF:
+			info.AssetType = "ETF_DOMESTIC"
+		case sm.IsETF:
+			info.AssetType = "ETF"
+		default:
+			info.AssetType = "STOCK"
+		}
+	}
+
+	// Must pass hard filter
+	fr := scorer.ApplyHardFilter(cinfo, settings)
+	if !fr.Passed {
+		logger.Info("engine: hijack hard filter rejected", map[string]any{"code": stockCode, "reason": fr.Reason})
+		return
+	}
+
+	// 3. Force Buy (Bypass Scoring)
+	// Assign artificial 100 score for bypassed stock.
+	detail := scorer.ScoreDetail{Total: 100.0}
+
+	logger.Info("engine: executing hijack buy", map[string]any{"code": stockCode, "name": cinfo.StockName})
+	if err := e.placeAndMonitor(ctx, cinfo, detail, settings); err != nil {
+		logger.Error("engine: hijack placeAndMonitor failed", map[string]any{"code": stockCode, "error": err.Error()})
+	}
 }
