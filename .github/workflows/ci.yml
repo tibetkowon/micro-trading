@@ -157,8 +157,8 @@ jobs:
             --quiet \
             --command="
               gsutil cp gs://${{ vars.GCS_BUCKET }}/micro-trading/server /tmp/server-new &&
-              sudo mv /tmp/server-new /opt/trading/server &&
-              sudo chmod +x /opt/trading/server &&
+              sudo mv /tmp/server-new /opt/micro-trading/server &&
+              sudo chmod +x /opt/micro-trading/server &&
               sudo systemctl restart micro-trading &&
               echo '✓ Deployment complete'
             "
