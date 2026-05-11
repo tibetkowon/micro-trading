@@ -116,18 +116,18 @@ type TradingSettings struct {
 	StreamBypassEnabled     bool
 	StreamBigTradeAmount    float64
 	StreamVelocityThreshold float64
-	BuyPauseStart         string
-	BuyPauseEnd           string
-	IndexCodes            []string
-	IndexDropThresholdPct float64
-	TradingDays           []int
-	MinMarketCap          float64
-	MinExpectedProfitPct  float64
-	VWAPDiffMin           float64
-	VWAPDiffMax           float64
-	RSIBuyMin             float64
-	RSIBuyMax             float64
-	BidAskRatioMin        float64
+	BuyPauseStart           string
+	BuyPauseEnd             string
+	IndexCodes              []string
+	IndexDropThresholdPct   float64
+	TradingDays             []int
+	MinMarketCap            float64
+	MinExpectedProfitPct    float64
+	VWAPDiffMin             float64
+	VWAPDiffMax             float64
+	RSIBuyMin               float64
+	RSIBuyMax               float64
+	BidAskRatioMin          float64
 	// Hard Rule 상세 기준
 	HardDisparityM5Min      float64
 	HardDisparityM5Max      float64

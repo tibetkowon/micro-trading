@@ -57,13 +57,13 @@ func NewClient(
 
 // StockPriceResponse holds the current price data for a stock.
 type StockPriceResponse struct {
-	StockCode       string `json:"stck_shrn_iscd"` // 단축종목코드
-	CurrentPrice    string `json:"stck_prpr"`      // 주식 현재가
-	ChangeRate      string `json:"prdy_ctrt"`      // 전일대비율
-	Volume          string `json:"acml_vol"`       // 누적 거래량
-	DayOpen         string `json:"stck_oprc"`      // 당일 시가
-	DayHigh         string `json:"stck_hgpr"`      // 당일 고가
-	DayLow          string `json:"stck_lwpr"`      // 당일 저가
+	StockCode        string `json:"stck_shrn_iscd"` // 단축종목코드
+	CurrentPrice     string `json:"stck_prpr"`      // 주식 현재가
+	ChangeRate       string `json:"prdy_ctrt"`      // 전일대비율
+	Volume           string `json:"acml_vol"`       // 누적 거래량
+	DayOpen          string `json:"stck_oprc"`      // 당일 시가
+	DayHigh          string `json:"stck_hgpr"`      // 당일 고가
+	DayLow           string `json:"stck_lwpr"`      // 당일 저가
 	Strength         string `json:"tday_rltv"`      // 체결강도 (당일)
 	UpperLimitPrice  string `json:"stck_mxpr"`      // 당일 상한가
 	ReferencePrice   string `json:"stck_sdpr"`      // 주식 기준가 (VI 계산용)
@@ -283,9 +283,9 @@ type OrderBookSnapshot struct {
 	BidAskRatio      float64 // 총 매수잔량 / 총 매도잔량
 	MicroBidAskRatio float64 // 최우선 1~3호가 매수잔량합 / 매도잔량합
 	NearBidAskRatio  float64 // 현재가 ±2% 범위 내 호가만의 매수/매도 비율; 0=계산불가
-	TopAskWall      float64 // 가장 큰 매도 벽의 현재가 대비 위치 (%); 0=데이터없음
-	TopAskWallSize  int64   // 가장 큰 매도 벽의 잔량
-	SpreadPct       float64 // (매도1호가 - 매수1호가) / 매도1호가 × 100; 0=계산불가
+	TopAskWall       float64 // 가장 큰 매도 벽의 현재가 대비 위치 (%); 0=데이터없음
+	TopAskWallSize   int64   // 가장 큰 매도 벽의 잔량
+	SpreadPct        float64 // (매도1호가 - 매수1호가) / 매도1호가 × 100; 0=계산불가
 }
 
 // GetOrderBookSnapshot fetches the order book and returns enriched bid/ask metrics.

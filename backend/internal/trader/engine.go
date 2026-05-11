@@ -70,11 +70,11 @@ func NewEngine(
 	mon *monitor.Monitor,
 	mstStore *stockmaster.Store,
 ) *Engine {
-	return &Engine{
-		db:        db,
-		kisClient: kisClient,
-		wsClient:  wsClient,
-		mon:       mon,
+	e := &Engine{
+		db:              db,
+		kisClient:       kisClient,
+		wsClient:        wsClient,
+		mon:             mon,
 		mstStore:        mstStore,
 		state:           StateIdle,
 		soldCh:          make(chan string, 16),
@@ -83,6 +83,7 @@ func NewEngine(
 	}
 	e.streamMon = NewStreamMonitor(30000000.0, 5.0, e.hijackCh)
 	return e
+}
 
 // GetState returns the current engine state (thread-safe).
 func (e *Engine) GetState() EngineState {
@@ -257,7 +258,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		for _, c := range candidates {
 			newSubs[c.StockCode] = true
 		}
-		
+
 		e.mu.Lock()
 		for code := range e.wsSubscriptions {
 			if !newSubs[code] && !e.mon.Has(code) { // Keep monitored ones if they exist
