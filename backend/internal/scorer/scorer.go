@@ -133,8 +133,8 @@ func ApplyHardFilter(c CandidateInfo, s database.TradingSettings) FilterResult {
 }
 
 // CalcScore computes the weighted composite score for a candidate (0-100 scale).
-// Each indicator is scored 0-100, then blended by configured weights.
-// Indicators with no data return 50 (neutral) so missing data doesn't unfairly penalise.
+// Each indicator is scored 0-100 using scalping-optimised thresholds, then blended by configured weights.
+// Indicators with missing data return 0 so incomplete candidates are eliminated from the scan cycle.
 func CalcScore(c CandidateInfo, s database.TradingSettings) ScoreDetail {
 	info := c.Info
 	d := ScoreDetail{
@@ -162,41 +162,42 @@ func CalcScore(c CandidateInfo, s database.TradingSettings) ScoreDetail {
 	return d
 }
 
-// scoreStrength: >= 130 → 100, 100-130 → linear, < 100 → 0. 0 = no data → 50.
+// scoreStrength: >= 250 → 100 (대장주급 수급), 100-250 → linear, < 100 → 0. missing → 0.
 func scoreStrength(v float64) float64 {
 	if v <= 0 {
-		return 50
+		return 0
 	}
-	if v >= 130 {
+	if v >= 250 {
 		return 100
 	}
 	if v < 100 {
 		return 0
 	}
-	return clamp((v-100)/30*100, 0, 100)
+	return clamp((v-100)/150*100, 0, 100)
 }
 
-// scoreRSI: 40-60 → 100 (optimal), 30-40 and 60-70 → linear ramps, outside → 0. 0 = no data → 50.
+// scoreRSI (1분봉): 60-75 → 100 (본격 슈팅 구간), 50-60 → linear, 75-85 → linear, outside → 0. missing → 0.
 func scoreRSI(v float64) float64 {
 	if v <= 0 {
-		return 50
-	}
-	switch {
-	case v >= 70 || v <= 30:
 		return 0
-	case v >= 40 && v <= 60:
-		return 100
-	case v > 60:
-		return clamp((70-v)/10*100, 0, 100)
-	default: // 30 < v < 40
-		return clamp((v-30)/10*100, 0, 100)
 	}
+	if v < 50 || v >= 85 {
+		return 0
+	}
+	if v >= 60 && v <= 75 {
+		return 100
+	}
+	if v < 60 { // 50 ≤ v < 60: 진입 초입
+		return clamp((v-50)/10*100, 0, 100)
+	}
+	// 75 < v < 85: 윗꼬리 리스크 구간
+	return clamp((85-v)/10*100, 0, 100)
 }
 
-// scoreMACD: golden cross (line > signal) → 100, dead cross → 0. both 0 = no data → 50.
+// scoreMACD: golden cross (line > signal) → 100, dead cross → 0. both 0 = no data → 0.
 func scoreMACD(line, signal float64) float64 {
 	if line == 0 && signal == 0 {
-		return 50
+		return 0
 	}
 	if line > signal {
 		return 100
@@ -204,47 +205,50 @@ func scoreMACD(line, signal float64) float64 {
 	return 0
 }
 
-// scoreBidAsk: >= 2.0 → 100, 1.0-2.0 → linear, < 1.0 → 0. 0 = no data → 50.
+// scoreBidAsk: >= 3.0 → 100 (매도 물량 충분), 1.0-3.0 → linear, < 1.0 → 0. missing → 0.
 func scoreBidAsk(v float64) float64 {
 	if v <= 0 {
-		return 50
+		return 0
 	}
-	if v >= 2.0 {
+	if v >= 3.0 {
 		return 100
 	}
 	if v < 1.0 {
 		return 0
 	}
-	return clamp((v-1.0)*100, 0, 100)
+	return clamp((v-1.0)/2.0*100, 0, 100)
 }
 
-// scoreVWAP: -1% to +3% → 100 (trading near/above VWAP), outside → linear decay. 0 = no data → 50.
+// scoreVWAP (이격률 %): +0.5~+2.0% → 100 (돌파 지지 구간), 0~0.5% → linear, 2~5% → linear, outside → 0. missing → 0.
 func scoreVWAP(diff, vwap float64) float64 {
 	if vwap <= 0 {
-		return 50
+		return 0
 	}
-	switch {
-	case diff >= -1 && diff <= 3:
+	if diff < 0 || diff >= 5.0 {
+		return 0
+	}
+	if diff >= 0.5 && diff <= 2.0 {
 		return 100
-	case diff > 3:
-		return clamp((6-diff)/3*100, 0, 100)
-	default: // diff < -1: -1 to -4 → linear 100→0
-		return clamp((diff+4)/3*100, 0, 100)
 	}
+	if diff < 0.5 { // 0 ≤ diff < 0.5: VWAP 돌파 직전
+		return clamp(diff/0.5*100, 0, 100)
+	}
+	// 2.0 < diff < 5.0: 급등 리스크 구간
+	return clamp((5.0-diff)/3.0*100, 0, 100)
 }
 
-// scoreVolume: >= 2.0 → 100, 1.0-2.0 → linear, < 1.0 → 0. 0 = no data → 50.
+// scoreVolume: >= 3.0 → 100 (폭발적 거래량), 1.0-3.0 → linear, < 1.0 → 0. missing → 0.
 func scoreVolume(v float64) float64 {
 	if v <= 0 {
-		return 50
+		return 0
 	}
-	if v >= 2.0 {
+	if v >= 3.0 {
 		return 100
 	}
 	if v < 1.0 {
 		return 0
 	}
-	return clamp((v-1.0)*100, 0, 100)
+	return clamp((v-1.0)/2.0*100, 0, 100)
 }
 
 func clamp(v, lo, hi float64) float64 {
