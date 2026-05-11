@@ -671,7 +671,7 @@ func (h *Handler) GetScanLogs(c *gin.Context) {
 			CreatedAt:         kstTime,
 			EvaluatedCount:    l.TotalCandidates,
 			PassedHardFilter:  l.StocksFound,
-			ScoredCount:       len(stocks),
+			ScoredCount:       l.StocksFound,
 			SelectedStockCode: l.OrderedCode,
 			SelectedStockName: selectedName,
 			RejectionSummary:  l.SkipReason,

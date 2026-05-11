@@ -449,7 +449,10 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		"rejected":         rejectedCount,
 	})
 
-	// Place orders for top-N stocks within the score threshold
+	// Place orders for top-N stocks within the score threshold.
+	// Policy: attempt rank-1 first; on failure try the next candidate.
+	// Stop as soon as ONE order succeeds (one slot filled per scan cycle
+	// avoids stale-balance race conditions and concurrent-order errors).
 	ordered := false
 	var orderedCode string
 	var skipReason string
@@ -464,11 +467,9 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			if buyCount == 0 {
 				topScore := passed[0].detail.Total
 				if p.cinfo.StockCode == passed[0].cinfo.StockCode {
-					// 1위 종목 자체가 임계값 미달
 					skipReason = fmt.Sprintf("top score %.1f below threshold %.1f (penalty %.1f)",
 						topScore, threshold, p.penalty)
 				} else {
-					// 1위는 임계값 이상이나 주문 실패 후 하위 종목이 임계값 미달
 					skipReason = fmt.Sprintf("top score %.1f above threshold but all orders failed; next candidate %.1f below threshold %.1f",
 						topScore, p.detail.Total, threshold)
 				}
@@ -507,6 +508,9 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		orderedCode = p.cinfo.StockCode
 		ordered = true
 		buyCount++
+		// 1회 스캔당 1종목만 주문: 체결 후 잔고 반영 지연으로 인한
+		// APBK0952(주문가능금액 초과) 방지. 다음 슬롯은 다음 스캔 사이클에서 채운다.
+		break
 	}
 
 	if len(passed) == 0 {
@@ -704,9 +708,9 @@ func addCandidate(
 	appearances[code][rankType] = true
 }
 
-// isInsufficientCashError reports whether the error is a KIS "insufficient funds" rejection (APBK9952).
+// isInsufficientCashError reports whether the error is a KIS "insufficient funds" rejection (APBK0952).
 func isInsufficientCashError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "APBK9952")
+	return err != nil && strings.Contains(err.Error(), "APBK0952")
 }
 
 // placeAndMonitor places a buy order, waits for fill, then registers the position.
@@ -718,22 +722,28 @@ func (e *Engine) placeAndMonitor(
 ) error {
 	e.setState(StateOrdering)
 
-	// Fetch available cash
-	bal, err := ops.GetAccountBalance(ctx, e.kisClient, e.db)
-	if err != nil {
-		return fmt.Errorf("GetAccountBalance: %w", err)
-	}
-
 	price, _ := strconv.ParseFloat(c.Info.CurrentPrice, 64)
 	if price <= 0 {
 		return fmt.Errorf("invalid current price for %s: %q", c.StockCode, c.Info.CurrentPrice)
 	}
 
-	orderAmt := bal.OrderableAmt * settings.OrderAmountPct / 100
+	// TTTC8908R(매수가능조회) ord_psbl_cash: 대기 주문을 포함한 실시간 주문가능금액.
+	// inquire-balance의 prvs_rcdl_excc_amt(D+2 예수금)는 당일 체결을 즉시 반영하지
+	// 않아 연속 주문 시 APBK0952(주문가능금액 초과) 오류가 발생하므로 이 값을 사용한다.
+	feasibility, err := ops.CheckOrderFeasibility(ctx, e.kisClient, c.StockCode)
+	if err != nil {
+		return fmt.Errorf("CheckOrderFeasibility: %w", err)
+	}
+	orderAmt := feasibility.AvailableCash * settings.OrderAmountPct / 100
 	qty := int(math.Floor(orderAmt / price))
 	if qty <= 0 {
 		return fmt.Errorf("insufficient cash %.0f KRW for %s at %.0f",
-			bal.OrderableAmt, c.StockCode, price)
+			feasibility.AvailableCash, c.StockCode, price)
+	}
+
+	// 잔고 스냅샷은 별도로 저장 (대시보드 및 PnL 계산용).
+	if _, err2 := ops.GetAccountBalance(ctx, e.kisClient, e.db); err2 != nil {
+		logger.Warn("engine: balance snapshot failed (non-critical)", map[string]any{"error": err2.Error()})
 	}
 
 	// Select take-profit / stop-loss by asset type
