@@ -1,0 +1,12 @@
+[Unit]
+Description=DuckDNS IP Update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/service/micro-trading-for-agent/.env
+ExecStart=/service/micro-trading-for-agent/duckdns-update.sh
+
+[Install]
+WantedBy=multi-user.target
