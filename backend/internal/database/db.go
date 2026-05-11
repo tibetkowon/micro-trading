@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -170,7 +171,11 @@ func New(ctx context.Context, projectID, credJSON string) (*DB, error) {
 				return nil, fmt.Errorf("read credentials file: %w", err)
 			}
 		} else {
-			raw = []byte(credJSON)
+			if strings.HasPrefix(strings.TrimSpace(credJSON), "{") {
+				raw = []byte(credJSON)
+			} else {
+				return nil, fmt.Errorf("credentials file '%s' not found or invalid JSON string: %v", credJSON, err)
+			}
 		}
 		opts = append(opts, option.WithCredentialsJSON(raw))
 	}
