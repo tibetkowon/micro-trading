@@ -1,9 +1,0 @@
-[Unit]
-Description=DuckDNS IP Update Timer
-
-[Timer]
-OnBootSec=30s
-OnUnitActiveSec=5m
-
-[Install]
-WantedBy=timers.target
