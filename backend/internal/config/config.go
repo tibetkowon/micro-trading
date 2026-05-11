@@ -18,8 +18,7 @@ type Config struct {
 	FirebaseProjectID       string // GCP project ID
 	FirebaseCredentialsJSON string // service account JSON (file path or inline JSON)
 
-	DiscordWebhookURL string // Discord incoming webhook URL for notifications
-	FrontendOrigin    string // Firebase Hosting origin for CORS (e.g. https://xxx.web.app)
+	FrontendOrigin string // Firebase Hosting origin for CORS (e.g. https://xxx.web.app)
 
 	ServerPort   string
 	FrontendDist string
@@ -41,8 +40,7 @@ func Load() (*Config, error) {
 		FirebaseProjectID:       getEnv("FIREBASE_PROJECT_ID", ""),
 		FirebaseCredentialsJSON: getEnv("FIREBASE_CREDENTIALS_JSON", ""),
 
-		DiscordWebhookURL: getEnv("DISCORD_WEBHOOK_URL", ""),
-		FrontendOrigin:    getEnv("FRONTEND_ORIGIN", ""),
+		FrontendOrigin: getEnv("FRONTEND_ORIGIN", ""),
 
 		ServerPort:   getEnv("SERVER_PORT", "8080"),
 		FrontendDist: getEnv("FRONTEND_DIST_PATH", "./frontend/dist"),

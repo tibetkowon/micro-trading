@@ -230,16 +230,6 @@ func (db *DB) SetSetting(ctx context.Context, key, value string) error {
 	return err
 }
 
-// BulkUpdateSettings updates multiple settings in a single Firestore write.
-func (db *DB) BulkUpdateSettings(ctx context.Context, updates map[string]string) error {
-	data := make(map[string]any, len(updates))
-	for k, v := range updates {
-		data[k] = v
-	}
-	_, err := db.client.Collection(colSettings).Doc(docSettings).Set(ctx, data, firestore.MergeAll)
-	return err
-}
-
 // GetTradingSettings reads all autonomous trading settings from Firestore in one call.
 func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	m, err := db.GetAllSettings(ctx)
@@ -737,17 +727,18 @@ func (db *DB) DeleteServiceLog(ctx context.Context, id int64) error {
 // ─── KISAPILogs ───────────────────────────────────────────────────────────────
 
 // CreateKISAPILog persists a KIS API error log entry.
-func (db *DB) CreateKISAPILog(ctx context.Context, endpoint, errCode, errMsg, raw string) error {
+func (db *DB) CreateKISAPILog(ctx context.Context, endpoint, errCode, errMsg, raw, requestContext string) error {
 	id := newID()
 	now := time.Now().UTC()
 	log := models.KISAPILog{
-		ID:          id,
-		Endpoint:    endpoint,
-		ErrorCode:   errCode,
-		ErrorMsg:    errMsg,
-		RawResponse: raw,
-		Timestamp:   now,
-		ExpireAt:    now.Add(3 * 24 * time.Hour),
+		ID:             id,
+		Endpoint:       endpoint,
+		ErrorCode:      errCode,
+		ErrorMsg:       errMsg,
+		RawResponse:    raw,
+		RequestContext: requestContext,
+		Timestamp:      now,
+		ExpireAt:       now.Add(3 * 24 * time.Hour),
 	}
 	_, err := db.client.Collection(colKISAPILogs).Doc(strconv.FormatInt(id, 10)).Set(ctx, log)
 	return err

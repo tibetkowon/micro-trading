@@ -50,7 +50,7 @@ func (c *Client) GetMinuteChart(ctx context.Context, stockCode, inputHour string
 		Msg     string `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse minute chart: %w", err)
 	}
 
@@ -110,7 +110,7 @@ func (c *Client) GetDayMinuteChart(ctx context.Context, stockCode, date, inputHo
 		Msg     string `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse day minute chart: %w", err)
 	}
 	if result.MsgCode == "EGW00201" || (result.MsgCode != "" && result.MsgCode != "0" && len(result.Output2) == 0) {
@@ -159,7 +159,7 @@ func (c *Client) GetDailyChart(ctx context.Context, stockCode, startDate, endDat
 		Msg     string `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw), params)
 		return nil, fmt.Errorf("parse daily chart: %w", err)
 	}
 
