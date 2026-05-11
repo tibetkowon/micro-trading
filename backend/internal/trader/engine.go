@@ -1095,7 +1095,7 @@ func (e *Engine) tryBuyHijack(ctx context.Context, stockCode string) {
 	}
 
 	if sm, _ := e.mstStore.GetByCode(ctx, stockCode); sm != nil {
-		cinfo.StockName = sm.Name
+		cinfo.StockName = sm.StockName
 		if sm.IsETN {
 			logger.Info("engine: hijack rejected (ETN)", map[string]any{"code": stockCode})
 			return
