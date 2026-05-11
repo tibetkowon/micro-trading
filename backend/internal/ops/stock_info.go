@@ -159,10 +159,11 @@ func fillChartIndicators(info *StockInfo, bars []kis.ChartBar, price float64) {
 		}
 		info.M5MA10 = calcMA(closes1m, 10)
 
-		// PrevVolumeRatio: 직전 1분봉 대비 현재 1분봉 거래량 비율
-		if len(candles1m) >= 2 {
-			curVol := float64(candles1m[len(candles1m)-1].Volume)
-			prevVol := float64(candles1m[len(candles1m)-2].Volume)
+		// PrevVolumeRatio: 완성된 직전봉([N-1]) 대비 직직전봉([N-2]) 거래량 비율
+		// [N]은 미완성 현재봉이므로 제외하고 완성된 봉끼리 비교한다.
+		if len(candles1m) >= 3 {
+			curVol := float64(candles1m[len(candles1m)-2].Volume)
+			prevVol := float64(candles1m[len(candles1m)-3].Volume)
 			if prevVol > 0 {
 				info.PrevVolumeRatio = math.Round(curVol/prevVol*100) / 100
 			}
@@ -210,23 +211,25 @@ func fillChartIndicators(info *StockInfo, bars []kis.ChartBar, price float64) {
 				}
 			}
 
-			// VolTrend3: 최근 3개 1분봉 거래량 기울기
-			if len(candles1m) >= 3 {
-				v1 := float64(candles1m[len(candles1m)-3].Volume)
-				v3 := float64(candles1m[len(candles1m)-1].Volume)
-				maxV := math.Max(v1, math.Max(float64(candles1m[len(candles1m)-2].Volume), v3))
+			// VolTrend3: 완성된 3개 1분봉([N-3]→[N-1]) 거래량 기울기
+			// [N]은 미완성 현재봉이므로 제외하고 [N-1]~[N-3] 완성봉으로 계산한다.
+			if len(candles1m) >= 4 {
+				v1 := float64(candles1m[len(candles1m)-4].Volume)
+				v3 := float64(candles1m[len(candles1m)-2].Volume)
+				maxV := math.Max(v1, math.Max(float64(candles1m[len(candles1m)-3].Volume), v3))
 				if maxV > 0 {
 					slope := (v3 - v1) / maxV
 					info.VolTrend3 = math.Round(slope*100) / 100
 				}
 			}
 
-			// VolVs3AvgRatio: 현재 1분봉 거래량 / 직전 3봉 평균
-			if len(candles1m) >= 4 {
-				cur := float64(candles1m[len(candles1m)-1].Volume)
-				avg3 := (float64(candles1m[len(candles1m)-2].Volume) +
-					float64(candles1m[len(candles1m)-3].Volume) +
-					float64(candles1m[len(candles1m)-4].Volume)) / 3
+			// VolVs3AvgRatio: 완성된 직전봉([N-1]) 거래량 / 그 직전 3봉 평균([N-2]~[N-4])
+			// [N]은 미완성 현재봉이므로 제외하고 완성된 봉 기준으로 비교한다.
+			if len(candles1m) >= 5 {
+				cur := float64(candles1m[len(candles1m)-2].Volume)
+				avg3 := (float64(candles1m[len(candles1m)-3].Volume) +
+					float64(candles1m[len(candles1m)-4].Volume) +
+					float64(candles1m[len(candles1m)-5].Volume)) / 3
 				if avg3 > 0 {
 					info.VolVs3AvgRatio = math.Round(cur/avg3*100) / 100
 				}
