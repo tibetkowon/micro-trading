@@ -835,6 +835,19 @@ func (db *DB) ListScanLogs(ctx context.Context, limit int) ([]models.ScanLog, er
 	return logs, nil
 }
 
+// GetScanLog returns a single scan log by its ID (Firestore document point-read).
+func (db *DB) GetScanLog(ctx context.Context, id int64) (*models.ScanLog, error) {
+	snap, err := db.client.Collection(colScanLogs).Doc(strconv.FormatInt(id, 10)).Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var l models.ScanLog
+	if err := snap.DataTo(&l); err != nil {
+		return nil, err
+	}
+	return &l, nil
+}
+
 // ─── TradeReports ─────────────────────────────────────────────────────────────
 
 // CreateTradeReport persists a new trade report (buy side).

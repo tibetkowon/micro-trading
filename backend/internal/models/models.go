@@ -108,6 +108,7 @@ type ScanLog struct {
 	TotalCandidates int       `json:"total_candidates" firestore:"total_candidates"` // 랭킹 API에서 가져온 전체 후보 수
 	StocksFound     int       `json:"stocks_found" firestore:"stocks_found"`         // 하드 필터 통과 후 후보 수
 	TopStocks       string    `json:"top_stocks" firestore:"top_stocks"`             // JSON: 상위 점수 종목 목록
+	StockRawData    string    `json:"stock_raw_data" firestore:"stock_raw_data"`     // JSON: 점수 산정 원본 데이터 (StockInfo 전체 + ScoreDetail)
 	Ordered         bool      `json:"ordered" firestore:"ordered"`
 	OrderedCode     string    `json:"ordered_code" firestore:"ordered_code"`
 	SkipReason      string    `json:"skip_reason" firestore:"skip_reason"`
