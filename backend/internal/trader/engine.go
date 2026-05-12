@@ -274,6 +274,8 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		e.mu.Unlock()
 	}
 
+	logger.AutomationInfo("engine: scan started", map[string]any{"candidates": len(candidates)})
+
 	type scored struct {
 		cinfo   scorer.CandidateInfo
 		detail  scorer.ScoreDetail
@@ -281,7 +283,18 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 	}
 
 	var passed []scored
-	rejectedCount := 0
+
+	// Per-filter rejection counters for the scan complete summary.
+	rejectCounts := map[string]int{
+		"reentry_loss":     0,
+		"reentry_cooldown": 0,
+		"trading_value":    0,
+		"strength":         0,
+		"open_price_diff":  0,
+		"etn":              0,
+		"hard_filter":      0,
+		"spread":           0,
+	}
 
 	for _, c := range candidates {
 		// Skip stocks already being monitored
@@ -299,7 +312,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 					if settings.BlockReentryOnLoss {
 						logger.Info("engine: pre-filter rejected (block reentry on loss)",
 							map[string]any{"code": c.StockCode})
-						rejectedCount++
+						rejectCounts["reentry_loss"]++
 						continue
 					}
 				} else {
@@ -308,7 +321,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 						if time.Since(*trade.SoldAt) < cooldown {
 							logger.Info("engine: pre-filter rejected (reentry cooldown)",
 								map[string]any{"code": c.StockCode, "cooldown_min": settings.ReentryCooldownMin})
-							rejectedCount++
+							rejectCounts["reentry_cooldown"]++
 							continue
 						}
 						penalty = settings.ReentryScorePenalty
@@ -332,7 +345,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			if tv := p * v; tv < settings.MinTradingValue {
 				logger.Info("engine: pre-filter rejected (trading value)",
 					map[string]any{"code": c.StockCode, "trading_value": tv, "min": settings.MinTradingValue})
-				rejectedCount++
+				rejectCounts["trading_value"]++
 				continue
 			}
 		}
@@ -342,7 +355,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			if strength > 0 && strength < settings.HardStrengthMin {
 				logger.Info("engine: pre-filter rejected (strength)",
 					map[string]any{"code": c.StockCode, "strength": strength, "min": settings.HardStrengthMin})
-				rejectedCount++
+				rejectCounts["strength"]++
 				continue
 			}
 		}
@@ -355,7 +368,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 				if openDiff > settings.FilterOpenPriceDiffMax {
 					logger.Info("engine: pre-filter rejected (open price diff)",
 						map[string]any{"code": c.StockCode, "open_diff": openDiff, "max": settings.FilterOpenPriceDiffMax})
-					rejectedCount++
+					rejectCounts["open_price_diff"]++
 					continue
 				}
 			}
@@ -373,7 +386,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			if sm.IsETN {
 				logger.Info("engine: skipping ETN — account not registered for ETN trading",
 					map[string]any{"code": c.StockCode, "name": c.StockName})
-				rejectedCount++
+				rejectCounts["etn"]++
 				continue
 			}
 			switch {
@@ -402,7 +415,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		if !fr.Passed {
 			logger.Info("engine: hard filter rejected",
 				map[string]any{"code": c.StockCode, "reason": fr.Reason})
-			rejectedCount++
+			rejectCounts["hard_filter"]++
 			continue
 		}
 
@@ -419,7 +432,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		if settings.MaxBidAskSpreadPct > 0 && cinfo.Info.BidAskSpread > settings.MaxBidAskSpreadPct {
 			logger.Info("engine: spread filter rejected",
 				map[string]any{"code": c.StockCode, "spread_pct": cinfo.Info.BidAskSpread, "max": settings.MaxBidAskSpreadPct})
-			rejectedCount++
+			rejectCounts["spread"]++
 			continue
 		}
 
@@ -429,6 +442,11 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		}
 		detail := scorer.CalcScore(cinfo, settings)
 		passed = append(passed, scored{cinfo, detail, penalty})
+	}
+
+	totalRejected := 0
+	for _, v := range rejectCounts {
+		totalRejected += v
 	}
 
 	// Sort by composite score descending
@@ -507,10 +525,22 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		StockRawData:    string(rawJSON),
 	}
 
-	logger.Info("engine: scan complete", map[string]any{
+	scanSummaryMsg := fmt.Sprintf(
+		"engine: scan complete — passed: %d/%d | reentry: %d, value: %d, strength: %d, open_diff: %d, etn: %d, hard: %d, spread: %d",
+		len(passed), len(candidates),
+		rejectCounts["reentry_loss"]+rejectCounts["reentry_cooldown"],
+		rejectCounts["trading_value"],
+		rejectCounts["strength"],
+		rejectCounts["open_price_diff"],
+		rejectCounts["etn"],
+		rejectCounts["hard_filter"],
+		rejectCounts["spread"],
+	)
+	logger.AutomationInfo(scanSummaryMsg, map[string]any{
 		"total_candidates": len(candidates),
 		"passed_filter":    len(passed),
-		"rejected":         rejectedCount,
+		"rejected":         totalRejected,
+		"reject_by_filter": rejectCounts,
 	})
 
 	// Place orders for top-N stocks within the score threshold.
@@ -548,11 +578,10 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			break
 		}
 
-		logger.Info("engine: placing order", map[string]any{
-			"code":  p.cinfo.StockCode,
-			"name":  p.cinfo.StockName,
-			"score": p.detail.String(),
-		})
+		logger.AutomationInfo(
+			fmt.Sprintf("engine: placing order — %s (%s) score: %.1f", p.cinfo.StockName, p.cinfo.StockCode, p.detail.Total),
+			map[string]any{"code": p.cinfo.StockCode, "name": p.cinfo.StockName, "score": p.detail.String()},
+		)
 
 		if err := e.placeAndMonitor(ctx, p.cinfo, p.detail, settings); err != nil {
 			if isInsufficientCashError(err) {
@@ -578,7 +607,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 	}
 
 	if len(passed) == 0 {
-		skipReason = fmt.Sprintf("no stocks passed hard filter (%d rejected)", rejectedCount)
+		skipReason = fmt.Sprintf("no stocks passed hard filter (%d rejected)", totalRejected)
 	}
 
 	scanLog.Ordered = ordered

@@ -87,6 +87,26 @@ func Error(msg string, extra ...any) {
 	write(e)
 }
 
+// AutomationInfo logs an INFO-level message AND persists it to the sink (Firestore).
+// Use for important automation lifecycle events (scan start/end, filter summary, orders placed).
+// Unlike Info(), this always triggers the sink so it appears in the service log UI.
+func AutomationInfo(msg string, extra ...any) {
+	e := Entry{Level: LevelInfo, Message: msg}
+	if len(extra) > 0 {
+		e.Extra = extra[0]
+	}
+	e.Timestamp = time.Now().UTC().Format(time.RFC3339)
+	b, _ := json.Marshal(e)
+	std.Println(string(b))
+
+	sinkMu.Lock()
+	fn := sink
+	sinkMu.Unlock()
+	if fn != nil {
+		fn(e)
+	}
+}
+
 // KISError logs a KIS API error with mandatory fields per CLAUDE.md spec:
 // Error Code, Timestamp, and raw KIS API Response Message MUST be included.
 // requestContext captures the query parameters or stock code context for diagnostics.
