@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,19 @@ const (
 )
 
 var std = log.New(os.Stdout, "", 0)
+
+var (
+	sinkMu sync.Mutex
+	sink   func(Entry)
+)
+
+// RegisterSink sets a callback invoked on every WARN and ERROR log entry.
+// Call once at startup. The sink must not call logger functions (re-entrant deadlock).
+func RegisterSink(fn func(Entry)) {
+	sinkMu.Lock()
+	defer sinkMu.Unlock()
+	sink = fn
+}
 
 // Entry is the structured JSON log entry.
 type Entry struct {
@@ -35,6 +49,15 @@ func write(e Entry) {
 	e.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	b, _ := json.Marshal(e)
 	std.Println(string(b))
+
+	if e.Level == LevelWarn || e.Level == LevelError {
+		sinkMu.Lock()
+		fn := sink
+		sinkMu.Unlock()
+		if fn != nil {
+			fn(e)
+		}
+	}
 }
 
 // Info logs an informational message.

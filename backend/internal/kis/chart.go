@@ -87,7 +87,7 @@ func (c *Client) GetDayMinuteChart(ctx context.Context, stockCode, date, inputHo
 	}
 	endpoint := "/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice"
 	params := fmt.Sprintf(
-		"?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=%s&FID_INPUT_DATE_1=%s&FID_INPUT_HOUR_1=%s&FID_PW_DATA_INCU_YN=Y",
+		"?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=%s&FID_INPUT_DATE_1=%s&FID_INPUT_HOUR_1=%s&FID_PW_DATA_INCU_YN=Y&FID_FAKE_TICK_INCU_YN=N",
 		stockCode, date, inputHour,
 	)
 
