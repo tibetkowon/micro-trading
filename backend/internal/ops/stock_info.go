@@ -237,12 +237,23 @@ func fillChartIndicators(info *StockInfo, bars []kis.ChartBar, price float64) {
 
 			// VolVs3AvgRatio: 완성된 직전봉([N-1]) 거래량 / 그 직전 3봉 평균([N-2]~[N-4])
 			// [N]은 미완성 현재봉이므로 제외하고 완성된 봉 기준으로 비교한다.
+			// 0 거래량 봉은 평균 계산에서 제외해 div-by-zero 및 왜곡을 방지한다.
 			if len(candles1m) >= 5 {
 				cur := float64(candles1m[len(candles1m)-2].Volume)
-				avg3 := (float64(candles1m[len(candles1m)-3].Volume) +
-					float64(candles1m[len(candles1m)-4].Volume) +
-					float64(candles1m[len(candles1m)-5].Volume)) / 3
-				if avg3 > 0 {
+				var sum float64
+				var count int
+				for _, v := range []int64{
+					candles1m[len(candles1m)-3].Volume,
+					candles1m[len(candles1m)-4].Volume,
+					candles1m[len(candles1m)-5].Volume,
+				} {
+					if v > 0 {
+						sum += float64(v)
+						count++
+					}
+				}
+				if count > 0 {
+					avg3 := sum / float64(count)
 					info.VolVs3AvgRatio = math.Round(cur/avg3*100) / 100
 				}
 			}
