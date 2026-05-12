@@ -292,7 +292,7 @@ func runMarketScheduler(ctx context.Context,
 				// 이미 매도된 종목을 monitored_positions에서 제거 후 재구독.
 				mon.PurgeStalePositions(ctx)
 				mon.ResubscribeAll()
-				logger.Info("market scheduler: WebSocket connected", map[string]any{"hhmm": hhmm})
+				logger.AutomationInfo("market scheduler: WebSocket connected", map[string]any{"hhmm": hhmm})
 
 			case wsRunning && !tradingReady && hhmm >= 900 && hhmm < endHHMM:
 				// 09:00 이후 — 트레이딩 활성화 여부 및 장 개장 확인.
@@ -309,7 +309,7 @@ func runMarketScheduler(ctx context.Context,
 					break
 				}
 				tradingReady = true
-				logger.Info("market scheduler: trading ready confirmed", map[string]any{"hhmm": hhmm})
+				logger.AutomationInfo("market scheduler: trading ready confirmed", map[string]any{"hhmm": hhmm})
 
 			case tradingReady && !engineRunning && hhmm >= startHHMM && hhmm < endHHMM:
 				// 거래 시작 시간 — start autonomous trading engine
@@ -322,7 +322,7 @@ func runMarketScheduler(ctx context.Context,
 				eng.ResetConsecutiveLosses()
 				stopEngine = eng.Start(ctx)
 				engineRunning = true
-				logger.Info("market scheduler: trading engine started", map[string]any{"hhmm": hhmm, "start": startHHMM, "end": endHHMM})
+				logger.AutomationInfo("market scheduler: trading engine started", map[string]any{"hhmm": hhmm, "start": startHHMM, "end": endHHMM})
 
 				// Start indicator checker (횡보 감지 설정 포함)
 				mon.SetStagnationConfig(settings.StagnationThresholdPct, settings.StagnationDurationMin)
@@ -360,7 +360,7 @@ func runMarketScheduler(ctx context.Context,
 					stopIndicator()
 					stopIndicator = nil
 				}
-				logger.Info("market scheduler: end-time liquidation triggered", map[string]any{"hhmm": hhmm, "end": endHHMM})
+				logger.AutomationInfo("market scheduler: end-time liquidation triggered", map[string]any{"hhmm": hhmm, "end": endHHMM})
 				mon.LiquidateAll(ctx, "KR")
 
 			case !reportGenerated && hhmm >= 1520 && hhmm < 1600:
@@ -382,7 +382,7 @@ func runMarketScheduler(ctx context.Context,
 				tradingReady = false
 				engineRunning = false
 				reportGenerated = false
-				logger.Info("market scheduler: WebSocket disconnected at 16:00", nil)
+				logger.AutomationInfo("market scheduler: WebSocket disconnected at 16:00", nil)
 			}
 		}
 	}
