@@ -406,11 +406,12 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			continue
 		}
 
-		// Fetch order book snapshot: bid/ask ratio for scoring + spread for filter
-		if settings.ScoreWeightBidAsk > 0 || settings.MaxBidAskSpreadPct > 0 {
+		// Fetch order book snapshot: bid/ask ratio, micro bid/ask for scoring + spread for filter
+		if settings.ScoreWeightBidAsk > 0 || settings.ScoreWeightMicroBidAsk > 0 || settings.MaxBidAskSpreadPct > 0 {
 			if snap, err := e.kisClient.GetOrderBookSnapshot(ctx, c.StockCode, 0); err == nil {
 				cinfo.Info.BidAskRatio = snap.BidAskRatio
 				cinfo.Info.BidAskSpread = snap.SpreadPct
+				cinfo.Info.MicroBidAskRatio = snap.MicroBidAskRatio
 			}
 		}
 
