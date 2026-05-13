@@ -286,6 +286,8 @@ type OrderBookSnapshot struct {
 	TopAskWall       float64 // 가장 큰 매도 벽의 현재가 대비 위치 (%); 0=데이터없음
 	TopAskWallSize   int64   // 가장 큰 매도 벽의 잔량
 	SpreadPct        float64 // (매도1호가 - 매수1호가) / 매도1호가 × 100; 0=계산불가
+	AskP1            float64 // 매도 1호가 (즉각 체결 지정가 주문에 사용)
+	AskP2            float64 // 매도 2호가
 }
 
 // GetOrderBookSnapshot fetches the order book and returns enriched bid/ask metrics.
@@ -366,6 +368,8 @@ func (c *Client) GetOrderBookSnapshot(ctx context.Context, stockCode string, cur
 	if askP1 > 0 && bidP1 > 0 {
 		snap.SpreadPct = math.Round((askP1-bidP1)/askP1*10000) / 100
 	}
+	snap.AskP1 = askP1
+	snap.AskP2, _ = strconv.ParseFloat(o1.AskP2, 64)
 
 	if currentPrice <= 0 {
 		return snap, nil
@@ -1016,4 +1020,45 @@ func extractMsg(raw string) string {
 		return v
 	}
 	return ""
+}
+
+// OrderFillItem is a single record from TTTC0081R 주식일별주문체결조회.
+type OrderFillItem struct {
+	Odno         string `json:"odno"`            // 주문번호
+	SllBuyDvsnCd string `json:"sll_buy_dvsn_cd"` // 01=매도 02=매수
+	OrdQty       string `json:"ord_qty"`         // 주문수량
+	TotCcldQty   string `json:"tot_ccld_qty"`    // 총체결수량
+	AvgPrvs      string `json:"avg_prvs"`        // 평균체결단가
+}
+
+// GetOrderFillStatus queries TTTC0081R for today's buy orders and returns the fill
+// record matching kisOrderID. Returns nil, nil when the order is not yet found.
+func (c *Client) GetOrderFillStatus(ctx context.Context, kisOrderID string) (*OrderFillItem, error) {
+	today := time.Now().Format("20060102")
+	endpoint := "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
+	params := fmt.Sprintf(
+		"?CANO=%s&ACNT_PRDT_CD=%s&INQR_STRT_DT=%s&INQR_END_DT=%s"+
+			"&SLL_BUY_DVSN_CD=02&INQR_DVSN=00&PDNO=&ORD_GNO_BRNO=&ODNO=%s"+
+			"&CCLD_DVSN=01&INQR_DVSN_3=00&INQR_DVSN_1=&EXCG_ID_DVSN_CD=ALL"+
+			"&CTX_AREA_FK100=&CTX_AREA_NK100=",
+		c.accountNo, c.accountType, today, today, kisOrderID,
+	)
+
+	raw, err := c.get(ctx, endpoint, params, "TTTC0081R")
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Output1 []OrderFillItem `json:"output1"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("TTTC0081R parse: %w", err)
+	}
+	for i := range result.Output1 {
+		if result.Output1[i].Odno == kisOrderID {
+			return &result.Output1[i], nil
+		}
+	}
+	return nil, nil
 }

@@ -148,6 +148,8 @@ type TradingSettings struct {
 	BlockReentryOnLoss  bool
 	ReentryScorePenalty float64
 	ReentryCooldownMin  int
+	// 매수 주문 방식: "limit"=현재가 지정가(기본), "ask1"=매도1호가 지정가, "ask2"=매도2호가 지정가, "market"=순수 시장가
+	BuyOrderType string
 }
 
 // DB is the Firestore-backed data layer.
@@ -349,6 +351,7 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.BlockReentryOnLoss = pb(m, "block_reentry_on_loss", true)
 	s.ReentryScorePenalty = pf(m, "reentry_score_penalty", 10.0)
 	s.ReentryCooldownMin = pi(m, "reentry_cooldown_min", 15)
+	s.BuyOrderType = ps(m, "buy_order_type", "limit")
 	return s, nil
 }
 

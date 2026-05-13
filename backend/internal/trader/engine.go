@@ -847,13 +847,38 @@ func (e *Engine) placeAndMonitor(
 		stopPct = settings.ETFStopLossPct
 	}
 
+	// Determine order type and price from buy_order_type setting.
+	// "limit"(default): 현재가 지정가  "ask1": 매도1호가 지정가  "ask2": 매도2호가 지정가  "market": 순수 시장가
+	orderDivn := "00" // 지정가
+	orderPrice := price
+	switch settings.BuyOrderType {
+	case "market":
+		orderDivn = "01"
+		orderPrice = 0
+	case "ask1", "ask2":
+		snap, snapErr := e.kisClient.GetOrderBookSnapshot(ctx, c.StockCode, price)
+		if snapErr != nil {
+			logger.Warn("engine: GetOrderBookSnapshot for ask-price failed — falling back to limit", map[string]any{
+				"code": c.StockCode, "error": snapErr.Error(),
+			})
+		} else {
+			askPrice := snap.AskP1
+			if settings.BuyOrderType == "ask2" && snap.AskP2 > 0 {
+				askPrice = snap.AskP2
+			}
+			if askPrice > 0 {
+				orderPrice = askPrice
+			}
+		}
+	}
+
 	result, err := ops.PlaceOrder(ctx, e.kisClient, e.db, ops.PlaceOrderRequest{
 		StockCode: c.StockCode,
 		StockName: c.StockName,
 		OrderType: models.OrderTypeBuy,
 		Qty:       qty,
-		Price:     price,
-		OrderDivn: "00", // 지정가
+		Price:     orderPrice,
+		OrderDivn: orderDivn,
 		TargetPct: takePct,
 		StopPct:   stopPct,
 	})
@@ -862,12 +887,14 @@ func (e *Engine) placeAndMonitor(
 	}
 
 	logger.Info("engine: buy order placed", map[string]any{
-		"code":     c.StockCode,
-		"name":     c.StockName,
-		"qty":      qty,
-		"price":    price,
-		"order_id": result.OrderID,
-		"kis_id":   result.KISOrderID,
+		"code":       c.StockCode,
+		"name":       c.StockName,
+		"qty":        qty,
+		"price":      orderPrice,
+		"order_type": settings.BuyOrderType,
+		"order_divn": orderDivn,
+		"order_id":   result.OrderID,
+		"kis_id":     result.KISOrderID,
 	})
 
 	// Wait for fill via WebSocket or polling fallback
@@ -954,40 +981,81 @@ func (e *Engine) placeAndMonitor(
 	return nil
 }
 
-// waitForFill waits up to 5 minutes for the buy order to be filled via WebSocket.
-// Falls back to a 30-second DB poll when wsClient is unavailable.
+// waitForFill waits for the buy order to be filled.
+// Primary: listens on wsClient.ExecCh (H0STCNI0 실시간체결통보), up to 5 minutes.
+// Fallback (ws nil): polls TTTC0081R every 5 s for up to 5 minutes.
 func (e *Engine) waitForFill(ctx context.Context, kisOrderID string, orderID int64, expectedPrice float64) (float64, error) {
+	const fillTimeout = 5 * time.Minute
+
 	if e.wsClient == nil {
-		// Polling fallback: assume market order fills within 30 s
-		time.Sleep(30 * time.Second)
-		o, err := e.db.GetOrderByID(ctx, orderID)
-		if err != nil || o == nil {
-			return 0, fmt.Errorf("order %d not found in DB", orderID)
-		}
-		if o.Status == models.OrderStatusFilled {
-			if o.FilledPrice > 0 {
-				return o.FilledPrice, nil
-			}
-			return expectedPrice, nil
-		}
-		return 0, fmt.Errorf("order not filled within timeout (status: %s)", o.Status)
+		return e.pollFillStatus(ctx, kisOrderID, expectedPrice, 5*time.Second, fillTimeout)
 	}
 
-	timeout := time.After(5 * time.Minute)
+	timeout := time.After(fillTimeout)
 	for {
 		select {
 		case <-ctx.Done():
 			return 0, ctx.Err()
 		case <-timeout:
-			return 0, fmt.Errorf("fill timeout (5m) for KIS order %s", kisOrderID)
+			return 0, fmt.Errorf("fill timeout (%s) for KIS order %s", fillTimeout, kisOrderID)
 		case ev := <-e.wsClient.ExecCh:
 			if ev.KISOrderID != kisOrderID || ev.SellBuyDiv != "02" {
-				continue // not our buy order
+				continue
 			}
+			logger.Info("engine: fill confirmed via WebSocket", map[string]any{
+				"kis_order_id": kisOrderID,
+				"filled_price": ev.FilledPrice,
+			})
 			if ev.FilledPrice > 0 {
 				return ev.FilledPrice, nil
 			}
 			return expectedPrice, nil
+		}
+	}
+}
+
+// pollFillStatus polls TTTC0081R at the given interval until the order is fully
+// filled or the timeout expires.
+func (e *Engine) pollFillStatus(ctx context.Context, kisOrderID string, expectedPrice float64, interval, timeout time.Duration) (float64, error) {
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return 0, fmt.Errorf("fill poll timeout (%s) for KIS order %s", timeout, kisOrderID)
+			}
+			item, err := e.kisClient.GetOrderFillStatus(ctx, kisOrderID)
+			if err != nil {
+				logger.Warn("engine: fill poll error", map[string]any{
+					"kis_order_id": kisOrderID, "error": err.Error(),
+				})
+				continue
+			}
+			if item == nil {
+				continue
+			}
+			ordQty, _ := strconv.Atoi(item.OrdQty)
+			ccldQty, _ := strconv.Atoi(item.TotCcldQty)
+			if ordQty > 0 && ccldQty >= ordQty {
+				filledPrice, _ := strconv.ParseFloat(item.AvgPrvs, 64)
+				if filledPrice <= 0 {
+					filledPrice = expectedPrice
+				}
+				logger.Info("engine: fill confirmed via poll", map[string]any{
+					"kis_order_id": kisOrderID,
+					"filled_price": filledPrice,
+					"filled_qty":   ccldQty,
+				})
+				if err := e.db.UpdateOrderFilled(ctx, kisOrderID, models.OrderStatusFilled, filledPrice); err != nil {
+					logger.Warn("engine: UpdateOrderFilled failed (non-critical)", map[string]any{"error": err.Error()})
+				}
+				return filledPrice, nil
+			}
 		}
 	}
 }
