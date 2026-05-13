@@ -165,7 +165,7 @@ type SimulationResult struct {
 	ScenariosJSON   string    `json:"scenarios_json" firestore:"scenarios_json"`
 	RecommendedJSON string    `json:"recommended_json" firestore:"recommended_json"`
 	CreatedAt       time.Time `json:"created_at" firestore:"created_at"`
-	ExpireAt        time.Time `json:"expire_at" firestore:"expire_at"`
+	ExpireAt        time.Time `json:"expire_at" firestore:"expireAt"`
 }
 
 // ScoreComponents stores per-indicator normalized scores (0-100) at buy time.
