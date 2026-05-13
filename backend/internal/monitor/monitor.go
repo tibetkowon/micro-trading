@@ -24,6 +24,19 @@ type IndicatorSnapshot struct {
 	MACDSignal float64
 }
 
+// TickTrailState holds runtime state for tick-based multi-tier trailing stop.
+type TickTrailState struct {
+	// 설정값 (Register() 시점에 TradingSettings 에서 복사)
+	Tier0StopLossTicks int
+	Tier1TriggerPct    float64
+	Tier1TrailTicks    int
+	Tier2TriggerPct    float64
+	Tier2TrailTicks    int
+	// 런타임 상태 (HandlePrice 매 틱마다 갱신)
+	CurrentTier   int     // 0=손절대기, 1=브레이크이븐, 2=타이트
+	PeakBid1Price float64 // Tier1/2 활성 후 매수1호가 최고점
+}
+
 // MonitoredEntry holds a buy position being actively monitored.
 type MonitoredEntry struct {
 	StockCode    string
@@ -40,8 +53,11 @@ type MonitoredEntry struct {
 	// 트레일링 스탑
 	TrailingTriggerPct float64 // 활성화 기준 수익률 (%). 0=비활성
 	TrailingStopPct    float64 // 최고가 대비 하락 허용폭 (%)
-	TrailingActivated  bool    // 트레일링 스탑 활성화 여부
-	PeakPrice          float64 // 보유 중 도달한 최고가
+	// 틱 트레일 (TrailingMode == "tick" 일 때 사용)
+	TrailingMode      string // "pct" | "tick"
+	TickTrail         TickTrailState
+	TrailingActivated bool    // 트레일링 스탑 활성화 여부
+	PeakPrice         float64 // 보유 중 도달한 최고가
 	// 단계적 횡보 청산
 	PartialExitDone bool // 절반 청산 완료 여부 (true이면 다음 횡보 감지 시 전량 청산)
 	// 부분 익절 (TP partial) — stagnation과 독립적인 별도 플래그
@@ -193,7 +209,7 @@ func (m *Monitor) Remove(ctx context.Context, stockCode string) {
 // HandlePrice evaluates a price update against registered positions.
 // Called by the WebSocket price event consumer goroutine.
 // isTest=true: KIS 매도 주문을 건너뛰고 MQTT만 발행 (장 외 테스트용).
-func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
+func (m *Monitor) HandlePrice(stockCode string, price float64, bid1 float64, isTest bool) {
 	m.mu.RLock()
 	pos, ok := m.positions[stockCode]
 	m.mu.RUnlock()
@@ -252,6 +268,30 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 					return
 				}
 			}
+		}
+	}
+
+	// 틱 트레일 (TrailingMode == "tick")
+	if pos.TrailingMode == "tick" && pos.FilledPrice > 0 && bid1 > 0 {
+		m.mu.Lock()
+		p, ok2 := m.positions[stockCode]
+		if ok2 {
+			shouldSell, reason := evaluateTickTrail(p, price, bid1)
+			m.mu.Unlock()
+			if shouldSell {
+				logger.Info("monitor: TICK TRAIL hit",
+					map[string]any{"stock_code": stockCode, "tier": p.TickTrail.CurrentTier,
+						"bid1": bid1, "peak": p.TickTrail.PeakBid1Price, "reason": reason})
+				if !isTest {
+					if soldQty := m.executeSell(stockCode, p, reason); soldQty < 0 {
+						return
+					}
+				}
+				m.Remove(context.Background(), stockCode)
+				return
+			}
+		} else {
+			m.mu.Unlock()
 		}
 	}
 
@@ -1152,6 +1192,57 @@ func (m *Monitor) checkIndicators(
 	}
 }
 
+// evaluateTickTrail evaluates the tick-based multi-tier trailing stop.
+// Returns (shouldSell bool, reason string).
+// bid1 must be > 0; caller must guard.
+func evaluateTickTrail(pos *MonitoredEntry, tradePrice, bid1 float64) (bool, string) {
+	ts := &pos.TickTrail
+
+	// Tier 2 승격 먼저 체크 (A/B% 동시 충족 시 바로 Tier2)
+	if ts.CurrentTier < 2 && ts.Tier2TriggerPct > 0 {
+		if tradePrice >= pos.FilledPrice*(1+ts.Tier2TriggerPct/100) {
+			ts.CurrentTier = 2
+			if bid1 > ts.PeakBid1Price {
+				ts.PeakBid1Price = bid1
+			}
+		}
+	}
+	// Tier 1 승격
+	if ts.CurrentTier < 1 && ts.Tier1TriggerPct > 0 {
+		if tradePrice >= pos.FilledPrice*(1+ts.Tier1TriggerPct/100) {
+			ts.CurrentTier = 1
+			ts.PeakBid1Price = bid1
+		}
+	}
+
+	switch ts.CurrentTier {
+	case 0:
+		if ts.Tier0StopLossTicks > 0 {
+			stop := pos.FilledPrice - float64(ts.Tier0StopLossTicks)*CalcTickSize(pos.FilledPrice)
+			if bid1 <= stop {
+				return true, "틱트레일-Tier0-진입손절"
+			}
+		}
+	case 1:
+		if bid1 > ts.PeakBid1Price {
+			ts.PeakBid1Price = bid1
+		}
+		stop := ts.PeakBid1Price - float64(ts.Tier1TrailTicks)*CalcTickSize(ts.PeakBid1Price)
+		if bid1 <= stop {
+			return true, "틱트레일-Tier1-브레이크이븐"
+		}
+	case 2:
+		if bid1 > ts.PeakBid1Price {
+			ts.PeakBid1Price = bid1
+		}
+		stop := ts.PeakBid1Price - float64(ts.Tier2TrailTicks)*CalcTickSize(ts.PeakBid1Price)
+		if bid1 <= stop {
+			return true, "틱트레일-Tier2-급등익절"
+		}
+	}
+	return false, ""
+}
+
 // StartPriceConsumer reads from wsClient.PriceCh and calls HandlePrice.
 // Runs until ctx is cancelled.
 func (m *Monitor) StartPriceConsumer(ctx context.Context) {
@@ -1166,7 +1257,7 @@ func (m *Monitor) StartPriceConsumer(ctx context.Context) {
 			if !ok {
 				return
 			}
-			m.HandlePrice(ev.StockCode, ev.Price, false)
+			m.HandlePrice(ev.StockCode, ev.Price, ev.Bid1Price, false)
 		}
 	}
 }
