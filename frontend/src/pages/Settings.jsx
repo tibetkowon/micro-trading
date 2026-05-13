@@ -74,6 +74,7 @@ function transformSettings(raw) {
     block_reentry_on_loss: pb(raw.block_reentry_on_loss, true),
     reentry_score_penalty: pf(raw.reentry_score_penalty, 10),
     reentry_cooldown_min: pi(raw.reentry_cooldown_min, 15),
+    buy_order_type: raw.buy_order_type || 'limit',
     stream: {
       bypass_enabled: pb(raw.stream_bypass_enabled, true),
       big_trade_amount: pf(raw.stream_big_trade_amount, 30000000),
@@ -216,6 +217,7 @@ export default function Settings() {
       flat.block_reentry_on_loss = String(settings.block_reentry_on_loss ?? true)
       flat.reentry_score_penalty = String(settings.reentry_score_penalty ?? 10)
       flat.reentry_cooldown_min = String(settings.reentry_cooldown_min ?? 15)
+      flat.buy_order_type = settings.buy_order_type || 'limit'
       flat.stream_bypass_enabled = String(settings.stream?.bypass_enabled ?? true)
       flat.stream_big_trade_amount = String(settings.stream?.big_trade_amount ?? 30000000)
       flat.stream_velocity_threshold = String(settings.stream?.velocity_threshold ?? 5.0)
@@ -261,6 +263,30 @@ export default function Settings() {
               <input className="form-input" type="number" min="50" max="100"
                 value={settings.order_amount_pct ?? 95}
                 onChange={e => set('order_amount_pct', +e.target.value)} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group" style={{ flex: '0 0 100%' }}>
+              <label className="form-label">매수 주문 방식</label>
+              <select className="form-input"
+                value={settings.buy_order_type ?? 'limit'}
+                onChange={e => set('buy_order_type', e.target.value)}
+                style={{ cursor: 'pointer' }}>
+                <option value="limit">현재가 지정가 (기본값)</option>
+                <option value="ask1">매도 1호가 지정가 (즉각 체결 + 슬리피지 통제)</option>
+                <option value="ask2">매도 2호가 지정가 (1호가 잔량 부족 시 보완)</option>
+                <option value="market">순수 시장가 (최속 체결, 슬리피지 위험)</option>
+              </select>
+              {(settings.buy_order_type === 'ask1' || settings.buy_order_type === 'ask2') && (
+                <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                  주문 시점의 {settings.buy_order_type === 'ask1' ? '매도 1호가' : '매도 2호가'}로 지정가 주문 → 즉각 체결되면서 체결가 상한 통제
+                </div>
+              )}
+              {settings.buy_order_type === 'market' && (
+                <div className="muted" style={{ fontSize: 11, marginTop: 4, color: '#f59e0b' }}>
+                  ⚠ 호가창이 얇은 종목에서 슬리피지 대참사 가능. 유동성 충분한 종목에만 사용 권장
+                </div>
+              )}
             </div>
           </div>
           <div className="form-row">
