@@ -1273,6 +1273,15 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	// 0은 비활성(disabled) 의미이므로 둘 다 활성(> 0)일 때만 순서 검증
+	// Tier1 < Tier2 순서 교차 검증 (같은 요청에서 둘 다 제공된 경우)
+	if req.TickTier1TriggerPct != nil && req.TickTier2TriggerPct != nil &&
+		*req.TickTier1TriggerPct > 0 && *req.TickTier2TriggerPct > 0 &&
+		*req.TickTier2TriggerPct <= *req.TickTier1TriggerPct {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tick_tier2_trigger_pct는 tick_tier1_trigger_pct보다 커야 합니다"})
+		return
+	}
+
 	if req.TrailingMode != nil {
 		if *req.TrailingMode != "pct" && *req.TrailingMode != "tick" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "trailing_mode는 'pct' 또는 'tick' 이어야 합니다"})
@@ -1327,14 +1336,6 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
-	// Tier1 < Tier2 순서 교차 검증 (같은 요청에서 둘 다 제공된 경우)
-	if req.TickTier1TriggerPct != nil && req.TickTier2TriggerPct != nil &&
-		*req.TickTier1TriggerPct > 0 && *req.TickTier2TriggerPct > 0 &&
-		*req.TickTier2TriggerPct <= *req.TickTier1TriggerPct {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "tick_tier2_trigger_pct는 tick_tier1_trigger_pct보다 커야 합니다"})
-		return
-	}
-
 	if req.DailyMaxLossPct != nil {
 		if *req.DailyMaxLossPct < 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "daily_max_loss_pct는 0 이상이어야 합니다"})
