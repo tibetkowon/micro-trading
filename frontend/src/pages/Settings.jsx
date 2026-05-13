@@ -74,6 +74,10 @@ function transformSettings(raw) {
     block_reentry_on_loss: pb(raw.block_reentry_on_loss, true),
     reentry_score_penalty: pf(raw.reentry_score_penalty, 10),
     reentry_cooldown_min: pi(raw.reentry_cooldown_min, 15),
+    loss_cooldown_min: pi(raw.loss_cooldown_min, 20),
+    loss_reentry_price_guard: pb(raw.loss_reentry_price_guard, true),
+    hard_peak_turn_enabled: pb(raw.hard_peak_turn_enabled, false),
+    hard_peak_rsi_min: pf(raw.hard_peak_rsi_min, 65.0),
     buy_order_type: raw.buy_order_type || 'limit',
     stream: {
       bypass_enabled: pb(raw.stream_bypass_enabled, true),
@@ -217,6 +221,10 @@ export default function Settings() {
       flat.block_reentry_on_loss = String(settings.block_reentry_on_loss ?? true)
       flat.reentry_score_penalty = String(settings.reentry_score_penalty ?? 10)
       flat.reentry_cooldown_min = String(settings.reentry_cooldown_min ?? 15)
+      flat.loss_cooldown_min = String(settings.loss_cooldown_min ?? 20)
+      flat.loss_reentry_price_guard = String(settings.loss_reentry_price_guard ?? true)
+      flat.hard_peak_turn_enabled = String(settings.hard_peak_turn_enabled ?? false)
+      flat.hard_peak_rsi_min = String(settings.hard_peak_rsi_min ?? 65.0)
       flat.buy_order_type = settings.buy_order_type || 'limit'
       flat.stream_bypass_enabled = String(settings.stream?.bypass_enabled ?? true)
       flat.stream_big_trade_amount = String(settings.stream?.big_trade_amount ?? 30000000)
@@ -345,6 +353,36 @@ export default function Settings() {
               checked={settings.block_reentry_on_loss ?? true}
               onChange={v => set('block_reentry_on_loss', v)} />
           </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">손절 후 재진입 쿨타임 (분)</label>
+              <input className="form-input" type="number" min="0" step="1"
+                value={settings.loss_cooldown_min ?? 20}
+                onChange={e => set('loss_cooldown_min', +e.target.value)} />
+            </div>
+          </div>
+          <div className="filter-row">
+            <span className="filter-label">손절 후 현재가 &lt; 매수가면 재진입 차단</span>
+            <Toggle
+              checked={settings.loss_reentry_price_guard ?? true}
+              onChange={v => set('loss_reentry_price_guard', v)} />
+          </div>
+          <div className="filter-row">
+            <span className="filter-label">지표 꺾임 감지 (RSI 고점 하락 / 연속 하락봉)</span>
+            <Toggle
+              checked={settings.hard_peak_turn_enabled ?? false}
+              onChange={v => set('hard_peak_turn_enabled', v)} />
+          </div>
+          {settings.hard_peak_turn_enabled && (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">꺾임 감지 기준 RSI 하한</label>
+                <input className="form-input" type="number" min="50" max="90" step="1"
+                  value={settings.hard_peak_rsi_min ?? 65}
+                  onChange={e => set('hard_peak_rsi_min', +e.target.value)} />
+              </div>
+            </div>
+          )}
           <div className="filter-row">
             <span className="filter-label">RSI 과매수 자동 매도</span>
             <Toggle
