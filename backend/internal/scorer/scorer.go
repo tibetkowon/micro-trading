@@ -137,6 +137,20 @@ func ApplyHardFilter(c CandidateInfo, s database.TradingSettings) FilterResult {
 			info.TradingValue, s.MinTradingValue)}
 	}
 
+	// RSI 고점 꺾임 감지: 직전봉 대비 RSI 하락 전환 (윗꼬리 진입 방지)
+	if s.HardPeakTurnEnabled && info.PrevRSI14 >= s.HardPeakRSIMin && info.RSI14 > 0 && info.RSI14 < info.PrevRSI14 {
+		return FilterResult{Reason: fmt.Sprintf("RSI peak turn: %.1f→%.1f (min=%.1f)", info.PrevRSI14, info.RSI14, s.HardPeakRSIMin)}
+	}
+
+	// 연속 하락봉 + 고RSI = 윗꼬리 위험 (완성봉 [N-2],[N-3] 기준; [N-1]은 미완성 현재봉)
+	if s.HardPeakTurnEnabled && info.RSI14 >= s.HardPeakRSIMin && len(info.RecentCandles) >= 3 {
+		last := info.RecentCandles[len(info.RecentCandles)-2]
+		prev := info.RecentCandles[len(info.RecentCandles)-3]
+		if last.Dir == "D" && prev.Dir == "D" {
+			return FilterResult{Reason: fmt.Sprintf("peak turn: 2 consecutive down candles at RSI %.1f", info.RSI14)}
+		}
+	}
+
 	return FilterResult{Passed: true}
 }
 
