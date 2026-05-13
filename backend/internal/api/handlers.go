@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
 	"github.com/micro-trading-for-agent/backend/internal/ops"
 	"github.com/micro-trading-for-agent/backend/internal/report"
+	"github.com/micro-trading-for-agent/backend/internal/simulation"
 	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 	"google.golang.org/grpc/codes"
@@ -2117,4 +2119,77 @@ func (h *Handler) GenerateDailyReport(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// HandleExportReport handles GET /api/reports/export?from=YYYY-MM-DD&to=YYYY-MM-DD.
+func (h *Handler) HandleExportReport(c *gin.Context) {
+	from := c.Query("from")
+	to := c.Query("to")
+	if from == "" || to == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "from and to query params required (YYYY-MM-DD)"})
+		return
+	}
+
+	fromT, err := time.Parse("2006-01-02", from)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid from date"})
+		return
+	}
+	toT, err := time.Parse("2006-01-02", to)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid to date"})
+		return
+	}
+	if toT.Sub(fromT) > 90*24*time.Hour {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "date range must be 90 days or less"})
+		return
+	}
+
+	result, err := report.GenerateExportReport(c.Request.Context(), h.db, from, to)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// HandleGetSimulationResult handles GET /api/simulation/:date.
+func (h *Handler) HandleGetSimulationResult(c *gin.Context) {
+	date := c.Param("date")
+	if date == "" {
+		kst, _ := time.LoadLocation("Asia/Seoul")
+		date = time.Now().In(kst).Format("2006-01-02")
+	}
+	result, err := h.db.GetSimulationResult(c.Request.Context(), date)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "simulation result not found for " + date})
+		return
+	}
+
+	var scenarios []simulation.ScenarioSummary
+	var recommended simulation.RecommendedSettings
+	_ = json.Unmarshal([]byte(result.ScenariosJSON), &scenarios)
+	_ = json.Unmarshal([]byte(result.RecommendedJSON), &recommended)
+
+	c.JSON(http.StatusOK, gin.H{
+		"date":        result.Date,
+		"scenarios":   scenarios,
+		"recommended": recommended,
+		"created_at":  result.CreatedAt,
+	})
+}
+
+// HandleRunSimulation handles POST /api/simulation/run?date=YYYY-MM-DD.
+func (h *Handler) HandleRunSimulation(c *gin.Context) {
+	date := c.Query("date")
+	if date == "" {
+		kst, _ := time.LoadLocation("Asia/Seoul")
+		date = time.Now().In(kst).Format("2006-01-02")
+	}
+	go func() {
+		if err := simulation.RunDailySimulation(context.Background(), h.db, h.client, date); err != nil {
+			log.Printf("[api] manual simulation failed: %v", err)
+		}
+	}()
+	c.JSON(http.StatusAccepted, gin.H{"message": "simulation started for " + date})
 }

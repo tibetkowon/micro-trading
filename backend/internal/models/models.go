@@ -158,6 +158,16 @@ type DailyReport struct {
 	ExpireAt          time.Time `json:"expire_at" firestore:"expireAt"`
 }
 
+// SimulationResult stores post-market scenario simulation results.
+type SimulationResult struct {
+	ID              int64     `json:"id" firestore:"id"`
+	Date            string    `json:"date" firestore:"date"`
+	ScenariosJSON   string    `json:"scenarios_json" firestore:"scenarios_json"`
+	RecommendedJSON string    `json:"recommended_json" firestore:"recommended_json"`
+	CreatedAt       time.Time `json:"created_at" firestore:"created_at"`
+	ExpireAt        time.Time `json:"expire_at" firestore:"expire_at"`
+}
+
 // BuyIndicatorsSnapshot holds the raw indicator values at the time of a buy order.
 // Stored as JSON in TradeReport.BuyIndicators for frontend consumption.
 type BuyIndicatorsSnapshot struct {

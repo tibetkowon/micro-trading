@@ -20,6 +20,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
 	"github.com/micro-trading-for-agent/backend/internal/ops"
 	"github.com/micro-trading-for-agent/backend/internal/report"
+	"github.com/micro-trading-for-agent/backend/internal/simulation"
 	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
@@ -206,6 +207,7 @@ func parseHHMM(s string, def int) int {
 //	09:15 → start trading engine + indicator checker (if tradingReady)
 //	15:15 → stop engine → liquidate all positions
 //	15:20 → generate daily report
+//	15:25 → run daily trade simulation
 //	16:00 → disconnect
 func runMarketScheduler(ctx context.Context,
 	db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mon *monitor.Monitor,
@@ -221,6 +223,7 @@ func runMarketScheduler(ctx context.Context,
 	var tradingReady bool
 	var mstDownloaded bool
 	var reportGenerated bool
+	var simulationStarted bool
 	var stopEngine func()
 	var stopIndicator context.CancelFunc
 
@@ -375,6 +378,19 @@ func runMarketScheduler(ctx context.Context,
 					logger.Info("market scheduler: daily report generated", nil)
 				}()
 
+			case !simulationStarted && hhmm >= 1525 && hhmm < 1600:
+				// 15:25 — run post-market trade simulation
+				simulationStarted = true
+				date := now.Format("2006-01-02")
+				go func() {
+					if err := simulation.RunDailySimulation(context.Background(), db, kisClient, date); err != nil {
+						logger.Error("market scheduler: daily simulation failed",
+							map[string]any{"error": err.Error(), "date": date})
+						return
+					}
+					logger.Info("market scheduler: daily simulation completed", map[string]any{"date": date})
+				}()
+
 			case hhmm == 1600 && wsRunning:
 				// 16:00 — disconnect
 				wsClient.Disconnect()
@@ -382,6 +398,7 @@ func runMarketScheduler(ctx context.Context,
 				tradingReady = false
 				engineRunning = false
 				reportGenerated = false
+				simulationStarted = false
 				logger.AutomationInfo("market scheduler: WebSocket disconnected at 16:00", nil)
 			}
 		}
