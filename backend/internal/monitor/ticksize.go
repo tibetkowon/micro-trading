@@ -1,7 +1,11 @@
 package monitor
 
 // CalcTickSize returns the KRX 호가 단위 (tick size) for a given price.
+// Returns 0 if price <= 0 (invalid input; caller should skip tick trail evaluation).
 func CalcTickSize(price float64) float64 {
+	if price <= 0 {
+		return 0
+	}
 	switch {
 	case price < 1_000:
 		return 1

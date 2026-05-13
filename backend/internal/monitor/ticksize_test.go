@@ -21,6 +21,8 @@ func TestCalcTickSize(t *testing.T) {
 		{499999, 500},
 		{500000, 1000},
 		{1000000, 1000},
+		{0, 0},
+		{-500, 0},
 	}
 	for _, tc := range cases {
 		got := CalcTickSize(tc.price)
