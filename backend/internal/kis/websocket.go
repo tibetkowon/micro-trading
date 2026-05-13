@@ -36,7 +36,7 @@ const (
 type PriceEvent struct {
 	StockCode string
 	Price     float64
-	Bid1Price float64   // BIDP1 (매수호가1) — H0STCNT0 fields[11]
+	Bid1Price float64 // BIDP1 (매수호가1) — H0STCNT0 fields[11]
 	Qty       int
 	Timestamp time.Time
 }
