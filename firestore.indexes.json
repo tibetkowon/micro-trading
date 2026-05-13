@@ -1,0 +1,14 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "balances",           "fieldPath": "expireAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "daily_reports",      "fieldPath": "expireAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "kis_api_logs",       "fieldPath": "expireAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "orders",             "fieldPath": "expireAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "scan_logs",          "fieldPath": "expireAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "service_logs",       "fieldPath": "expireAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "simulation_results", "fieldPath": "expireAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "tokens",             "fieldPath": "expireAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "trade_reports",      "fieldPath": "expireAt", "ttl": true, "indexes": [] }
+  ]
+}
