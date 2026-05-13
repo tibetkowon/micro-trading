@@ -924,6 +924,13 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		// 트레일링 스탑
 		TrailingTriggerPct *float64 `json:"trailing_trigger_pct"`
 		TrailingStopPct    *float64 `json:"trailing_stop_pct"`
+		// 트레일링 모드 + 틱 트레일
+		TrailingMode           *string  `json:"trailing_mode"`
+		TickTier0StopLossTicks *int     `json:"tick_tier0_stop_loss_ticks"`
+		TickTier1TriggerPct    *float64 `json:"tick_tier1_trigger_pct"`
+		TickTier1TrailTicks    *int     `json:"tick_tier1_trail_ticks"`
+		TickTier2TriggerPct    *float64 `json:"tick_tier2_trigger_pct"`
+		TickTier2TrailTicks    *int     `json:"tick_tier2_trail_ticks"`
 		// 일일 최대 손실
 		DailyMaxLossPct *float64 `json:"daily_max_loss_pct"`
 		// 지수 필터 (nil = 변경 안 함)
@@ -1264,6 +1271,68 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		if !save("trailing_stop_pct", strconv.FormatFloat(*req.TrailingStopPct, 'f', -1, 64)) {
 			return
 		}
+	}
+
+	if req.TrailingMode != nil {
+		if *req.TrailingMode != "pct" && *req.TrailingMode != "tick" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "trailing_mode는 'pct' 또는 'tick' 이어야 합니다"})
+			return
+		}
+		if !save("trailing_mode", *req.TrailingMode) {
+			return
+		}
+	}
+	if req.TickTier0StopLossTicks != nil {
+		if *req.TickTier0StopLossTicks < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tick_tier0_stop_loss_ticks는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("tick_tier0_stop_loss_ticks", strconv.Itoa(*req.TickTier0StopLossTicks)) {
+			return
+		}
+	}
+	if req.TickTier1TriggerPct != nil {
+		if *req.TickTier1TriggerPct < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tick_tier1_trigger_pct는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("tick_tier1_trigger_pct", strconv.FormatFloat(*req.TickTier1TriggerPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.TickTier1TrailTicks != nil {
+		if *req.TickTier1TrailTicks < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tick_tier1_trail_ticks는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("tick_tier1_trail_ticks", strconv.Itoa(*req.TickTier1TrailTicks)) {
+			return
+		}
+	}
+	if req.TickTier2TriggerPct != nil {
+		if *req.TickTier2TriggerPct < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tick_tier2_trigger_pct는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("tick_tier2_trigger_pct", strconv.FormatFloat(*req.TickTier2TriggerPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.TickTier2TrailTicks != nil {
+		if *req.TickTier2TrailTicks < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tick_tier2_trail_ticks는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("tick_tier2_trail_ticks", strconv.Itoa(*req.TickTier2TrailTicks)) {
+			return
+		}
+	}
+	// Tier1 < Tier2 순서 교차 검증 (같은 요청에서 둘 다 제공된 경우)
+	if req.TickTier1TriggerPct != nil && req.TickTier2TriggerPct != nil &&
+		*req.TickTier1TriggerPct > 0 && *req.TickTier2TriggerPct > 0 &&
+		*req.TickTier2TriggerPct <= *req.TickTier1TriggerPct {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tick_tier2_trigger_pct는 tick_tier1_trigger_pct보다 커야 합니다"})
+		return
 	}
 
 	if req.DailyMaxLossPct != nil {
