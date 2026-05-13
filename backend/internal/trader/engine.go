@@ -928,6 +928,14 @@ func (e *Engine) placeAndMonitor(
 		TrailingTriggerPct: settings.TrailingTriggerPct,
 		TrailingStopPct:    settings.TrailingStopPct,
 		SellOnUpperLimit:   settings.SellOnUpperLimit,
+		TrailingMode:       settings.TrailingMode,
+		TickTrail: monitor.TickTrailState{
+			Tier0StopLossTicks: settings.TickTier0StopLossTicks,
+			Tier1TriggerPct:    settings.TickTier1TriggerPct,
+			Tier1TrailTicks:    settings.TickTier1TrailTicks,
+			Tier2TriggerPct:    settings.TickTier2TriggerPct,
+			Tier2TrailTicks:    settings.TickTier2TrailTicks,
+		},
 	}
 
 	// 상한가 가격 조회 (설정 활성화 시)

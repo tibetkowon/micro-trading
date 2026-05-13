@@ -61,8 +61,14 @@ function transformSettings(raw) {
     consecutive_loss_reset_on_profit: pb(raw.consecutive_loss_reset_on_profit, true),
     max_bidask_spread_pct: pf(raw.max_bidask_spread_pct, 0),
     trailing: {
+      mode: raw.trailing_mode || 'pct',
       trigger_pct: pf(raw.trailing_trigger_pct, 0),
       stop_pct: pf(raw.trailing_stop_pct, 0),
+      tick_tier0_stop_loss_ticks: pi(raw.tick_tier0_stop_loss_ticks, 3),
+      tick_tier1_trigger_pct: pf(raw.tick_tier1_trigger_pct, 0),
+      tick_tier1_trail_ticks: pi(raw.tick_tier1_trail_ticks, 5),
+      tick_tier2_trigger_pct: pf(raw.tick_tier2_trigger_pct, 0),
+      tick_tier2_trail_ticks: pi(raw.tick_tier2_trail_ticks, 2),
     },
     stagnation: {
       threshold_pct: pf(raw.stagnation_threshold_pct, 0),
@@ -209,6 +215,12 @@ export default function Settings() {
       flat.max_bidask_spread_pct = String(settings.max_bidask_spread_pct ?? 0)
       flat.trailing_trigger_pct = String(settings.trailing?.trigger_pct ?? 0)
       flat.trailing_stop_pct = String(settings.trailing?.stop_pct ?? 0)
+      flat.trailing_mode = settings.trailing?.mode || 'pct'
+      flat.tick_tier0_stop_loss_ticks = String(settings.trailing?.tick_tier0_stop_loss_ticks ?? 3)
+      flat.tick_tier1_trigger_pct = String(settings.trailing?.tick_tier1_trigger_pct ?? 0)
+      flat.tick_tier1_trail_ticks = String(settings.trailing?.tick_tier1_trail_ticks ?? 5)
+      flat.tick_tier2_trigger_pct = String(settings.trailing?.tick_tier2_trigger_pct ?? 0)
+      flat.tick_tier2_trail_ticks = String(settings.trailing?.tick_tier2_trail_ticks ?? 2)
       flat.stagnation_threshold_pct = String(settings.stagnation?.threshold_pct ?? 0)
       flat.stagnation_duration_min = String(settings.stagnation?.duration_min ?? 0)
       flat.stagnation_partial_exit_enabled = String(settings.stagnation?.partial_exit_enabled ?? false)
@@ -698,23 +710,111 @@ export default function Settings() {
             <div className="form-label" style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--accent)' }}>
               트레일링 스탑
             </div>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-              목표가 전이라도 수익이 발생했다가 최고점 대비 일정 % 하락 시 즉시 익절. 0 = 비활성
+
+            {/* 모드 선택 */}
+            <div style={{ display: 'flex', gap: 20, marginBottom: 14 }}>
+              {[['pct', '% 방식 (기존)'], ['tick', '틱 방식 (정밀)']].map(([val, label]) => (
+                <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+                  <input
+                    type="radio"
+                    name="trailing_mode"
+                    value={val}
+                    checked={(settings.trailing?.mode || 'pct') === val}
+                    onChange={() => set('trailing.mode', val)}
+                  />
+                  {label}
+                </label>
+              ))}
             </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">활성화 기준 수익률 (%)</label>
-                <input className="form-input" type="number" step="0.1" min="0"
-                  value={settings.trailing?.trigger_pct ?? 0}
-                  onChange={e => set('trailing.trigger_pct', +e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">최고점 대비 하락 허용폭 (%)</label>
-                <input className="form-input" type="number" step="0.1" min="0"
-                  value={settings.trailing?.stop_pct ?? 0}
-                  onChange={e => set('trailing.stop_pct', +e.target.value)} />
-              </div>
-            </div>
+
+            {/* % 방식 */}
+            {(settings.trailing?.mode || 'pct') === 'pct' && (
+              <>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+                  목표가 전이라도 수익이 발생했다가 최고점 대비 일정 % 하락 시 즉시 익절. 0 = 비활성
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">활성화 기준 수익률 (%)</label>
+                    <input className="form-input" type="number" step="0.1" min="0"
+                      value={settings.trailing?.trigger_pct ?? 0}
+                      onChange={e => set('trailing.trigger_pct', +e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">최고점 대비 하락 허용폭 (%)</label>
+                    <input className="form-input" type="number" step="0.1" min="0"
+                      value={settings.trailing?.stop_pct ?? 0}
+                      onChange={e => set('trailing.stop_pct', +e.target.value)} />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* 틱 방식 */}
+            {settings.trailing?.mode === 'tick' && (
+              <>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>
+                  매수1호가 기준 + KRX 호가 단위(틱)로 손절/트레일 거리 설정. 0 = 비활성
+                </div>
+
+                {/* Tier 0 */}
+                <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--bg-card, #1a1a2e)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, opacity: 0.7 }}>Tier 0 — 진입 손절</div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">진입가 대비 손절 (틱 수)</label>
+                      <input className="form-input" type="number" step="1" min="0"
+                        value={settings.trailing?.tick_tier0_stop_loss_ticks ?? 3}
+                        onChange={e => set('trailing.tick_tier0_stop_loss_ticks', +e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tier 1 */}
+                <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--bg-card, #1a1a2e)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, opacity: 0.7 }}>Tier 1 — 브레이크이븐 트레일</div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">발동 수익률 (%)</label>
+                      <input className="form-input" type="number" step="0.1" min="0"
+                        value={settings.trailing?.tick_tier1_trigger_pct ?? 0}
+                        onChange={e => set('trailing.tick_tier1_trigger_pct', +e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">트레일 거리 (틱 수)</label>
+                      <input className="form-input" type="number" step="1" min="0"
+                        value={settings.trailing?.tick_tier1_trail_ticks ?? 5}
+                        onChange={e => set('trailing.tick_tier1_trail_ticks', +e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tier 2 */}
+                <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--bg-card, #1a1a2e)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, opacity: 0.7 }}>Tier 2 — 급등 타이트 트레일</div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">발동 수익률 (%)</label>
+                      <input className="form-input" type="number" step="0.1" min="0"
+                        value={settings.trailing?.tick_tier2_trigger_pct ?? 0}
+                        onChange={e => set('trailing.tick_tier2_trigger_pct', +e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">트레일 거리 (틱 수)</label>
+                      <input className="form-input" type="number" step="1" min="0"
+                        value={settings.trailing?.tick_tier2_trail_ticks ?? 2}
+                        onChange={e => set('trailing.tick_tier2_trail_ticks', +e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 틱 사이즈 안내 */}
+                <div className="muted" style={{ fontSize: 11, lineHeight: 1.6 }}>
+                  ℹ️ 가격대별 틱 사이즈: ~999원=1원 / 1,000~4,999원=5원 / 5,000~9,999원=10원<br />
+                  10,000~49,999원=50원 / 50,000~99,999원=100원 / 100,000~499,999원=500원 / 500,000원~=1,000원
+                </div>
+              </>
+            )}
           </div>
 
           {/* ── 횡보 탐지 ── */}
