@@ -145,9 +145,14 @@ type TradingSettings struct {
 	HardVolVs3AvgRatioMin   float64
 	HardRelativeStrengthMin float64
 	// 재진입 관련
-	BlockReentryOnLoss  bool
-	ReentryScorePenalty float64
-	ReentryCooldownMin  int
+	BlockReentryOnLoss    bool
+	ReentryScorePenalty   float64
+	ReentryCooldownMin    int
+	LossCooldownMin       int  // 손절 후 시간 기반 쿨타임(분); 0=비활성. BlockReentryOnLoss=false일 때 사용
+	LossReentryPriceGuard bool // true=현재가 < 직전매수가면 재진입 차단
+	// 지표 꺾임 감지
+	HardPeakTurnEnabled bool    // true=RSI 고점 꺾임 또는 연속 하락봉 시 진입 차단
+	HardPeakRSIMin      float64 // 꺾임 판단 기준 RSI 하한 (기본 65.0)
 	// 매수 주문 방식: "limit"=현재가 지정가(기본), "ask1"=매도1호가 지정가, "ask2"=매도2호가 지정가, "market"=순수 시장가
 	BuyOrderType string
 }
@@ -351,6 +356,10 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.BlockReentryOnLoss = pb(m, "block_reentry_on_loss", true)
 	s.ReentryScorePenalty = pf(m, "reentry_score_penalty", 10.0)
 	s.ReentryCooldownMin = pi(m, "reentry_cooldown_min", 15)
+	s.LossCooldownMin = pi(m, "loss_cooldown_min", 20)
+	s.LossReentryPriceGuard = pb(m, "loss_reentry_price_guard", true)
+	s.HardPeakTurnEnabled = pb(m, "hard_peak_turn_enabled", false)
+	s.HardPeakRSIMin = pf(m, "hard_peak_rsi_min", 65.0)
 	s.BuyOrderType = ps(m, "buy_order_type", "limit")
 	return s, nil
 }

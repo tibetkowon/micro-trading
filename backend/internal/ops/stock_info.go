@@ -37,6 +37,7 @@ type StockInfo struct {
 	MA60             float64 `json:"ma60"`
 	MA120            float64 `json:"ma120"`
 	RSI14            float64 `json:"rsi14"`               // RSI(14) from 5-minute closes; 0 = insufficient data
+	PrevRSI14        float64 `json:"prev_rsi14"`          // 직전봉 기준 RSI14 (꺾임 감지용); 0 = insufficient data
 	MACDLine         float64 `json:"macd_line"`           // MACD line (EMA12 − EMA26) from 5m candles
 	MACDSignal       float64 `json:"macd_signal"`         // Signal line (EMA9 of MACD line) from 5m candles
 	MACDHisto        float64 `json:"macd_histogram"`      // Histogram (MACD line − Signal line)
@@ -163,6 +164,9 @@ func fillChartIndicators(info *StockInfo, bars []kis.ChartBar, price float64) {
 		info.MA60 = calcMA(closes1m, 60)
 		info.MA120 = calcMA(closes1m, 120)
 		info.RSI14 = calcRSI(closes1m, 14)
+		if len(closes1m) >= 16 { // period(14) + 2 = 직전봉 RSI 계산 최소 요건
+			info.PrevRSI14 = calcRSI(closes1m[:len(closes1m)-1], 14)
+		}
 		info.MACDLine, info.MACDSignal, info.MACDHisto = calcMACD(closes1m, 12, 26, 9)
 
 		// DisparityM5: 현재가와 1분봉 MA5의 이격도

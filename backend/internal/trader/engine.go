@@ -286,14 +286,16 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 
 	// Per-filter rejection counters for the scan complete summary.
 	rejectCounts := map[string]int{
-		"reentry_loss":     0,
-		"reentry_cooldown": 0,
-		"trading_value":    0,
-		"strength":         0,
-		"open_price_diff":  0,
-		"etn":              0,
-		"hard_filter":      0,
-		"spread":           0,
+		"reentry_loss":          0,
+		"reentry_loss_cooldown": 0,
+		"reentry_below_buy":     0,
+		"reentry_cooldown":      0,
+		"trading_value":         0,
+		"strength":              0,
+		"open_price_diff":       0,
+		"etn":                   0,
+		"hard_filter":           0,
+		"spread":                0,
 	}
 
 	for _, c := range candidates {
@@ -304,6 +306,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 
 		// ── 1-패스: 재진입 검증 로직 (손절 차단 / 익절 쿨타임 및 페널티) ──────────────────────────
 		penalty := 0.0
+		var lastLossTrade *models.TradeReport // 손절 쿨타임 통과 후 가격 비교에 재사용
 		if trade, err := e.db.GetLatestCompletedTradeByStock(ctx, c.StockCode); err == nil && trade != nil {
 			kst, _ := time.LoadLocation("Asia/Seoul")
 			today := time.Now().In(kst).Format("2006-01-02")
@@ -315,6 +318,17 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 						rejectCounts["reentry_loss"]++
 						continue
 					}
+					// 시간 기반 손절 쿨타임 (BlockReentryOnLoss=false일 때 적용)
+					if settings.LossCooldownMin > 0 && trade.SoldAt != nil {
+						if time.Since(*trade.SoldAt) < time.Duration(settings.LossCooldownMin)*time.Minute {
+							logger.Info("engine: pre-filter rejected (loss cooldown)",
+								map[string]any{"code": c.StockCode, "loss_cooldown_min": settings.LossCooldownMin,
+									"elapsed_sec": int(time.Since(*trade.SoldAt).Seconds())})
+							rejectCounts["reentry_loss_cooldown"]++
+							continue
+						}
+					}
+					lastLossTrade = trade // 쿨타임 통과 → 이후 가격 비교용 보존
 				} else {
 					if trade.SoldAt != nil {
 						cooldown := time.Duration(settings.ReentryCooldownMin) * time.Minute
@@ -337,6 +351,16 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			logger.Warn("engine: GetStockPrice (pre-filter) failed",
 				map[string]any{"code": c.StockCode, "error": err.Error()})
 			continue
+		}
+		// 손절 재진입 가격 비교: 현재가 < 직전 매수가이면 하락 추세로 차단
+		if lastLossTrade != nil && settings.LossReentryPriceGuard {
+			currentP, _ := strconv.ParseFloat(priceResp.CurrentPrice, 64)
+			if currentP > 0 && lastLossTrade.BuyPrice > 0 && currentP < lastLossTrade.BuyPrice {
+				logger.Info("engine: pre-filter rejected (below last buy price)",
+					map[string]any{"code": c.StockCode, "current": currentP, "last_buy": lastLossTrade.BuyPrice})
+				rejectCounts["reentry_below_buy"]++
+				continue
+			}
 		}
 		// 최소 거래대금 필터 (0 = 비활성화)
 		if settings.MinTradingValue > 0 {
