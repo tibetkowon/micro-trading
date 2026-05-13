@@ -80,6 +80,14 @@ type TradingSettings struct {
 	// 트레일링 스탑
 	TrailingTriggerPct float64
 	TrailingStopPct    float64
+	// 트레일링 모드 선택 (공존)
+	TrailingMode string // "pct" (기본) | "tick"
+	// 틱 트레일 설정 (TrailingMode == "tick" 일 때만 적용)
+	TickTier0StopLossTicks int     // X: 진입가 대비 -X틱 손절
+	TickTier1TriggerPct    float64 // A: +A% 수익 시 Tier1 활성화
+	TickTier1TrailTicks    int     // Y: 매수1호가 고점 대비 -Y틱
+	TickTier2TriggerPct    float64 // B: +B% 수익 시 Tier2 활성화
+	TickTier2TrailTicks    int     // Z: 매수1호가 고점 대비 -Z틱
 	// 부분 익절
 	PartialTPEnabled   bool
 	PartialTPPct       float64
@@ -289,6 +297,12 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.StagnationBidAskSellThreshold = pf(m, "stagnation_bidask_sell_threshold", 1.0)
 	s.TrailingTriggerPct = pf(m, "trailing_trigger_pct", 0.0)
 	s.TrailingStopPct = pf(m, "trailing_stop_pct", 0.0)
+	s.TrailingMode = ps(m, "trailing_mode", "pct")
+	s.TickTier0StopLossTicks = pi(m, "tick_tier0_stop_loss_ticks", 3)
+	s.TickTier1TriggerPct = pf(m, "tick_tier1_trigger_pct", 0.0)
+	s.TickTier1TrailTicks = pi(m, "tick_tier1_trail_ticks", 5)
+	s.TickTier2TriggerPct = pf(m, "tick_tier2_trigger_pct", 0.0)
+	s.TickTier2TrailTicks = pi(m, "tick_tier2_trail_ticks", 2)
 	s.PartialTPEnabled = pb(m, "partial_tp_enabled", false)
 	s.PartialTPPct = pf(m, "partial_tp_pct", 1.0)
 	s.PartialTPRatio = pf(m, "partial_tp_ratio", 0.5)
@@ -1061,6 +1075,12 @@ var defaultSettings = map[string]any{
 	"stock_tax_rate":                   "0",
 	"trailing_trigger_pct":             "0",
 	"trailing_stop_pct":                "0",
+	"trailing_mode":              "pct",
+	"tick_tier0_stop_loss_ticks": "3",
+	"tick_tier1_trigger_pct":     "0",
+	"tick_tier1_trail_ticks":     "5",
+	"tick_tier2_trigger_pct":     "0",
+	"tick_tier2_trail_ticks":     "2",
 	"partial_tp_enabled":               "false",
 	"partial_tp_pct":                   "1.0",
 	"partial_tp_ratio":                 "0.5",
