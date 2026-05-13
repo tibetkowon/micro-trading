@@ -27,6 +27,7 @@ const (
 	colScanLogs    = "scan_logs"
 	colTradeRpt    = "trade_reports"
 	colDailyRpt    = "daily_reports"
+	colSimResults  = "simulation_results"
 	colTokens      = "tokens"
 	colStockMaster = "stock_masters"
 
@@ -1067,6 +1068,56 @@ func (db *DB) ListDailyReports(ctx context.Context, limit int) ([]models.DailyRe
 		reports = append(reports, dr)
 	}
 	return reports, nil
+}
+
+// ListDailyReportsByDateRange returns daily reports within [from, to] inclusive (YYYY-MM-DD).
+func (db *DB) ListDailyReportsByDateRange(ctx context.Context, from, to string) ([]models.DailyReport, error) {
+	iter := db.client.Collection(colDailyRpt).
+		Where("date", ">=", from).
+		Where("date", "<=", to).
+		OrderBy("date", firestore.Asc).
+		Documents(ctx)
+	defer iter.Stop()
+	var reports []models.DailyReport
+	for {
+		snap, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		var dr models.DailyReport
+		if err := snap.DataTo(&dr); err != nil {
+			continue
+		}
+		reports = append(reports, dr)
+	}
+	return reports, nil
+}
+
+// UpsertSimulationResult saves or overwrites the simulation result for a date.
+func (db *DB) UpsertSimulationResult(ctx context.Context, r models.SimulationResult) error {
+	if r.ID == 0 {
+		r.ID = newID()
+	}
+	r.CreatedAt = time.Now().UTC()
+	r.ExpireAt = time.Now().UTC().Add(30 * 24 * time.Hour)
+	_, err := db.client.Collection(colSimResults).Doc(r.Date).Set(ctx, r)
+	return err
+}
+
+// GetSimulationResult fetches the simulation result for a date.
+func (db *DB) GetSimulationResult(ctx context.Context, date string) (*models.SimulationResult, error) {
+	snap, err := db.client.Collection(colSimResults).Doc(date).Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var r models.SimulationResult
+	if err := snap.DataTo(&r); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 // ─── initDefaults ─────────────────────────────────────────────────────────────

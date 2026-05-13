@@ -82,6 +82,13 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 			reportsGroup.GET("/trades", h.GetTradeReports)
 			reportsGroup.GET("/daily", h.GetDailyReports)
 			reportsGroup.POST("/daily/generate", h.GenerateDailyReport)
+			reportsGroup.GET("/export", h.HandleExportReport)
+		}
+
+		sim := api.Group("/simulation")
+		{
+			sim.GET("/:date", h.HandleGetSimulationResult)
+			sim.POST("/run", h.HandleRunSimulation)
 		}
 	}
 
