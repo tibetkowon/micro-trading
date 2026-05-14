@@ -2,6 +2,9 @@ package simulation
 
 import "math"
 
+// commissionPct is the combined buy+sell commission and slippage (0.25%).
+const commissionPct = 0.25
+
 // MinuteCandle is one 1-minute OHLC candle.
 type MinuteCandle struct {
 	High  float64
@@ -11,11 +14,22 @@ type MinuteCandle struct {
 
 // SimParams is the parameter set used by the simulator.
 type SimParams struct {
-	TakeProfitPct      float64 `json:"take_profit_pct"`
-	StopLossPct        float64 `json:"stop_loss_pct"`
-	TrailingTriggerPct float64 `json:"trailing_trigger_pct"`
-	TrailingStopPct    float64 `json:"trailing_stop_pct"`
-	StagnationPct      float64 `json:"stagnation_pct"`
+	TakeProfitPct        float64 `json:"take_profit_pct"`
+	StopLossPct          float64 `json:"stop_loss_pct"`
+	TrailingTriggerPct   float64 `json:"trailing_trigger_pct"`
+	TrailingStopPct      float64 `json:"trailing_stop_pct"`
+	StagnationPct        float64 `json:"stagnation_pct"`
+	MinScoreThreshold    float64 `json:"min_score_threshold"`
+	UniversalCooldownMin int     `json:"universal_cooldown_min"`
+	WeightStrength       int     `json:"weight_strength"`
+	WeightRSI            int     `json:"weight_rsi"`
+	WeightMACD           int     `json:"weight_macd"`
+	WeightBidAsk         int     `json:"weight_bid_ask"`
+	WeightVWAP           int     `json:"weight_vwap"`
+	WeightVolume         int     `json:"weight_volume"`
+	WeightProgramBuy     int     `json:"weight_program_buy"`
+	WeightMicroBidAsk    int     `json:"weight_micro_bid_ask"`
+	WeightVIDisparity    int     `json:"weight_vi_disparity"`
 }
 
 // SimTradeResult is the simulated exit result for one trade.
@@ -45,7 +59,7 @@ func SimulateTrade(entryPrice float64, candles []MinuteCandle, params SimParams)
 				EntryPrice:     entryPrice,
 				ExitPrice:      targetPrice,
 				ExitReason:     "target",
-				PnlPct:         pnlPct(entryPrice, targetPrice),
+				PnlPct:         pnlPct(entryPrice, targetPrice) - commissionPct,
 				HoldingCandles: i + 1,
 			}
 		}
@@ -55,7 +69,7 @@ func SimulateTrade(entryPrice float64, candles []MinuteCandle, params SimParams)
 				EntryPrice:     entryPrice,
 				ExitPrice:      stopPrice,
 				ExitReason:     "stop",
-				PnlPct:         pnlPct(entryPrice, stopPrice),
+				PnlPct:         pnlPct(entryPrice, stopPrice) - commissionPct,
 				HoldingCandles: i + 1,
 			}
 		}
@@ -76,7 +90,7 @@ func SimulateTrade(entryPrice float64, candles []MinuteCandle, params SimParams)
 					EntryPrice:     entryPrice,
 					ExitPrice:      exitPrice,
 					ExitReason:     "trailing",
-					PnlPct:         pnlPct(entryPrice, exitPrice),
+					PnlPct:         pnlPct(entryPrice, exitPrice) - commissionPct,
 					HoldingCandles: i + 1,
 				}
 			}
@@ -91,7 +105,7 @@ func SimulateTrade(entryPrice float64, candles []MinuteCandle, params SimParams)
 		EntryPrice:     entryPrice,
 		ExitPrice:      lastClose,
 		ExitReason:     "end_of_data",
-		PnlPct:         pnlPct(entryPrice, lastClose),
+		PnlPct:         pnlPct(entryPrice, lastClose) - commissionPct,
 		HoldingCandles: len(candles),
 	}
 }

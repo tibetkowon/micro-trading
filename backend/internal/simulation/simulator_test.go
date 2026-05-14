@@ -1,6 +1,7 @@
 package simulation_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/micro-trading-for-agent/backend/internal/simulation"
@@ -23,6 +24,21 @@ func TestSimulateTrade_HitsTarget(t *testing.T) {
 	}
 	if result.ExitPrice != 10300 {
 		t.Errorf("want exit price 10300, got %f", result.ExitPrice)
+	}
+}
+
+func TestSimulateTrade_CommissionDeducted(t *testing.T) {
+	candles := []simulation.MinuteCandle{
+		{High: 10300, Low: 10050, Close: 10300},
+	}
+	params := simulation.SimParams{TakeProfitPct: 3.0, StopLossPct: 2.0}
+	result := simulation.SimulateTrade(10000, candles, params)
+	if result.ExitReason != "target" {
+		t.Fatalf("want 'target', got %q", result.ExitReason)
+	}
+	want := 2.75
+	if math.Abs(result.PnlPct-want) > 0.000001 {
+		t.Errorf("want PnlPct %.2f (commission deducted), got %.2f", want, result.PnlPct)
 	}
 }
 
