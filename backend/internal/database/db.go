@@ -153,11 +153,14 @@ type TradingSettings struct {
 	HardVolVs3AvgRatioMin   float64
 	HardRelativeStrengthMin float64
 	// 재진입 관련
-	BlockReentryOnLoss    bool
-	ReentryScorePenalty   float64
-	ReentryCooldownMin    int
-	LossCooldownMin       int  // 손절 후 시간 기반 쿨타임(분); 0=비활성. BlockReentryOnLoss=false일 때 사용
-	LossReentryPriceGuard bool // true=현재가 < 직전매수가면 재진입 차단
+	BlockReentryOnLoss      bool
+	ReentryScorePenalty     float64
+	ReentryCooldownMin      int
+	LossCooldownMin         int     // 손절 후 시간 기반 쿨타임(분); 0=비활성. BlockReentryOnLoss=false일 때 사용
+	LossReentryPriceGuard   bool    // true=현재가 < 직전매수가면 재진입 차단
+	UniversalCooldownMin    int     // 매도 후 재진입 금지 시간(분). 0=비활성. 기본 20
+	UniversalPriceGuard     bool    // true=쿨타임 후에도 현재가<직전매수가면 차단
+	IndicatorSellMinLossPct float64 // MACD 등 지표 매도가 발동하려면 최소 이 손실%(-) 도달해야 함. 0=비활성
 	// 지표 꺾임 감지
 	HardPeakTurnEnabled bool    // true=RSI 고점 꺾임 또는 연속 하락봉 시 진입 차단
 	HardPeakRSIMin      float64 // 꺾임 판단 기준 RSI 하한 (기본 65.0)
@@ -372,6 +375,9 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	s.ReentryCooldownMin = pi(m, "reentry_cooldown_min", 15)
 	s.LossCooldownMin = pi(m, "loss_cooldown_min", 20)
 	s.LossReentryPriceGuard = pb(m, "loss_reentry_price_guard", true)
+	s.UniversalCooldownMin = pi(m, "universal_cooldown_min", 20)
+	s.UniversalPriceGuard = pb(m, "universal_price_guard", true)
+	s.IndicatorSellMinLossPct = pf(m, "indicator_sell_min_loss_pct", 1.0)
 	s.HardPeakTurnEnabled = pb(m, "hard_peak_turn_enabled", false)
 	s.HardPeakRSIMin = pf(m, "hard_peak_rsi_min", 65.0)
 	s.BuyOrderType = ps(m, "buy_order_type", "limit")
@@ -1117,6 +1123,7 @@ var defaultSettings = map[string]any{
 	"scan_interval":                    "1",
 	"indicator_rsi_sell_threshold":     "70",
 	"indicator_macd_bearish_sell":      "false",
+	"indicator_sell_min_loss_pct":      "1.0",
 	"trading_start_time":               "09:15",
 	"trading_end_time":                 "15:15",
 	"trading_days":                     `[]`,
@@ -1164,6 +1171,8 @@ var defaultSettings = map[string]any{
 	"block_reentry_on_loss":            "true",
 	"reentry_score_penalty":            "10.0",
 	"reentry_cooldown_min":             "15",
+	"universal_cooldown_min":           "20",
+	"universal_price_guard":            "true",
 }
 
 // initDefaults writes default settings on first run (using Set with MergeAll so existing values are preserved).
