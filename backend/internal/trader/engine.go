@@ -27,12 +27,13 @@ import (
 type EngineState string
 
 const (
-	StateIdle        EngineState = "IDLE"
-	StateSelecting   EngineState = "SELECTING"
-	StateOrdering    EngineState = "ORDERING"
-	StateWaitingFill EngineState = "WAITING_FILL"
-	StateMonitoring  EngineState = "MONITORING"
-	StateSearching   EngineState = "SEARCHING"
+	StateIdle             EngineState = "IDLE"
+	StateSelecting        EngineState = "SELECTING"
+	StateOrdering         EngineState = "ORDERING"
+	StateWaitingFill      EngineState = "WAITING_FILL"
+	StateMonitoring       EngineState = "MONITORING"
+	StateSearching        EngineState = "SEARCHING"
+	kisWSMaxSubscriptions             = 40
 )
 
 // candidateEntry holds ranking-derived data for one stock before StockInfo is fetched.
@@ -257,7 +258,14 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 	if settings.StreamBypassEnabled {
 		e.streamMon.UpdateConfig(settings.StreamBigTradeAmount, settings.StreamVelocityThreshold)
 		newSubs := make(map[string]bool)
+		streamSlots := kisWSMaxSubscriptions - e.mon.Count()
+		if streamSlots < 0 {
+			streamSlots = 0
+		}
 		for _, c := range candidates {
+			if len(newSubs) >= streamSlots {
+				break
+			}
 			newSubs[c.StockCode] = true
 		}
 
@@ -325,7 +333,11 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		penalty := 0.0
 		var lastLossTrade *models.TradeReport // 손절 쿨타임 통과 후 가격 비교에 재사용
 		var lastTrade *models.TradeReport
-		if trade, err := e.db.GetLatestCompletedTradeByStock(ctx, c.StockCode); err == nil && trade != nil {
+		trade, tradeErr := e.db.GetLatestCompletedTradeByStock(ctx, c.StockCode)
+		if tradeErr != nil {
+			logger.Warn("engine: GetLatestCompletedTradeByStock failed — reentry check skipped",
+				map[string]any{"symbol": c.StockCode, "error": tradeErr.Error()})
+		} else if trade != nil {
 			kst, _ := time.LoadLocation("Asia/Seoul")
 			today := time.Now().In(kst).Format("2006-01-02")
 			if trade.Date == today {
@@ -359,6 +371,15 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 						}
 						penalty = settings.ReentryScorePenalty
 						lastTrade = trade
+						if penalty > 0 {
+							logger.Info("engine: reentry penalty will be applied",
+								map[string]any{
+									"symbol":             c.StockCode,
+									"penalty":            penalty,
+									"adjusted_threshold": settings.MinScoreThreshold + penalty,
+									"sold_at":            trade.SoldAt,
+								})
+						}
 					}
 				}
 			}
@@ -856,7 +877,11 @@ func addCandidate(
 
 // isInsufficientCashError reports whether the error is a KIS "insufficient funds" rejection (APBK0952).
 func isInsufficientCashError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "APBK0952")
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "APBK0952") || strings.HasPrefix(strings.ToLower(s), "insufficient cash")
 }
 
 // placeAndMonitor places a buy order, waits for fill, then registers the position.

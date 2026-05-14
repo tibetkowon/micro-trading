@@ -5,12 +5,6 @@ import { useApi } from '../hooks/useApi'
 import { fmt, Badge, Modal, EmptyState } from '../components/shared'
 import { db, fmtTs } from '../lib/firebase'
 
-function calcHeldDays(createdAt) {
-  if (!createdAt) return 0
-  const start = createdAt.toDate ? createdAt.toDate() : new Date(createdAt)
-  return Math.floor((Date.now() - start.getTime()) / (1000 * 60 * 60 * 24))
-}
-
 export default function Positions() {
   const [positions, setPositions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -69,7 +63,6 @@ export default function Positions() {
       ) : (
         <div className="pos-grid">
           {positions.map(p => {
-            const heldDays = calcHeldDays(p.created_at)
             return (
               <div key={p._docId} className="pos-card">
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>

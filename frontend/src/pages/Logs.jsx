@@ -160,6 +160,13 @@ export default function Logs() {
                         {expandedId === l._docId && (
                           <tr key={`expand-${l._docId}`}>
                             <td colSpan={5} style={{ padding: '0 12px 12px 40px' }}>
+                              {l.request_context && (
+                                <div style={{ marginBottom: 8 }}>
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>요청 파라미터</div>
+                                  <div className="code-block">{l.request_context}</div>
+                                </div>
+                              )}
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>응답 본문</div>
                               <div className="code-block">{l.raw_response || '(응답 없음)'}</div>
                             </td>
                           </tr>

@@ -59,8 +59,8 @@ type WebSocketClient struct {
 
 	mu            sync.RWMutex
 	conn          *websocket.Conn
-	aesKeys       map[string]aesKey // trID → aes credentials per subscription
-	subscriptions map[string]string // trID → trKey
+	aesKeys       map[string]aesKey          // trID → aes credentials per subscription
+	subscriptions map[string]map[string]bool // trID → set of trKeys
 
 	// reconnect 고루틴 제어
 	cancelReconnect context.CancelFunc
@@ -84,7 +84,7 @@ func NewWebSocketClient(approvalKey, htsID string) *WebSocketClient {
 		approvalKey:   approvalKey,
 		htsID:         htsID,
 		aesKeys:       make(map[string]aesKey),
-		subscriptions: make(map[string]string),
+		subscriptions: make(map[string]map[string]bool),
 		PriceCh:       make(chan PriceEvent, 256),
 		ExecCh:        make(chan ExecEvent, 64),
 		closed:        make(chan struct{}),
@@ -193,11 +193,16 @@ func (c *WebSocketClient) sendSubscription(trType, trID, trKey string) error {
 
 	if trType == "1" {
 		c.mu.Lock()
-		c.subscriptions[trID] = trKey
+		if c.subscriptions[trID] == nil {
+			c.subscriptions[trID] = make(map[string]bool)
+		}
+		c.subscriptions[trID][trKey] = true
 		c.mu.Unlock()
 	} else {
 		c.mu.Lock()
-		delete(c.subscriptions, trID)
+		if s := c.subscriptions[trID]; s != nil {
+			delete(s, trKey)
+		}
 		c.mu.Unlock()
 	}
 
@@ -324,14 +329,24 @@ func (c *WebSocketClient) StartWithReconnect(ctx context.Context) {
 
 		// Re-subscribe all previously registered subscriptions.
 		c.mu.RLock()
-		subs := make(map[string]string, len(c.subscriptions))
-		for k, v := range c.subscriptions {
-			subs[k] = v
+		subs := make(map[string]map[string]bool, len(c.subscriptions))
+		for trID, keys := range c.subscriptions {
+			copied := make(map[string]bool, len(keys))
+			for trKey := range keys {
+				copied[trKey] = true
+			}
+			subs[trID] = copied
 		}
 		c.mu.RUnlock()
-		for trID, trKey := range subs {
-			if err := c.Subscribe(trID, trKey); err != nil {
-				logger.Error("re-subscribe failed", map[string]any{"tr_id": trID, "error": err.Error()})
+		for trID, keys := range subs {
+			for trKey := range keys {
+				if err := c.Subscribe(trID, trKey); err != nil {
+					logger.Error("re-subscribe failed", map[string]any{
+						"tr_id":  trID,
+						"tr_key": trKey,
+						"error":  err.Error(),
+					})
+				}
 			}
 		}
 
@@ -443,8 +458,13 @@ func (c *WebSocketClient) handleJSONMessage(raw []byte) {
 	}
 
 	if resp.Body.RtCd != "0" {
-		logger.Error("KIS WebSocket subscribe failed",
-			map[string]any{"tr_id": resp.Header.TrID, "msg": resp.Body.Msg1})
+		if strings.Contains(resp.Body.Msg1, "UNSUBSCRIBE ERROR") {
+			logger.Warn("KIS WebSocket unsubscribe skipped (not subscribed)",
+				map[string]any{"tr_id": resp.Header.TrID, "msg": resp.Body.Msg1})
+		} else {
+			logger.Error("KIS WebSocket subscribe failed",
+				map[string]any{"tr_id": resp.Header.TrID, "msg": resp.Body.Msg1})
+		}
 		return
 	}
 
