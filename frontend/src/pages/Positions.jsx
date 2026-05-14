@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { apiFetch } from '../utils/api'
+import { useApi } from '../hooks/useApi'
 import { fmt, Badge, Modal, EmptyState } from '../components/shared'
 import { db, fmtTs } from '../lib/firebase'
 
@@ -10,6 +11,8 @@ export default function Positions() {
   const [confirmAll, setConfirmAll] = useState(false)
   const [confirmSell, setConfirmSell] = useState(null)
   const [acting, setActing] = useState(false)
+  const { data: apiPositions } = useApi('/api/monitor/positions', { pollInterval: 3000 })
+  const priceMap = useMemo(() => new Map((apiPositions?.data ?? []).map(p => [p.stock_code, p.current_price])), [apiPositions])
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'monitored_positions'), snap => {
@@ -75,7 +78,7 @@ export default function Positions() {
                     ['매수가', fmt(p.filled_price)],
                     ['목표가', fmt(p.target_price)],
                     ['손절가', fmt(p.stop_price)],
-                    ['현재가', fmt(p.current_price)],
+                    ['현재가', fmt(priceMap.get(p.stock_code) ?? 0)],
                   ].map(([label, value]) => (
                     <div key={label}>
                       <div style={{ fontSize: 10, color: 'var(--text-dim)', marginBottom: 2, textTransform: 'uppercase' }}>{label}</div>
