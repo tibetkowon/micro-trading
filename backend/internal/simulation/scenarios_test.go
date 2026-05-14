@@ -15,8 +15,8 @@ func TestGenerateScenarios_CountAndBaseline(t *testing.T) {
 	}
 	scenarios := simulation.GenerateScenarios(base)
 
-	if len(scenarios) < 20 {
-		t.Errorf("want at least 20 scenarios, got %d", len(scenarios))
+	if len(scenarios) < 60 {
+		t.Errorf("want at least 60 scenarios, got %d", len(scenarios))
 	}
 	if scenarios[0].Label != "현재 설정" {
 		t.Errorf("first scenario should be baseline, got %q", scenarios[0].Label)

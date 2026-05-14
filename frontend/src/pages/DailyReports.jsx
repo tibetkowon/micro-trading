@@ -501,6 +501,17 @@ export default function DailyReports() {
                           stop_loss_pct: p.stop_loss_pct,
                           trailing_trigger_pct: p.trailing_trigger_pct,
                           trailing_stop_pct: p.trailing_stop_pct,
+                          ...(p.min_score_threshold !== undefined && { min_score_threshold: p.min_score_threshold }),
+                          ...(p.universal_cooldown_min !== undefined && { universal_cooldown_min: p.universal_cooldown_min }),
+                          ...(p.weight_strength !== undefined && { score_weight_strength: p.weight_strength }),
+                          ...(p.weight_rsi !== undefined && { score_weight_rsi: p.weight_rsi }),
+                          ...(p.weight_macd !== undefined && { score_weight_macd: p.weight_macd }),
+                          ...(p.weight_bid_ask !== undefined && { score_weight_bid_ask: p.weight_bid_ask }),
+                          ...(p.weight_vwap !== undefined && { score_weight_vwap: p.weight_vwap }),
+                          ...(p.weight_volume !== undefined && { score_weight_volume: p.weight_volume }),
+                          ...(p.weight_program_buy !== undefined && { score_weight_program_buy: p.weight_program_buy }),
+                          ...(p.weight_micro_bid_ask !== undefined && { score_weight_micro_bid_ask: p.weight_micro_bid_ask }),
+                          ...(p.weight_vi_disparity !== undefined && { score_weight_vi_disparity: p.weight_vi_disparity }),
                         }),
                       })
                       alert('설정이 적용되었습니다.')

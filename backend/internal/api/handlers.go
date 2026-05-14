@@ -983,6 +983,17 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		DailyLossLimitPct       *float64 `json:"daily_loss_limit_pct"`
 		IndicatorRSISellEnabled *bool    `json:"indicator_rsi_sell_enabled"`
 		MinScore                *float64 `json:"min_score"`
+		MinScoreThreshold       *float64 `json:"min_score_threshold"`
+		UniversalCooldownMin    *int     `json:"universal_cooldown_min"`
+		ScoreWeightStrength     *int     `json:"score_weight_strength"`
+		ScoreWeightRSI          *int     `json:"score_weight_rsi"`
+		ScoreWeightMACD         *int     `json:"score_weight_macd"`
+		ScoreWeightBidAsk       *int     `json:"score_weight_bid_ask"`
+		ScoreWeightVWAP         *int     `json:"score_weight_vwap"`
+		ScoreWeightVolume       *int     `json:"score_weight_volume"`
+		ScoreWeightProgramBuy   *int     `json:"score_weight_program_buy"`
+		ScoreWeightMicroBidAsk  *int     `json:"score_weight_micro_bid_ask"`
+		ScoreWeightVIDisparity  *int     `json:"score_weight_vi_disparity"`
 		// UI 점수시스템 — weights (nested)
 		Weights *struct {
 			Strength float64 `json:"strength"`
@@ -1588,6 +1599,50 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	if req.MinScore != nil {
 		if !save("min_score_threshold", strconv.FormatFloat(*req.MinScore, 'f', -1, 64)) {
 			return
+		}
+	}
+	if req.MinScoreThreshold != nil {
+		if *req.MinScoreThreshold < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "min_score_threshold는 0 이상이어야 합니다"})
+			return
+		}
+		if !save("min_score_threshold", strconv.FormatFloat(*req.MinScoreThreshold, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.UniversalCooldownMin != nil {
+		if *req.UniversalCooldownMin < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "universal_cooldown_min은 0 이상이어야 합니다"})
+			return
+		}
+		if !save("universal_cooldown_min", strconv.Itoa(*req.UniversalCooldownMin)) {
+			return
+		}
+	}
+
+	scoreWeights := []struct {
+		ptr *int
+		key string
+	}{
+		{req.ScoreWeightStrength, "score_weight_strength"},
+		{req.ScoreWeightRSI, "score_weight_rsi"},
+		{req.ScoreWeightMACD, "score_weight_macd"},
+		{req.ScoreWeightBidAsk, "score_weight_bidask"},
+		{req.ScoreWeightVWAP, "score_weight_vwap"},
+		{req.ScoreWeightVolume, "score_weight_volume"},
+		{req.ScoreWeightProgramBuy, "score_weight_program_buy"},
+		{req.ScoreWeightMicroBidAsk, "score_weight_micro_bidask"},
+		{req.ScoreWeightVIDisparity, "score_weight_vi_disparity"},
+	}
+	for _, weight := range scoreWeights {
+		if weight.ptr != nil {
+			if *weight.ptr < 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": weight.key + "는 0 이상이어야 합니다"})
+				return
+			}
+			if !save(weight.key, strconv.Itoa(*weight.ptr)) {
+				return
+			}
 		}
 	}
 

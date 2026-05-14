@@ -1037,6 +1037,17 @@ func (e *Engine) placeAndMonitor(
 		Strength:      c.Strength,
 		BidAskRatio:   c.Info.BidAskRatio,
 		TotalScore:    detail.Total,
+		ScoreComponents: &models.ScoreComponents{
+			Strength:    detail.Strength,
+			RSI:         detail.RSI,
+			MACD:        detail.MACD,
+			BidAsk:      detail.BidAsk,
+			VWAP:        detail.VWAP,
+			Volume:      detail.Volume,
+			ProgramBuy:  detail.ProgramBuy,
+			MicroBidAsk: detail.MicroBidAsk,
+			VIDisparity: detail.VIDisparity,
+		},
 	})
 	report := &models.TradeReport{
 		Date:          time.Now().In(kst).Format("2006-01-02"),

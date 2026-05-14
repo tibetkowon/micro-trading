@@ -168,15 +168,30 @@ type SimulationResult struct {
 	ExpireAt        time.Time `json:"expire_at" firestore:"expire_at"`
 }
 
+// ScoreComponents stores per-indicator normalized scores (0-100) at buy time.
+// Defined here (not in scorer) to avoid import cycles.
+type ScoreComponents struct {
+	Strength    float64 `json:"strength"`
+	RSI         float64 `json:"rsi"`
+	MACD        float64 `json:"macd"`
+	BidAsk      float64 `json:"bid_ask"`
+	VWAP        float64 `json:"vwap"`
+	Volume      float64 `json:"volume"`
+	ProgramBuy  float64 `json:"program_buy"`
+	MicroBidAsk float64 `json:"micro_bid_ask"`
+	VIDisparity float64 `json:"vi_disparity"`
+}
+
 // BuyIndicatorsSnapshot holds the raw indicator values at the time of a buy order.
 // Stored as JSON in TradeReport.BuyIndicators for frontend consumption.
 type BuyIndicatorsSnapshot struct {
-	RSI           float64 `json:"rsi"`
-	MACDBullish   bool    `json:"macd_bullish"`
-	VWAPDisparity float64 `json:"vwap_disparity"`
-	Strength      float64 `json:"strength"`
-	BidAskRatio   float64 `json:"bid_ask_ratio"` // 0 when bid-ask fetch is skipped (score weight = 0 and spread filter disabled)
-	TotalScore    float64 `json:"total_score"`
+	RSI             float64          `json:"rsi"`
+	MACDBullish     bool             `json:"macd_bullish"`
+	VWAPDisparity   float64          `json:"vwap_disparity"`
+	Strength        float64          `json:"strength"`
+	BidAskRatio     float64          `json:"bid_ask_ratio"` // 0 when bid-ask fetch is skipped (score weight = 0 and spread filter disabled)
+	TotalScore      float64          `json:"total_score"`
+	ScoreComponents *ScoreComponents `json:"score_components,omitempty"`
 }
 
 // Token stores the KIS OAuth access token and its validity window.
