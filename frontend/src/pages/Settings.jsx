@@ -796,7 +796,7 @@ export default function Settings() {
                 </div>
 
                 {/* Tier 0 */}
-                <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--bg-card, #1a1a2e)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--surface2)', borderRadius: 6, border: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, opacity: 0.7 }}>Tier 0 — 진입 손절</div>
                   <div className="form-row">
                     <div className="form-group">
@@ -809,7 +809,7 @@ export default function Settings() {
                 </div>
 
                 {/* Tier 1 */}
-                <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--bg-card, #1a1a2e)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--surface2)', borderRadius: 6, border: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, opacity: 0.7 }}>Tier 1 — 브레이크이븐 트레일</div>
                   <div className="form-row">
                     <div className="form-group">
@@ -828,7 +828,7 @@ export default function Settings() {
                 </div>
 
                 {/* Tier 2 */}
-                <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--bg-card, #1a1a2e)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--surface2)', borderRadius: 6, border: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, opacity: 0.7 }}>Tier 2 — 급등 타이트 트레일</div>
                   <div className="form-row">
                     <div className="form-group">

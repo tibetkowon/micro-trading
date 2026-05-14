@@ -4,12 +4,6 @@ import { apiFetch } from '../utils/api'
 import { fmt, Badge, Modal, EmptyState } from '../components/shared'
 import { db, fmtTs } from '../lib/firebase'
 
-function calcHeldDays(createdAt) {
-  if (!createdAt) return 0
-  const start = createdAt.toDate ? createdAt.toDate() : new Date(createdAt)
-  return Math.floor((Date.now() - start.getTime()) / (1000 * 60 * 60 * 24))
-}
-
 export default function Positions() {
   const [positions, setPositions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -66,7 +60,6 @@ export default function Positions() {
       ) : (
         <div className="pos-grid">
           {positions.map(p => {
-            const heldDays = calcHeldDays(p.created_at)
             return (
               <div key={p._docId} className="pos-card">
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -82,7 +75,7 @@ export default function Positions() {
                     ['매수가', fmt(p.filled_price)],
                     ['목표가', fmt(p.target_price)],
                     ['손절가', fmt(p.stop_price)],
-                    ['보유일', `${heldDays}일`],
+                    ['현재가', fmt(p.current_price)],
                   ].map(([label, value]) => (
                     <div key={label}>
                       <div style={{ fontSize: 10, color: 'var(--text-dim)', marginBottom: 2, textTransform: 'uppercase' }}>{label}</div>
