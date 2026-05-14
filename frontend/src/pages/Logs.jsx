@@ -7,6 +7,10 @@ import { db, fmtTs } from '../lib/firebase'
 const LEVEL_COLOR = { ERROR: 'var(--accent)', WARN: 'var(--yellow)', INFO: 'var(--text-muted)' }
 const LEVEL_BADGE = { ERROR: 'red', WARN: 'yellow', INFO: 'gray' }
 
+function fmtDetail(detail) {
+  try { return JSON.stringify(JSON.parse(detail), null, 2) } catch { return detail }
+}
+
 function fetchKisLogs(setKisLogs, setKisLoading) {
   setKisLoading(true)
   const q = query(collection(db, 'kis_api_logs'), orderBy('timestamp', 'desc'), limit(100))
@@ -18,6 +22,7 @@ function fetchKisLogs(setKisLogs, setKisLoading) {
 export default function Logs() {
   const [tab, setTab] = useState('KIS API')
   const [expandedId, setExpandedId] = useState(null)
+  const [expandedSvcId, setExpandedSvcId] = useState(null)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [levelFilter, setLevelFilter] = useState('ALL')
   const [sourceFilter, setSourceFilter] = useState('ALL')
@@ -202,12 +207,33 @@ export default function Logs() {
             ) : filteredService.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>로그가 없습니다</div>
             ) : filteredService.map(l => (
-              <div key={l._docId} style={{ display: 'flex', gap: 12, padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{fmtTs(l.timestamp)}</span>
-                <span style={{ width: 44, flexShrink: 0 }}><Badge color={LEVEL_BADGE[l.level] || 'gray'}>{l.level}</Badge></span>
-                <span className="muted" style={{ fontSize: 11, width: 60, flexShrink: 0 }}>{l.source}</span>
-                <span style={{ fontSize: 12, color: LEVEL_COLOR[l.level] || 'var(--text)' }}>{l.message}</span>
-              </div>
+              <Fragment key={l._docId}>
+                <div
+                  style={{
+                    display: 'flex', gap: 12, padding: '3px 0',
+                    borderBottom: '1px solid rgba(255,255,255,0.03)',
+                    cursor: l.detail ? 'pointer' : 'default',
+                  }}
+                  onClick={() => l.detail && setExpandedSvcId(expandedSvcId === l._docId ? null : l._docId)}
+                >
+                  <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{fmtTs(l.timestamp)}</span>
+                  <span style={{ width: 44, flexShrink: 0 }}><Badge color={LEVEL_BADGE[l.level] || 'gray'}>{l.level}</Badge></span>
+                  <span className="muted" style={{ fontSize: 11, width: 60, flexShrink: 0 }}>{l.source}</span>
+                  <span style={{ fontSize: 12, color: LEVEL_COLOR[l.level] || 'var(--text)' }}>
+                    {l.detail && (
+                      <span style={{ color: 'var(--text-dim)', fontSize: 10, marginRight: 6 }}>
+                        {expandedSvcId === l._docId ? '▼' : '▶'}
+                      </span>
+                    )}
+                    {l.message}
+                  </span>
+                </div>
+                {expandedSvcId === l._docId && l.detail && (
+                  <div style={{ paddingLeft: 120, paddingBottom: 6 }}>
+                    <div className="code-block">{fmtDetail(l.detail)}</div>
+                  </div>
+                )}
+              </Fragment>
             ))}
           </div>
         </div>
