@@ -60,6 +60,7 @@ type Engine struct {
 	hijackCh        chan string
 	streamMon       *StreamMonitor
 	wsSubscriptions map[string]bool
+	recentlySold    sync.Map
 }
 
 // NewEngine creates a new Engine with all required dependencies.
@@ -155,6 +156,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 			return
 		case code := <-e.soldCh:
 			logger.Info("engine: sold signal — rescanning", map[string]any{"stock_code": code})
+			e.recentlySold.Store(code, time.Now())
 			time.Sleep(3 * time.Second)
 			e.updateConsecutiveLosses(ctx, code)
 			// 매도 후 재스캔 시 설정이 바뀌었을 수 있으므로 인터벌 재적용
@@ -290,6 +292,8 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		"reentry_loss_cooldown": 0,
 		"reentry_below_buy":     0,
 		"reentry_cooldown":      0,
+		"universal_cooldown":    0,
+		"universal_price_guard": 0,
 		"trading_value":         0,
 		"strength":              0,
 		"open_price_diff":       0,
@@ -303,10 +307,24 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 		if e.mon.Has(c.StockCode) {
 			continue
 		}
+		if settings.UniversalCooldownMin > 0 {
+			if v, ok := e.recentlySold.Load(c.StockCode); ok {
+				soldAt := v.(time.Time)
+				if elapsed := time.Since(soldAt); elapsed < time.Duration(settings.UniversalCooldownMin)*time.Minute {
+					logger.Info("engine: pre-filter rejected (universal cooldown)",
+						map[string]any{"code": c.StockCode,
+							"elapsed_sec":  int(elapsed.Seconds()),
+							"cooldown_min": settings.UniversalCooldownMin})
+					rejectCounts["universal_cooldown"]++
+					continue
+				}
+			}
+		}
 
 		// ── 1-패스: 재진입 검증 로직 (손절 차단 / 익절 쿨타임 및 페널티) ──────────────────────────
 		penalty := 0.0
 		var lastLossTrade *models.TradeReport // 손절 쿨타임 통과 후 가격 비교에 재사용
+		var lastTrade *models.TradeReport
 		if trade, err := e.db.GetLatestCompletedTradeByStock(ctx, c.StockCode); err == nil && trade != nil {
 			kst, _ := time.LoadLocation("Asia/Seoul")
 			today := time.Now().In(kst).Format("2006-01-02")
@@ -329,6 +347,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 						}
 					}
 					lastLossTrade = trade // 쿨타임 통과 → 이후 가격 비교용 보존
+					lastTrade = trade
 				} else {
 					if trade.SoldAt != nil {
 						cooldown := time.Duration(settings.ReentryCooldownMin) * time.Minute
@@ -339,6 +358,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 							continue
 						}
 						penalty = settings.ReentryScorePenalty
+						lastTrade = trade
 					}
 				}
 			}
@@ -359,6 +379,15 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 				logger.Info("engine: pre-filter rejected (below last buy price)",
 					map[string]any{"code": c.StockCode, "current": currentP, "last_buy": lastLossTrade.BuyPrice})
 				rejectCounts["reentry_below_buy"]++
+				continue
+			}
+		}
+		if settings.UniversalPriceGuard && lastTrade != nil && lastLossTrade == nil {
+			currentP, _ := strconv.ParseFloat(priceResp.CurrentPrice, 64)
+			if currentP > 0 && lastTrade.BuyPrice > 0 && currentP < lastTrade.BuyPrice {
+				logger.Info("engine: pre-filter rejected (universal price guard)",
+					map[string]any{"code": c.StockCode, "current": currentP, "last_buy": lastTrade.BuyPrice})
+				rejectCounts["universal_price_guard"]++
 				continue
 			}
 		}

@@ -91,6 +91,8 @@ type Monitor struct {
 	partialTPPct       float64 // 중간 익절 트리거 수익률 %
 	partialTPRatio     float64 // 매도 비율 (0~1)
 	partialTPRaiseStop bool    // 부분 익절 후 손절가를 매입가(BEP)로 올리기
+
+	macdSellMinLossPct float64
 }
 
 // New creates a Monitor.
@@ -1060,11 +1062,15 @@ func (m *Monitor) StartIndicatorChecker(
 	conditions []string,
 	rsiThreshold float64,
 	macdBearish bool,
+	macdSellMinLossPct float64,
 	getInfoFn func(ctx context.Context, code string) (*IndicatorSnapshot, error),
 ) {
 	if intervalMin <= 0 {
 		intervalMin = 5
 	}
+	m.mu.Lock()
+	m.macdSellMinLossPct = macdSellMinLossPct
+	m.mu.Unlock()
 	ticker := time.NewTicker(time.Duration(intervalMin) * time.Minute)
 	defer ticker.Stop()
 
@@ -1119,6 +1125,17 @@ func (m *Monitor) checkIndicators(
 				}
 			case "macd_bearish":
 				if macdBearish && snap.MACDLine != 0 && snap.MACDLine < snap.MACDSignal {
+					m.mu.RLock()
+					minLoss := m.macdSellMinLossPct
+					m.mu.RUnlock()
+					if minLoss > 0 && pos.CurrentPrice > 0 && pos.FilledPrice > 0 {
+						profitPct := (pos.CurrentPrice - pos.FilledPrice) / pos.FilledPrice * 100
+						if profitPct > -minLoss {
+							logger.Info("indicator check: MACD bearish suppressed (loss not deep enough)",
+								map[string]any{"stock_code": code, "profit_pct": profitPct, "min_loss": -minLoss})
+							break
+						}
+					}
 					triggered = true
 					triggerReason = fmt.Sprintf("MACD bearish crossover: line=%.4f signal=%.4f", snap.MACDLine, snap.MACDSignal)
 				}
