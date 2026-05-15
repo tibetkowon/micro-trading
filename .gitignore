@@ -35,6 +35,11 @@ Thumbs.db
 
 # Claude
 SKILL.md
+.claude/worktrees/
+
+# Migration outputs
+scripts/migrate/output/
+scripts/migrate/config.env
 
 # Firebase
 firebase-credentials.json

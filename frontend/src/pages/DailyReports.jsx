@@ -489,6 +489,11 @@ export default function DailyReports() {
                         트레일링 스탑 {simResult.recommended.params.trailing_stop_pct}%
                       </span>
                     )}
+                    {simResult.recommended?.params?.min_score_threshold > 0 && (
+                      <span style={{ fontSize: 11, padding: '4px 7px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--surface)' }}>
+                        진입점수 임계값 {simResult.recommended.params.min_score_threshold}
+                      </span>
+                    )}
                   </div>
                   <button
                     onClick={async () => {

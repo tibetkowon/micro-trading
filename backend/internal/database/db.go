@@ -868,6 +868,40 @@ func (db *DB) ListScanLogs(ctx context.Context, limit int) ([]models.ScanLog, er
 	return logs, nil
 }
 
+// GetScanLogsByDate returns all scan logs for a given YYYY-MM-DD date (KST).
+func (db *DB) GetScanLogsByDate(ctx context.Context, date string) ([]models.ScanLog, error) {
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	day, err := time.ParseInLocation("2006-01-02", date, kst)
+	if err != nil {
+		return nil, err
+	}
+	start := day.UTC().Format(time.RFC3339)
+	end := day.Add(24*time.Hour - time.Second).UTC().Format(time.RFC3339)
+	q := db.client.Collection(colScanLogs).
+		Where("timestamp", ">=", start).
+		Where("timestamp", "<=", end).
+		OrderBy("timestamp", firestore.Asc)
+	iter := q.Documents(ctx)
+	defer iter.Stop()
+
+	var logs []models.ScanLog
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		var l models.ScanLog
+		if err := doc.DataTo(&l); err != nil {
+			continue
+		}
+		logs = append(logs, l)
+	}
+	return logs, nil
+}
+
 // GetScanLog returns a single scan log by its ID (Firestore document point-read).
 func (db *DB) GetScanLog(ctx context.Context, id int64) (*models.ScanLog, error) {
 	snap, err := db.client.Collection(colScanLogs).Doc(strconv.FormatInt(id, 10)).Get(ctx)

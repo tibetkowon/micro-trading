@@ -591,12 +591,38 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 	}
 	rawJSON, _ := json.Marshal(rawEntries)
 
+	var virtualCandidates []models.VirtualCandidate
+	scanTime := time.Now().UTC()
+	if settings.MinScoreThreshold > 0 {
+		for _, p := range passed {
+			effectiveThreshold := settings.MinScoreThreshold + p.penalty
+			if p.detail.Total < effectiveThreshold {
+				entryPrice, _ := strconv.ParseFloat(p.cinfo.Info.CurrentPrice, 64)
+				if entryPrice > 0 {
+					virtualCandidates = append(virtualCandidates, models.VirtualCandidate{
+						Code:       p.cinfo.StockCode,
+						Name:       p.cinfo.StockName,
+						Score:      p.detail.Total,
+						Penalty:    p.penalty,
+						EntryPrice: entryPrice,
+						BuyTime:    scanTime.Format(time.RFC3339),
+					})
+				}
+			}
+			if len(virtualCandidates) >= 10 {
+				break
+			}
+		}
+	}
+	belowJSON, _ := json.Marshal(virtualCandidates)
+
 	scanLog := &models.ScanLog{
-		Timestamp:       time.Now().UTC().Format(time.RFC3339),
-		TotalCandidates: len(candidates),
-		StocksFound:     len(passed),
-		TopStocks:       string(topJSON),
-		StockRawData:    string(rawJSON),
+		Timestamp:          scanTime.Format(time.RFC3339),
+		TotalCandidates:    len(candidates),
+		StocksFound:        len(passed),
+		TopStocks:          string(topJSON),
+		StockRawData:       string(rawJSON),
+		BelowThresholdData: string(belowJSON),
 	}
 
 	scanSummaryMsg := fmt.Sprintf(
@@ -657,7 +683,7 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 			map[string]any{"code": p.cinfo.StockCode, "name": p.cinfo.StockName, "score": p.detail.String()},
 		)
 
-		if err := e.placeAndMonitor(ctx, p.cinfo, p.detail, settings); err != nil {
+		if err := e.placeAndMonitor(ctx, p.cinfo, p.detail, p.penalty, settings); err != nil {
 			if isInsufficientCashError(err) {
 				skipReason = fmt.Sprintf("주문가능금액 부족으로 주문 중단 (종목: %s, 에러: %s)",
 					p.cinfo.StockCode, err.Error())
@@ -687,6 +713,9 @@ func (e *Engine) runScanCycle(ctx context.Context, settings database.TradingSett
 	scanLog.Ordered = ordered
 	scanLog.OrderedCode = orderedCode
 	scanLog.SkipReason = skipReason
+	if ordered {
+		scanLog.BelowThresholdData = "" // slot used — virtual candidates would be impossible trades
+	}
 	if len(passed) > 0 {
 		scanLog.ScoreStats = passed[0].detail.String()
 	}
@@ -889,6 +918,7 @@ func (e *Engine) placeAndMonitor(
 	ctx context.Context,
 	c scorer.CandidateInfo,
 	detail scorer.ScoreDetail,
+	penalty float64,
 	settings database.TradingSettings,
 ) error {
 	e.setState(StateOrdering)
@@ -1037,6 +1067,7 @@ func (e *Engine) placeAndMonitor(
 		Strength:      c.Strength,
 		BidAskRatio:   c.Info.BidAskRatio,
 		TotalScore:    detail.Total,
+		Penalty:       penalty,
 		ScoreComponents: &models.ScoreComponents{
 			Strength:    detail.Strength,
 			RSI:         detail.RSI,
@@ -1347,7 +1378,7 @@ func (e *Engine) tryBuyHijack(ctx context.Context, stockCode string) {
 	detail := scorer.ScoreDetail{Total: 100.0}
 
 	logger.Info("engine: executing hijack buy", map[string]any{"code": stockCode, "name": cinfo.StockName})
-	if err := e.placeAndMonitor(ctx, cinfo, detail, settings); err != nil {
+	if err := e.placeAndMonitor(ctx, cinfo, detail, 0, settings); err != nil {
 		logger.Error("engine: hijack placeAndMonitor failed", map[string]any{"code": stockCode, "error": err.Error()})
 	}
 }

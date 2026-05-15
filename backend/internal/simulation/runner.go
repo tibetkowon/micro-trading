@@ -15,6 +15,7 @@ import (
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
+	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 )
 
@@ -42,8 +43,10 @@ type RecommendedSettings struct {
 
 type tradeCandles struct {
 	trade     models.TradeReport
+	virtual   *models.VirtualCandidate
 	candles   []MinuteCandle
 	ProfitPct float64
+	BuyScore  float64
 }
 
 // RawBar contains the KIS chart bar fields needed for candle conversion.
@@ -59,10 +62,6 @@ func RunDailySimulation(ctx context.Context, db *database.DB, kisClient *kis.Cli
 	trades, err := db.GetCompletedTradesBySoldDate(ctx, date)
 	if err != nil {
 		return fmt.Errorf("fetch trades: %w", err)
-	}
-	if len(trades) == 0 {
-		log.Printf("[simulation] no trades on %s, skipping", date)
-		return nil
 	}
 
 	settings, err := db.GetTradingSettings(ctx)
@@ -87,7 +86,29 @@ func RunDailySimulation(ctx context.Context, db *database.DB, kisClient *kis.Cli
 		WeightMicroBidAsk:    settings.ScoreWeightMicroBidAsk,
 		WeightVIDisparity:    settings.ScoreWeightVIDisparity,
 	}
-	scenarios := GenerateScenarios(base)
+
+	scanLogs, err := db.GetScanLogsByDate(ctx, date)
+	if err != nil {
+		logger.Warn("simulation: scan logs fetch error", map[string]any{"date": date, "error": err.Error()})
+	}
+
+	var allVirtual []models.VirtualCandidate
+	if base.MinScoreThreshold > 0 {
+		for _, sl := range scanLogs {
+			if sl.BelowThresholdData == "" {
+				continue
+			}
+			var vc []models.VirtualCandidate
+			if err := json.Unmarshal([]byte(sl.BelowThresholdData), &vc); err == nil {
+				allVirtual = append(allVirtual, vc...)
+			}
+		}
+	}
+
+	if len(trades) == 0 && len(allVirtual) == 0 {
+		logger.Info("simulation: no trades and no virtual candidates, skipping", map[string]any{"date": date})
+		return nil
+	}
 
 	kisDate := strings.ReplaceAll(date, "-", "")
 	prepared := make([]tradeCandles, 0, len(trades))
@@ -100,12 +121,31 @@ func RunDailySimulation(ctx context.Context, db *database.DB, kisClient *kis.Cli
 			trade:     trade,
 			candles:   candles,
 			ProfitPct: trade.ProfitPct,
+			BuyScore:  parseBuyEffectiveScore(trade),
 		})
 	}
-	if len(prepared) == 0 {
+	if len(trades) > 0 && len(prepared) == 0 && len(allVirtual) == 0 {
 		return fmt.Errorf("no candle data available")
 	}
 	sortPreparedTrades(prepared)
+
+	virtualPrepared := make([]tradeCandles, 0, len(allVirtual))
+	if base.MinScoreThreshold > 0 && len(allVirtual) > 0 {
+		for _, vc := range allVirtual {
+			candles, err := fetchVirtualCandles(ctx, kisClient, vc, kisDate)
+			if err != nil || len(candles) == 0 {
+				continue
+			}
+			vcCopy := vc
+			virtualPrepared = append(virtualPrepared, tradeCandles{
+				virtual:  &vcCopy,
+				candles:  candles,
+				BuyScore: vc.Score - vc.Penalty,
+			})
+		}
+	}
+
+	scenarios := GenerateScenarios(base)
 
 	var actualGrossPnl float64
 	for _, p := range prepared {
@@ -113,7 +153,22 @@ func RunDailySimulation(ctx context.Context, db *database.DB, kisClient *kis.Cli
 	}
 	actualNetPnl := actualGrossPnl - commissionPct*float64(len(prepared))
 
-	summaries := runScenariosParallel(prepared, scenarios, actualNetPnl)
+	summaries := make([]ScenarioSummary, 0, len(scenarios))
+	for _, scenario := range scenarios {
+		var summary ScenarioSummary
+		var err error
+		if scenario.Params.MinScoreThreshold != base.MinScoreThreshold {
+			summary, err = runScenarioWithThreshold(prepared, virtualPrepared, scenario)
+		} else {
+			summary, err = runScenarioForTrades(prepared, scenario)
+		}
+		if err != nil {
+			logger.Warn("simulation: scenario skipped", map[string]any{"label": scenario.Label, "error": err.Error()})
+			continue
+		}
+		summary.DeltaVsActualPct = roundPct(summary.TotalPnlPct - actualNetPnl)
+		summaries = append(summaries, summary)
+	}
 
 	recommended := pickBestScenario(summaries, base)
 
@@ -128,7 +183,13 @@ func RunDailySimulation(ctx context.Context, db *database.DB, kisClient *kis.Cli
 	if err := db.UpsertSimulationResult(ctx, result); err != nil {
 		return fmt.Errorf("save simulation result: %w", err)
 	}
-	log.Printf("[simulation] completed for %s: %d scenarios, best=%q", date, len(summaries), recommended.Label)
+	logger.Info("simulation: completed", map[string]any{
+		"date":            date,
+		"scenario_count":  len(summaries),
+		"recommended":     recommended.Label,
+		"virtual_count":   len(virtualPrepared),
+		"threshold_score": base.MinScoreThreshold,
+	})
 	return nil
 }
 
@@ -216,6 +277,71 @@ func sortPreparedTrades(prepared []tradeCandles) {
 	})
 }
 
+func parseBuyEffectiveScore(trade models.TradeReport) float64 {
+	var snap struct {
+		TotalScore float64 `json:"total_score"`
+		Penalty    float64 `json:"penalty"`
+	}
+	if err := json.Unmarshal([]byte(trade.BuyIndicators), &snap); err != nil {
+		return 0
+	}
+	return snap.TotalScore - snap.Penalty
+}
+
+func fetchVirtualCandles(ctx context.Context, kisClient *kis.Client, vc models.VirtualCandidate, kisDate string) ([]MinuteCandle, error) {
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	buyTime, err := time.ParseInLocation(time.RFC3339, vc.BuyTime, time.UTC)
+	if err != nil {
+		return nil, err
+	}
+	buyKST := buyTime.In(kst)
+	marketClose := time.Date(buyKST.Year(), buyKST.Month(), buyKST.Day(), 15, 30, 0, 0, kst)
+	if buyKST.After(marketClose) {
+		return nil, fmt.Errorf("buy time after market close")
+	}
+
+	fakeTrade := models.TradeReport{
+		StockCode: vc.Code,
+		CreatedAt: buyKST,
+		SoldAt:    &marketClose,
+		BuyPrice:  vc.EntryPrice,
+	}
+	return fetchHoldingCandles(ctx, kisClient, fakeTrade, kisDate)
+}
+
+func runScenarioWithThreshold(prepared []tradeCandles, virtualPrepared []tradeCandles, scenario Scenario) (ScenarioSummary, error) {
+	allItems := make([]tradeCandles, 0, len(prepared)+len(virtualPrepared))
+	actualCodes := make(map[string]bool, len(prepared))
+
+	for _, item := range prepared {
+		actualCodes[item.trade.StockCode] = true
+		if scenario.Params.MinScoreThreshold > 0 && item.BuyScore < scenario.Params.MinScoreThreshold {
+			continue
+		}
+		allItems = append(allItems, item)
+	}
+
+	usedScanTimes := make(map[string]bool)
+	for _, item := range virtualPrepared {
+		if item.virtual == nil {
+			continue
+		}
+		if actualCodes[item.virtual.Code] {
+			continue
+		}
+		if scenario.Params.MinScoreThreshold > 0 && item.BuyScore < scenario.Params.MinScoreThreshold {
+			continue
+		}
+		if usedScanTimes[item.virtual.BuyTime] {
+			continue
+		}
+		usedScanTimes[item.virtual.BuyTime] = true
+		allItems = append(allItems, item)
+	}
+
+	return runScenarioForTrades(allItems, scenario)
+}
+
 func runScenarioForTrades(prepared []tradeCandles, scenario Scenario) (ScenarioSummary, error) {
 	var totalPnl, totalHold float64
 	var wins, count int
@@ -224,7 +350,8 @@ func runScenarioForTrades(prepared []tradeCandles, scenario Scenario) (ScenarioS
 	lastSoldAt := make(map[string]time.Time)
 
 	for _, item := range prepared {
-		if scenario.Params.MinScoreThreshold > 0 && item.trade.BuyIndicators != "" {
+		// For real trades, re-filter by effective score (handles weight-varying scenarios).
+		if item.virtual == nil && scenario.Params.MinScoreThreshold > 0 && item.trade.BuyIndicators != "" {
 			var snap models.BuyIndicatorsSnapshot
 			if err := json.Unmarshal([]byte(item.trade.BuyIndicators), &snap); err == nil {
 				effectiveScore := recomputeScore(snap, scenario.Params)
@@ -234,16 +361,26 @@ func runScenarioForTrades(prepared []tradeCandles, scenario Scenario) (ScenarioS
 			}
 		}
 
+		stockCode := item.trade.StockCode
+		createdAt := item.trade.CreatedAt
+		entryPrice := item.trade.BuyPrice
+		if item.virtual != nil {
+			stockCode = item.virtual.Code
+			entryPrice = item.virtual.EntryPrice
+			t, _ := time.Parse(time.RFC3339, item.virtual.BuyTime)
+			createdAt = t
+		}
+
 		if scenario.Params.UniversalCooldownMin > 0 {
-			if last, ok := lastSoldAt[item.trade.StockCode]; ok {
+			if last, ok := lastSoldAt[stockCode]; ok {
 				cooldown := time.Duration(scenario.Params.UniversalCooldownMin) * time.Minute
-				if item.trade.CreatedAt.Sub(last) < cooldown {
+				if createdAt.Sub(last) < cooldown {
 					continue
 				}
 			}
 		}
 
-		result := SimulateTrade(item.trade.BuyPrice, item.candles, scenario.Params)
+		result := SimulateTrade(entryPrice, item.candles, scenario.Params)
 		tradeResults = append(tradeResults, result)
 		pnlSeq = append(pnlSeq, result.PnlPct)
 		totalPnl += result.PnlPct
@@ -253,8 +390,8 @@ func runScenarioForTrades(prepared []tradeCandles, scenario Scenario) (ScenarioS
 			wins++
 		}
 		if scenario.Params.UniversalCooldownMin > 0 {
-			simulatedExitTime := item.trade.CreatedAt.Add(time.Duration(result.HoldingCandles) * time.Minute)
-			lastSoldAt[item.trade.StockCode] = simulatedExitTime
+			simulatedExitTime := createdAt.Add(time.Duration(result.HoldingCandles) * time.Minute)
+			lastSoldAt[stockCode] = simulatedExitTime
 		}
 	}
 	if count == 0 {
