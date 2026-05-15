@@ -103,17 +103,29 @@ type KISAPILog struct {
 
 // ScanLog records each scanner cycle: rankings → hard filter → score → order decision.
 type ScanLog struct {
-	ID              int64     `json:"id" firestore:"id"`
-	Timestamp       string    `json:"timestamp" firestore:"timestamp"`
-	TotalCandidates int       `json:"total_candidates" firestore:"total_candidates"` // 랭킹 API에서 가져온 전체 후보 수
-	StocksFound     int       `json:"stocks_found" firestore:"stocks_found"`         // 하드 필터 통과 후 후보 수
-	TopStocks       string    `json:"top_stocks" firestore:"top_stocks"`             // JSON: 상위 점수 종목 목록
-	StockRawData    string    `json:"stock_raw_data" firestore:"stock_raw_data"`     // JSON: 점수 산정 원본 데이터 (StockInfo 전체 + ScoreDetail)
-	Ordered         bool      `json:"ordered" firestore:"ordered"`
-	OrderedCode     string    `json:"ordered_code" firestore:"ordered_code"`
-	SkipReason      string    `json:"skip_reason" firestore:"skip_reason"`
-	ScoreStats      string    `json:"score_stats" firestore:"score_stats"` // JSON: 점수 통계
-	ExpireAt        time.Time `json:"expire_at" firestore:"expireAt"`
+	ID                 int64     `json:"id" firestore:"id"`
+	Timestamp          string    `json:"timestamp" firestore:"timestamp"`
+	TotalCandidates    int       `json:"total_candidates" firestore:"total_candidates"`         // 랭킹 API에서 가져온 전체 후보 수
+	StocksFound        int       `json:"stocks_found" firestore:"stocks_found"`                 // 하드 필터 통과 후 후보 수
+	TopStocks          string    `json:"top_stocks" firestore:"top_stocks"`                     // JSON: 상위 점수 종목 목록
+	StockRawData       string    `json:"stock_raw_data" firestore:"stock_raw_data"`             // JSON: 점수 산정 원본 데이터 (StockInfo 전체 + ScoreDetail)
+	BelowThresholdData string    `json:"below_threshold_data" firestore:"below_threshold_data"` // JSON: VirtualCandidate array
+	Ordered            bool      `json:"ordered" firestore:"ordered"`
+	OrderedCode        string    `json:"ordered_code" firestore:"ordered_code"`
+	SkipReason         string    `json:"skip_reason" firestore:"skip_reason"`
+	ScoreStats         string    `json:"score_stats" firestore:"score_stats"` // JSON: 점수 통계
+	ExpireAt           time.Time `json:"expire_at" firestore:"expireAt"`
+}
+
+// VirtualCandidate is a hard-filter-passed stock rejected only by min_score_threshold.
+// Stored in ScanLog for counterfactual simulation of looser entry filters.
+type VirtualCandidate struct {
+	Code       string  `json:"code"`
+	Name       string  `json:"name"`
+	Score      float64 `json:"score"`
+	Penalty    float64 `json:"penalty"`
+	EntryPrice float64 `json:"entry_price"`
+	BuyTime    string  `json:"buy_time"`
 }
 
 // TradeReport records each trade lifecycle (buy → sell) with indicators and reasoning.
@@ -165,7 +177,7 @@ type SimulationResult struct {
 	ScenariosJSON   string    `json:"scenarios_json" firestore:"scenarios_json"`
 	RecommendedJSON string    `json:"recommended_json" firestore:"recommended_json"`
 	CreatedAt       time.Time `json:"created_at" firestore:"created_at"`
-	ExpireAt        time.Time `json:"expire_at" firestore:"expire_at"`
+	ExpireAt        time.Time `json:"expire_at" firestore:"expireAt"`
 }
 
 // ScoreComponents stores per-indicator normalized scores (0-100) at buy time.
@@ -191,6 +203,7 @@ type BuyIndicatorsSnapshot struct {
 	Strength        float64          `json:"strength"`
 	BidAskRatio     float64          `json:"bid_ask_ratio"` // 0 when bid-ask fetch is skipped (score weight = 0 and spread filter disabled)
 	TotalScore      float64          `json:"total_score"`
+	Penalty         float64          `json:"penalty"`
 	ScoreComponents *ScoreComponents `json:"score_components,omitempty"`
 }
 
