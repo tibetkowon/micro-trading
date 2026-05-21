@@ -209,11 +209,15 @@ export default function Settings() {
       const weightApiKey = { bidask: 'bid_ask', micro_bidask: 'micro_bid_ask' }
       for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume', 'program_buy', 'micro_bidask', 'vi_disparity'])
         flat[`score_weight_${weightApiKey[k] ?? k}`] = settings.weights?.[k] ?? 0
+      const filtersPayload = {}
       for (const k of ['rsi_upper_limit', 'strength_lower', 'vwap_min', 'vwap_max',
           'high_disparity', 'open_rise_limit', 'high_elapsed_min', 'volume_ratio_lower']) {
-        flat[`filter_${k}_enabled`] = settings.filters?.[k]?.enabled ?? false
-        flat[`filter_${k}_value`] = settings.filters?.[k]?.value ?? 0
+        filtersPayload[k] = {
+          enabled: settings.filters?.[k]?.enabled ?? false,
+          value: settings.filters?.[k]?.value ?? 0,
+        }
       }
+      flat.filters = filtersPayload
       flat.sell_on_upper_limit = settings.sell_on_upper_limit ?? false
       flat.max_consecutive_losses = settings.max_consecutive_losses ?? 0
       flat.consecutive_loss_reset_on_profit = settings.consecutive_loss_reset_on_profit ?? true

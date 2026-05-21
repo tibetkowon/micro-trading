@@ -142,7 +142,7 @@ func (tm *TokenManager) GetCurrentToken(ctx context.Context) (*models.Token, err
 // otherwise issues a new one.
 func (tm *TokenManager) EnsureToken(ctx context.Context) (*models.Token, error) {
 	tok, err := tm.GetCurrentToken(ctx)
-	if err == nil && time.Until(tok.ExpiresAt) > time.Hour {
+	if err == nil && tok != nil && time.Until(tok.ExpiresAt) > time.Hour {
 		logger.Info("reusing existing KIS token from DB",
 			map[string]any{"expires_at": tok.ExpiresAt})
 		return tok, nil
@@ -154,7 +154,7 @@ func (tm *TokenManager) EnsureToken(ctx context.Context) (*models.Token, error) 
 func (tm *TokenManager) StartAutoRefresh(ctx context.Context) {
 	go func() {
 		firstDelay := tokenRefreshInterval
-		if tok, err := tm.GetCurrentToken(ctx); err == nil {
+		if tok, err := tm.GetCurrentToken(ctx); err == nil && tok != nil {
 			elapsed := time.Since(tok.IssuedAt)
 			if remaining := tokenRefreshInterval - elapsed; remaining > 0 {
 				firstDelay = remaining
