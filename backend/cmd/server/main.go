@@ -13,13 +13,13 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/api"
 	"github.com/micro-trading-for-agent/backend/internal/config"
 	"github.com/micro-trading-for-agent/backend/internal/database"
-	"github.com/micro-trading-for-agent/backend/internal/discord"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
 	"github.com/micro-trading-for-agent/backend/internal/ops"
 	"github.com/micro-trading-for-agent/backend/internal/report"
 	"github.com/micro-trading-for-agent/backend/internal/simulation"
+	"github.com/micro-trading-for-agent/backend/internal/slack"
 	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
@@ -32,13 +32,13 @@ func main() {
 		slog.Error("config error", "error", err)
 		os.Exit(1)
 	}
-	discordClient := discord.New(cfg.DiscordWebhookURL)
+	slackClient := slack.New(cfg.SlackWebhookURL)
 	logger.RegisterAlertHook(func(level, message, detail string) {
 		if level == "WARN" || level == "WARNING" {
-			discordClient.AlertWarn(message, detail)
+			slackClient.AlertWarn(message, detail)
 			return
 		}
-		discordClient.AlertError(message, detail)
+		slackClient.AlertError(message, detail)
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -78,7 +78,7 @@ func main() {
 		tokenManager,
 		db,
 	)
-	kisClient.ConfigureDiscord(discordClient, cfg.DiscordKISFailThreshold)
+	kisClient.ConfigureSlack(slackClient, cfg.SlackKISFailThreshold)
 
 	// --- KIS WebSocket client (optional — requires credentials) ---
 	var wsClient *kis.WebSocketClient
@@ -92,7 +92,7 @@ func main() {
 
 	// --- Position monitor ---
 	mon := monitor.New(db, kisClient, wsClient, mstStore)
-	mon.SetDiscord(discordClient)
+	mon.SetSlack(slackClient)
 
 	// --- Trading engine: created before LoadFromDB to wire soldCh ---
 	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, mstStore)
@@ -144,7 +144,7 @@ func main() {
 	if wsClient != nil {
 		go mon.StartPriceConsumer(ctx)
 	}
-	go runPositionSnapshotScheduler(ctx, mon, discordClient, cfg.DiscordPositionSnapshotM)
+	go runPositionSnapshotScheduler(ctx, mon, slackClient, cfg.SlackPositionSnapshotM)
 
 	handler := api.NewHandler(db, kisClient, tokenManager, cfg, mon, wsClient)
 	handler.SetEngine(tradingEngine)
@@ -199,8 +199,8 @@ func parseHHMM(s string, def int) int {
 	return t.Hour()*100 + t.Minute()
 }
 
-func runPositionSnapshotScheduler(ctx context.Context, mon *monitor.Monitor, dc *discord.Client, intervalMin int) {
-	if dc == nil || !dc.Enabled() {
+func runPositionSnapshotScheduler(ctx context.Context, mon *monitor.Monitor, sc *slack.Client, intervalMin int) {
+	if sc == nil || !sc.Enabled() {
 		return
 	}
 	if intervalMin <= 0 {
@@ -220,13 +220,13 @@ func runPositionSnapshotScheduler(ctx context.Context, mon *monitor.Monitor, dc 
 				continue
 			}
 			positions := mon.GetPositions()
-			infos := make([]discord.PositionInfo, 0, len(positions))
+			infos := make([]slack.PositionInfo, 0, len(positions))
 			for _, p := range positions {
 				profitPct := 0.0
 				if p.FilledPrice > 0 {
 					profitPct = (p.CurrentPrice - p.FilledPrice) / p.FilledPrice * 100
 				}
-				infos = append(infos, discord.PositionInfo{
+				infos = append(infos, slack.PositionInfo{
 					Code:         p.StockCode,
 					Name:         p.StockName,
 					CurrentPrice: int(p.CurrentPrice),
@@ -236,7 +236,7 @@ func runPositionSnapshotScheduler(ctx context.Context, mon *monitor.Monitor, dc 
 					ProfitPct:    profitPct,
 				})
 			}
-			dc.PositionSnapshot(infos)
+			sc.PositionSnapshot(infos)
 		}
 	}
 }

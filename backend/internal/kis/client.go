@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
-	"github.com/micro-trading-for-agent/backend/internal/discord"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
+	"github.com/micro-trading-for-agent/backend/internal/slack"
 )
 
 // Client is the KIS API HTTP client.
@@ -30,7 +30,7 @@ type Client struct {
 	rateLimiter   *RateLimiter
 	db            *database.DB
 	httpClient    *http.Client
-	discord       *discord.Client
+	slack         *slack.Client
 	failCount     int
 	failThreshold int
 	mu            sync.Mutex
@@ -59,12 +59,12 @@ func NewClient(
 	}
 }
 
-func (c *Client) ConfigureDiscord(dc *discord.Client, failThreshold int) {
+func (c *Client) ConfigureSlack(sc *slack.Client, failThreshold int) {
 	if failThreshold <= 0 {
 		failThreshold = 5
 	}
 	c.mu.Lock()
-	c.discord = dc
+	c.slack = sc
 	c.failThreshold = failThreshold
 	c.mu.Unlock()
 }
@@ -1029,9 +1029,9 @@ func (c *Client) recordFailure(endpoint, errorCode string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.failCount++
-	if c.discord != nil && c.failThreshold > 0 && c.failCount >= c.failThreshold {
+	if c.slack != nil && c.failThreshold > 0 && c.failCount >= c.failThreshold {
 		failCount := c.failCount
-		go c.discord.KISAPIFailure(endpoint, errorCode, failCount)
+		go c.slack.KISAPIFailure(endpoint, errorCode, failCount)
 		c.failCount = 0
 	}
 }

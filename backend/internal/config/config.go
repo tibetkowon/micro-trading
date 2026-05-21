@@ -22,9 +22,9 @@ type Config struct {
 	AgentAPIKey             string // AGENT_API_KEY env var
 	AdminAPIKey             string // ADMIN_API_KEY env var
 
-	DiscordWebhookURL        string // DISCORD_WEBHOOK_URL
-	DiscordKISFailThreshold  int    // DISCORD_KIS_FAIL_THRESHOLD
-	DiscordPositionSnapshotM int    // DISCORD_POSITION_SNAPSHOT_MIN
+	SlackWebhookURL        string // SLACK_WEBHOOK_URL
+	SlackKISFailThreshold  int    // SLACK_KIS_FAIL_THRESHOLD
+	SlackPositionSnapshotM int    // SLACK_POSITION_SNAPSHOT_MIN
 
 	FrontendOrigin string // Firebase Hosting origin for CORS (e.g. https://xxx.web.app)
 
@@ -51,9 +51,9 @@ func Load() (*Config, error) {
 		AgentAPIKey:             getEnv("AGENT_API_KEY", ""),
 		AdminAPIKey:             getEnv("ADMIN_API_KEY", ""),
 
-		DiscordWebhookURL:        getEnv("DISCORD_WEBHOOK_URL", ""),
-		DiscordKISFailThreshold:  getEnvInt("DISCORD_KIS_FAIL_THRESHOLD", 5),
-		DiscordPositionSnapshotM: getEnvInt("DISCORD_POSITION_SNAPSHOT_MIN", 30),
+		SlackWebhookURL:        getEnv("SLACK_WEBHOOK_URL", ""),
+		SlackKISFailThreshold:  getEnvInt("SLACK_KIS_FAIL_THRESHOLD", 5),
+		SlackPositionSnapshotM: getEnvInt("SLACK_POSITION_SNAPSHOT_MIN", 30),
 
 		FrontendOrigin: getEnv("FRONTEND_ORIGIN", ""),
 

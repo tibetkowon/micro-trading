@@ -40,7 +40,7 @@ type hookHandler struct {
 }
 
 func (h hookHandler) Handle(ctx context.Context, r slog.Record) error {
-	if alertHook != nil && r.Level >= slog.LevelWarn && !strings.HasPrefix(r.Message, "discord webhook") {
+	if alertHook != nil && r.Level >= slog.LevelWarn && !strings.HasPrefix(r.Message, "slack webhook") {
 		detail := ""
 		r.Attrs(func(a slog.Attr) bool {
 			if detail != "" {

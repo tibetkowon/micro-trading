@@ -1,4 +1,4 @@
-package discord
+package slack
 
 import (
 	"bytes"
@@ -24,33 +24,33 @@ func (c *Client) Enabled() bool {
 	return c != nil && c.webhookURL != ""
 }
 
-type Embed struct {
-	Title       string  `json:"title,omitempty"`
-	Description string  `json:"description,omitempty"`
-	Color       int     `json:"color,omitempty"`
-	Fields      []Field `json:"fields,omitempty"`
-	Timestamp   string  `json:"timestamp,omitempty"`
+type Attachment struct {
+	Color     string  `json:"color,omitempty"`
+	Title     string  `json:"title,omitempty"`
+	Text      string  `json:"text,omitempty"`
+	Fields    []Field `json:"fields,omitempty"`
+	Timestamp int64   `json:"ts,omitempty"`
 }
 
 type Field struct {
-	Name   string `json:"name"`
-	Value  string `json:"value"`
-	Inline bool   `json:"inline,omitempty"`
+	Title string `json:"title"`
+	Value string `json:"value"`
+	Short bool   `json:"short,omitempty"`
 }
 
-func (c *Client) sendEmbed(embeds []Embed) {
+func (c *Client) sendAttachments(attachments []Attachment) {
 	if !c.Enabled() {
 		return
 	}
-	payload := map[string]any{"embeds": embeds}
+	payload := map[string]any{"attachments": attachments}
 	b, _ := json.Marshal(payload)
 	resp, err := c.http.Post(c.webhookURL, "application/json", bytes.NewReader(b))
 	if err != nil {
-		slog.Warn("discord webhook failed", "error", err)
+		slog.Warn("slack webhook failed", "error", err)
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		slog.Warn("discord webhook error response", "status", resp.StatusCode)
+		slog.Warn("slack webhook error response", "status", resp.StatusCode)
 	}
 }
