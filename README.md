@@ -181,8 +181,29 @@ npm run dev
 | `FIREBASE_CREDENTIALS_JSON` | ✅ | 서비스 계정 JSON 파일 경로 |
 | `SERVER_PORT` | ✅ | 서버 포트 (기본 `8080`) |
 | `FRONTEND_ORIGIN` | ✅ | CORS 허용 도메인 (Firebase Hosting URL) |
+| `SLACK_WEBHOOK_URL` | | Slack Incoming Webhook 기본/fallback URL. 아래 전용 URL이 비어 있으면 이 채널로 발송 |
+| `SLACK_ALERT_WEBHOOK_URL` | | WARN/ERROR 로그 알림용 Slack Incoming Webhook URL |
+| `SLACK_KIS_WEBHOOK_URL` | | KIS API 연속 실패 알림용 Slack Incoming Webhook URL |
+| `SLACK_TRADE_WEBHOOK_URL` | | 매수/매도 체결 알림용 Slack Incoming Webhook URL |
+| `SLACK_POSITION_WEBHOOK_URL` | | 보유 포지션 현황 스냅샷 알림용 Slack Incoming Webhook URL |
+| `SLACK_KIS_FAIL_THRESHOLD` | | KIS API 연속 실패 알림 기준 횟수 (기본 `5`) |
+| `SLACK_POSITION_SNAPSHOT_MIN` | | 장중 보유 포지션 현황 발송 간격 분 단위 (기본 `30`) |
 
 > **보안 주의:** API 키, 계좌번호 등 민감 정보는 절대 하드코딩하지 않습니다. 모든 설정은 `.env`로만 관리합니다.
+
+### Slack 채널 분리 가이드
+
+Slack 알림은 Incoming Webhook URL 기준으로 채널이 결정됩니다. 각 필드에는 채널명(`#trade-alerts`)이 아니라 Slack에서 발급한 `https://hooks.slack.com/services/...` 형태의 URL을 넣습니다.
+
+| 필드 | 추천 채널 | 들어가는 메시지 |
+|------|-----------|----------------|
+| `SLACK_ALERT_WEBHOOK_URL` | 운영/장애 채널 | 애플리케이션 WARN/ERROR 로그 |
+| `SLACK_KIS_WEBHOOK_URL` | KIS/API 장애 채널 | KIS API가 설정 횟수만큼 연속 실패했을 때의 endpoint/error code |
+| `SLACK_TRADE_WEBHOOK_URL` | 거래 체결 채널 | 매수 체결, 매도 체결, 손실 매도 체결 |
+| `SLACK_POSITION_WEBHOOK_URL` | 포지션 현황 채널 | 장중 보유 포지션 스냅샷 |
+| `SLACK_WEBHOOK_URL` | 공통 fallback 채널 | 전용 URL이 비어 있는 알림의 기본 도착지 |
+
+모든 알림을 한 채널에서 받고 싶으면 `SLACK_WEBHOOK_URL`만 채우면 됩니다. 특정 알림만 분리하고 싶으면 해당 전용 필드만 추가로 채우면 되며, 예를 들어 `SLACK_TRADE_WEBHOOK_URL`만 채우면 체결 알림은 거래 채널로, 나머지는 fallback 채널로 발송됩니다. 특정 종류의 알림을 끄고 싶다면 해당 전용 URL과 `SLACK_WEBHOOK_URL`을 모두 비워두어야 합니다.
 
 ---
 
