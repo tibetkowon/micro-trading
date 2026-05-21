@@ -6,6 +6,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func AgentAuth(apiKey string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key := c.GetHeader("X-Agent-Key")
+		if key == "" {
+			key = c.Query("agent_key")
+		}
+		if key != apiKey || apiKey == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		c.Next()
+	}
+}
+
 func AdminAuth(adminKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.GetHeader("X-Admin-Key")

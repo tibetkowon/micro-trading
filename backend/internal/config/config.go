@@ -19,6 +19,7 @@ type Config struct {
 	FirebaseProjectID       string // GCP project ID
 	FirebaseCredentialsJSON string // service account JSON (file path or inline JSON)
 	SQLitePath              string // SQLITE_PATH env var
+	AgentAPIKey             string // AGENT_API_KEY env var
 	AdminAPIKey             string // ADMIN_API_KEY env var
 
 	DiscordWebhookURL        string // DISCORD_WEBHOOK_URL
@@ -47,6 +48,7 @@ func Load() (*Config, error) {
 		FirebaseProjectID:       getEnv("FIREBASE_PROJECT_ID", ""),
 		FirebaseCredentialsJSON: getEnv("FIREBASE_CREDENTIALS_JSON", ""),
 		SQLitePath:              getEnv("SQLITE_PATH", "/data/trading.db"),
+		AgentAPIKey:             getEnv("AGENT_API_KEY", ""),
 		AdminAPIKey:             getEnv("ADMIN_API_KEY", ""),
 
 		DiscordWebhookURL:        getEnv("DISCORD_WEBHOOK_URL", ""),

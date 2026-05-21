@@ -94,6 +94,17 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		admin.GET("/tables/:table", h.GetAdminTableData)
 	}
 
+	agent := r.Group("/api/agent", AgentAuth(h.cfg.AgentAPIKey))
+	{
+		agent.GET("/settings", h.AgentGetSettings)
+		agent.PATCH("/settings", h.AgentUpdateSetting)
+		agent.GET("/positions", h.AgentGetPositions)
+		agent.POST("/positions/:code/sell", h.AgentSellPosition)
+		agent.POST("/positions/liquidate", h.AgentLiquidateAll)
+		agent.GET("/status", h.AgentGetStatus)
+		agent.GET("/stats", h.AgentGetStats)
+	}
+
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
