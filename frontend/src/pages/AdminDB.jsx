@@ -30,10 +30,10 @@ export default function AdminDB() {
 
   useEffect(() => {
     if (!authenticated || !selected) return
-    apiFetch(`/api/admin/tables/${selected}?page=${page}&limit=50`, { headers })
+    apiFetch(`/api/admin/tables/${selected}?page=${page}&limit=50`, { headers: { 'X-Admin-Key': adminKey } })
       .then(res => res.json())
       .then(d => { setRows(d.rows ?? []); setTotal(d.total ?? 0) })
-  }, [selected, page, authenticated])
+  }, [selected, page, authenticated, adminKey])
 
   if (!authenticated) {
     return (

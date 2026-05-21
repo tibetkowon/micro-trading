@@ -9,7 +9,7 @@ export default function Positions() {
   const [confirmSell, setConfirmSell] = useState(null)
   const [acting, setActing] = useState(false)
   const { data: apiPositions, loading } = useApi('/api/monitor/positions', { pollInterval: 3000 })
-  const positions = apiPositions?.data ?? []
+  const positions = useMemo(() => apiPositions?.data ?? [], [apiPositions])
   const priceMap = useMemo(() => new Map(positions.map(p => [p.stock_code, p.current_price])), [positions])
 
   async function forceSell(code) {

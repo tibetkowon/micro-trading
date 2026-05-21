@@ -178,7 +178,7 @@ const orders = [
 ]
 
 // ── 서비스 로그 ──
-const serviceLogs = [
+const _serviceLogs = [
   {
     id: 1,
     level: 'ERROR',
@@ -222,7 +222,7 @@ const serviceLogs = [
 ]
 
 // ── KIS API 에러 로그 ──
-const kisLogs = [
+const _kisLogs = [
   {
     id: 1,
     error_code: 'EGW00123',
