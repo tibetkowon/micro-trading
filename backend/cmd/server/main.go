@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata" // NCP Micro 이미지에 tzdata 없을 경우 Asia/Seoul 로드 실패 방지
@@ -26,9 +24,11 @@ import (
 )
 
 func main() {
+	logger.Setup()
+
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
+		slog.Error("config error", "error", err)
 		os.Exit(1)
 	}
 
@@ -37,24 +37,11 @@ func main() {
 
 	db, err := database.New(ctx, cfg.FirebaseProjectID, cfg.FirebaseCredentialsJSON)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "database error: %v\n", err)
+		slog.Error("database error", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
-	logger.Info("database initialized", map[string]any{"project": cfg.FirebaseProjectID})
-
-	logger.RegisterSink(func(e logger.Entry) {
-		source := inferLogSource(e.Message)
-		detail := ""
-		if e.Extra != nil {
-			if b, err := json.Marshal(e.Extra); err == nil {
-				detail = string(b)
-			}
-		}
-		sinkCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = db.CreateServiceLog(sinkCtx, source, string(e.Level), e.Message, detail)
-	})
+	slog.Info("database initialized", "project", cfg.FirebaseProjectID)
 
 	// Initialize KIS token manager.
 	tokenManager := kis.NewTokenManager(cfg.KISBaseURL, cfg.KISAppKey, cfg.KISAppSecret, db)
@@ -167,7 +154,7 @@ func main() {
 	go func() {
 		logger.Info("server starting", map[string]any{"port": cfg.ServerPort})
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+			slog.Error("server error", "error", err)
 			os.Exit(1)
 		}
 	}()
@@ -403,16 +390,5 @@ func runMarketScheduler(ctx context.Context,
 				logger.AutomationInfo("market scheduler: WebSocket disconnected at 16:00", nil)
 			}
 		}
-	}
-}
-
-func inferLogSource(msg string) string {
-	switch {
-	case strings.HasPrefix(msg, "engine:"):
-		return "TRADER"
-	case strings.HasPrefix(msg, "monitor"):
-		return "MONITOR"
-	default:
-		return "SYSTEM"
 	}
 }

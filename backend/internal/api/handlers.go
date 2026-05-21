@@ -184,34 +184,6 @@ func (h *Handler) DeleteOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": id})
 }
 
-// DELETE /api/logs/kis/:id
-func (h *Handler) DeleteKISLog(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-	if err := h.db.DeleteKISAPILog(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"deleted": id})
-}
-
-// DELETE /api/logs/service/:id
-func (h *Handler) DeleteServiceLog(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-	if err := h.db.DeleteServiceLog(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"deleted": id})
-}
-
 // POST /api/orders — place a buy/sell order
 // Optional: target_pct and stop_pct register a position for real-time monitoring.
 func (h *Handler) PlaceOrder(c *gin.Context) {
@@ -475,93 +447,6 @@ func (h *Handler) GetPositions(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"positions": holdings})
-}
-
-// GET /api/logs/kis?limit=N&summary=true
-// summary=true 이면 raw_response 필드를 제외한 요약 형태로 반환
-func (h *Handler) GetKISLogs(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
-	if limit <= 0 || limit > 500 {
-		limit = 100
-	}
-	summary := c.Query("summary") == "true"
-
-	logs, err := h.db.ListKISAPILogs(c.Request.Context(), limit)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if logs == nil {
-		logs = []models.KISAPILog{}
-	}
-	type kisLogView struct {
-		ID          int64  `json:"id"`
-		Endpoint    string `json:"endpoint"`
-		ErrorCode   string `json:"error_code"`
-		ErrorMsg    string `json:"error_message"`
-		RawResponse string `json:"raw_response,omitempty"`
-		CreatedAt   string `json:"created_at"`
-		Message     string `json:"message"`
-	}
-	views := make([]kisLogView, len(logs))
-	for i, l := range logs {
-		raw := ""
-		if !summary {
-			raw = l.RawResponse
-		}
-		views[i] = kisLogView{
-			ID:          l.ID,
-			Endpoint:    l.Endpoint,
-			ErrorCode:   l.ErrorCode,
-			ErrorMsg:    l.ErrorMsg,
-			RawResponse: raw,
-			CreatedAt:   l.Timestamp.In(ops.KSTLocation()).Format("2006-01-02 15:04:05"),
-			Message:     l.ErrorMsg,
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{"data": views})
-}
-
-// GET /api/logs/service?limit=100&source=ALL|TRADER|MONITOR|SYSTEM — 서비스 전체 에러 로그 조회
-func (h *Handler) GetServiceLogs(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
-	if limit <= 0 || limit > 500 {
-		limit = 100
-	}
-	source := c.DefaultQuery("source", "ALL")
-
-	logs, err := h.db.ListServiceLogs(c.Request.Context(), limit)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if logs == nil {
-		logs = []models.ServiceLog{}
-	}
-	type svcLogView struct {
-		ID        int64  `json:"id"`
-		Source    string `json:"source"`
-		Level     string `json:"level"`
-		Message   string `json:"message"`
-		Detail    string `json:"detail"`
-		CreatedAt string `json:"created_at"`
-	}
-	kst := ops.KSTLocation()
-	views := make([]svcLogView, 0, len(logs))
-	for _, l := range logs {
-		if source != "ALL" && l.Source != source {
-			continue
-		}
-		views = append(views, svcLogView{
-			ID:        l.ID,
-			Source:    l.Source,
-			Level:     l.Level,
-			Message:   l.Message,
-			Detail:    l.Detail,
-			CreatedAt: l.Timestamp.In(kst).Format("2006-01-02 15:04:05"),
-		})
-	}
-	c.JSON(http.StatusOK, gin.H{"data": views})
 }
 
 // GET /api/logs/scan?limit=20 — 스캔 로그 조회 (최신 순)

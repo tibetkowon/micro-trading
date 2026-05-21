@@ -17,7 +17,7 @@ import (
 )
 
 // Client is the KIS API HTTP client.
-// All responses are rate-limited; errors are persisted to kis_api_logs.
+// All responses are rate-limited; errors are emitted as structured logs.
 type Client struct {
 	baseURL      string
 	appKey       string
@@ -999,15 +999,11 @@ func (c *Client) setHeaders(req *http.Request, accessToken, trID string) {
 	req.Header.Set("custtype", "P")
 }
 
-// logAPIError persists a KIS API error to the database and structured logger.
+// logAPIError writes a structured KIS API error.
 // Per CLAUDE.md: Error Code + Timestamp + raw KIS API Response Message are REQUIRED.
 // requestContext should contain the query parameters or stock code context (e.g. "?FID_INPUT_ISCD=005930").
 func (c *Client) logAPIError(endpoint, errorCode, rawResponse, requestContext string) {
 	logger.KISError(endpoint, errorCode, rawResponse, requestContext)
-	ctx := context.Background()
-	if err := c.db.CreateKISAPILog(ctx, endpoint, errorCode, extractMsg(rawResponse), rawResponse, requestContext); err != nil {
-		logger.Error("failed to persist KIS API error log", map[string]any{"error": err.Error()})
-	}
 }
 
 // extractMsg attempts to pull msg1 from raw JSON for a human-readable message.

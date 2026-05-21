@@ -22,8 +22,6 @@ const (
 	colOrders      = "orders"
 	colPositions   = "monitored_positions"
 	colBalances    = "balances"
-	colServiceLogs = "service_logs"
-	colKISAPILogs  = "kis_api_logs"
 	colScanLogs    = "scan_logs"
 	colTradeRpt    = "trade_reports"
 	colDailyRpt    = "daily_reports"
@@ -551,11 +549,6 @@ func (db *DB) ListOrders(ctx context.Context, limit, offset int) ([]models.Order
 	return all[offset:], nil
 }
 
-// InsertServiceLog is an alias for CreateServiceLog for backward compatibility.
-func (db *DB) InsertServiceLog(ctx context.Context, source, level, message, detail string) error {
-	return db.CreateServiceLog(ctx, source, level, message, detail)
-}
-
 // GetLastAgentBuyOrder returns the most recent AGENT BUY FILLED order for a stock code, or nil.
 func (db *DB) GetLastAgentBuyOrder(ctx context.Context, stockCode string) (*models.Order, error) {
 	iter := db.client.Collection(colOrders).
@@ -723,109 +716,6 @@ func (db *DB) GetLatestBalance(ctx context.Context) (*models.Balance, error) {
 		return nil, err
 	}
 	return &b, nil
-}
-
-// ─── ServiceLogs ─────────────────────────────────────────────────────────────
-
-// CreateServiceLog persists a service-level log entry.
-func (db *DB) CreateServiceLog(ctx context.Context, source, level, message, detail string) error {
-	id := newID()
-	now := time.Now().UTC()
-	log := models.ServiceLog{
-		ID:        id,
-		Source:    source,
-		Level:     level,
-		Message:   message,
-		Detail:    detail,
-		Timestamp: now,
-		ExpireAt:  now.Add(14 * 24 * time.Hour),
-	}
-	_, err := db.client.Collection(colServiceLogs).Doc(strconv.FormatInt(id, 10)).Set(ctx, log)
-	return err
-}
-
-// ListServiceLogs returns the most recent service logs.
-func (db *DB) ListServiceLogs(ctx context.Context, limit int) ([]models.ServiceLog, error) {
-	q := db.client.Collection(colServiceLogs).OrderBy("timestamp", firestore.Desc)
-	if limit > 0 {
-		q = q.Limit(limit)
-	}
-	iter := q.Documents(ctx)
-	defer iter.Stop()
-	var logs []models.ServiceLog
-	for {
-		snap, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		var l models.ServiceLog
-		if err := snap.DataTo(&l); err != nil {
-			continue
-		}
-		logs = append(logs, l)
-	}
-	return logs, nil
-}
-
-// DeleteServiceLog removes a service log by ID.
-func (db *DB) DeleteServiceLog(ctx context.Context, id int64) error {
-	_, err := db.client.Collection(colServiceLogs).Doc(strconv.FormatInt(id, 10)).Delete(ctx)
-	return err
-}
-
-// ─── KISAPILogs ───────────────────────────────────────────────────────────────
-
-// CreateKISAPILog persists a KIS API error log entry.
-func (db *DB) CreateKISAPILog(ctx context.Context, endpoint, errCode, errMsg, raw, requestContext string) error {
-	id := newID()
-	now := time.Now().UTC()
-	log := models.KISAPILog{
-		ID:             id,
-		Endpoint:       endpoint,
-		ErrorCode:      errCode,
-		ErrorMsg:       errMsg,
-		RawResponse:    raw,
-		RequestContext: requestContext,
-		Timestamp:      now,
-		ExpireAt:       now.Add(3 * 24 * time.Hour),
-	}
-	_, err := db.client.Collection(colKISAPILogs).Doc(strconv.FormatInt(id, 10)).Set(ctx, log)
-	return err
-}
-
-// ListKISAPILogs returns the most recent KIS API error logs.
-func (db *DB) ListKISAPILogs(ctx context.Context, limit int) ([]models.KISAPILog, error) {
-	q := db.client.Collection(colKISAPILogs).OrderBy("timestamp", firestore.Desc)
-	if limit > 0 {
-		q = q.Limit(limit)
-	}
-	iter := q.Documents(ctx)
-	defer iter.Stop()
-	var logs []models.KISAPILog
-	for {
-		snap, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		var l models.KISAPILog
-		if err := snap.DataTo(&l); err != nil {
-			continue
-		}
-		logs = append(logs, l)
-	}
-	return logs, nil
-}
-
-// DeleteKISAPILog removes a KIS API log by ID.
-func (db *DB) DeleteKISAPILog(ctx context.Context, id int64) error {
-	_, err := db.client.Collection(colKISAPILogs).Doc(strconv.FormatInt(id, 10)).Delete(ctx)
-	return err
 }
 
 // ─── ScanLogs ─────────────────────────────────────────────────────────────────

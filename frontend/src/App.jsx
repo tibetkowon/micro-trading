@@ -6,7 +6,6 @@ import Orders from './pages/Orders'
 import TradeReports from './pages/TradeReports'
 import DailyReports from './pages/DailyReports'
 import Settings from './pages/Settings'
-import Logs from './pages/Logs'
 
 const SCREEN_TITLES = {
   '/':               '대시보드',
@@ -15,7 +14,6 @@ const SCREEN_TITLES = {
   '/reports/trades': '리포트 › 거래별',
   '/reports/daily':  '리포트 › 일별',
   '/settings':       '설정',
-  '/logs':           '로그',
 }
 
 const SIDEBAR_ITEMS = [
@@ -29,7 +27,6 @@ const SIDEBAR_REPORT_ITEMS = [
 ]
 const SIDEBAR_BOTTOM_ITEMS = [
   { path: '/settings', icon: '◎', label: '설정' },
-  { path: '/logs',     icon: '▤', label: '로그' },
 ]
 
 const BOTTOM_TABS = [
@@ -43,10 +40,9 @@ const BOTTOM_TABS = [
 const DRAWER_ITEMS = [
   { path: '/reports/trades', icon: '▦', label: '리포트 — 거래별' },
   { path: '/reports/daily',  icon: '▦', label: '리포트 — 일별' },
-  { path: '/logs',           icon: '▤', label: '로그' },
 ]
 
-const MORE_PATHS = ['/reports/trades', '/reports/daily', '/logs']
+const MORE_PATHS = ['/reports/trades', '/reports/daily']
 
 export default function App() {
   const navigate = useNavigate()
@@ -179,7 +175,6 @@ export default function App() {
             <Route path="/reports/trades" element={<TradeReports />} />
             <Route path="/reports/daily" element={<DailyReports />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="/logs" element={<Logs />} />
             <Route path="*" element={<Dashboard />} />
           </Routes>
         </div>

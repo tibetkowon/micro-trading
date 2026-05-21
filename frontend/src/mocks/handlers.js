@@ -405,16 +405,6 @@ export const handlers = [
   http.post('/api/orders/:id/cancel', () => HttpResponse.json({ message: '취소됨' })),
   http.delete('/api/orders/:id', () => HttpResponse.json({ message: '삭제됨' })),
 
-  http.get('/api/logs/service', ({ request }) => {
-    const url = new URL(request.url)
-    const source = url.searchParams.get('source') || 'ALL'
-    const filtered = source === 'ALL' ? serviceLogs : serviceLogs.filter(l => l.source === source)
-    return HttpResponse.json({ logs: filtered })
-  }),
-
-  http.get('/api/logs/kis', () => HttpResponse.json({ logs: kisLogs })),
-  http.delete('/api/logs/kis/:id', () => HttpResponse.json({ message: '삭제됨' })),
-
   http.get('/api/logs/ranking', () => HttpResponse.json({ logs: rankingLogs })),
   http.get('/api/logs/selection', () => HttpResponse.json({ logs: selectionLogs })),
 

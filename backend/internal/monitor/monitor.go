@@ -391,7 +391,6 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	if err != nil {
 		logger.Error("auto-sell: GetHoldings failed",
 			map[string]any{"stock_code": stockCode, "error": err.Error()})
-		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "자동 매도 실패: GetHoldings 오류", fmt.Sprintf("stock_code=%s error=%s", stockCode, err.Error()))
 		return -1 // 잔고 확인 불가 — 안전을 위해 Remove 차단
 	}
 
@@ -416,7 +415,6 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	if err != nil {
 		logger.Error("auto-sell: PlaceSellOrder failed",
 			map[string]any{"stock_code": stockCode, "qty": qty, "error": err.Error()})
-		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "자동 매도 실패: 주문 오류 — 포지션 모니터링 유지", fmt.Sprintf("stock_code=%s qty=%d error=%s", stockCode, qty, err.Error()))
 		return -1 // 주문 실패 — 실제 잔고 있음, Remove 차단
 	}
 
@@ -755,7 +753,6 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 			// 매도 주문 실패 시 Remove 하지 않음 — 실제 잔고가 남아있으므로 모니터링 유지
 			logger.Error("liquidate: sell order failed — position retained in monitor",
 				map[string]any{"stock_code": code, "qty": qty, "error": err.Error()})
-			m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "장마감 청산 실패: 잔고 남아있음", fmt.Sprintf("stock_code=%s qty=%d error=%s", code, qty, err.Error()))
 			continue
 		}
 
