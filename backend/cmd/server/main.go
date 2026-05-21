@@ -13,6 +13,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/api"
 	"github.com/micro-trading-for-agent/backend/internal/config"
 	"github.com/micro-trading-for-agent/backend/internal/database"
+	"github.com/micro-trading-for-agent/backend/internal/discord"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
@@ -31,6 +32,14 @@ func main() {
 		slog.Error("config error", "error", err)
 		os.Exit(1)
 	}
+	discordClient := discord.New(cfg.DiscordWebhookURL)
+	logger.RegisterAlertHook(func(level, message, detail string) {
+		if level == "WARN" || level == "WARNING" {
+			discordClient.AlertWarn(message, detail)
+			return
+		}
+		discordClient.AlertError(message, detail)
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -69,6 +78,7 @@ func main() {
 		tokenManager,
 		db,
 	)
+	kisClient.ConfigureDiscord(discordClient, cfg.DiscordKISFailThreshold)
 
 	// --- KIS WebSocket client (optional — requires credentials) ---
 	var wsClient *kis.WebSocketClient
@@ -82,6 +92,7 @@ func main() {
 
 	// --- Position monitor ---
 	mon := monitor.New(db, kisClient, wsClient, mstStore)
+	mon.SetDiscord(discordClient)
 
 	// --- Trading engine: created before LoadFromDB to wire soldCh ---
 	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, mstStore)
@@ -133,6 +144,7 @@ func main() {
 	if wsClient != nil {
 		go mon.StartPriceConsumer(ctx)
 	}
+	go runPositionSnapshotScheduler(ctx, mon, discordClient, cfg.DiscordPositionSnapshotM)
 
 	handler := api.NewHandler(db, kisClient, tokenManager, cfg, mon, wsClient)
 	handler.SetEngine(tradingEngine)
@@ -185,6 +197,48 @@ func parseHHMM(s string, def int) int {
 		return def
 	}
 	return t.Hour()*100 + t.Minute()
+}
+
+func runPositionSnapshotScheduler(ctx context.Context, mon *monitor.Monitor, dc *discord.Client, intervalMin int) {
+	if dc == nil || !dc.Enabled() {
+		return
+	}
+	if intervalMin <= 0 {
+		intervalMin = 30
+	}
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	ticker := time.NewTicker(time.Duration(intervalMin) * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now().In(kst)
+			h, m := now.Hour(), now.Minute()
+			if h < 9 || (h == 15 && m > 30) || h > 15 {
+				continue
+			}
+			positions := mon.GetPositions()
+			infos := make([]discord.PositionInfo, 0, len(positions))
+			for _, p := range positions {
+				profitPct := 0.0
+				if p.FilledPrice > 0 {
+					profitPct = (p.CurrentPrice - p.FilledPrice) / p.FilledPrice * 100
+				}
+				infos = append(infos, discord.PositionInfo{
+					Code:         p.StockCode,
+					Name:         p.StockName,
+					CurrentPrice: int(p.CurrentPrice),
+					BuyPrice:     int(p.FilledPrice),
+					TargetPrice:  int(p.TargetPrice),
+					StopPrice:    int(p.StopPrice),
+					ProfitPct:    profitPct,
+				})
+			}
+			dc.PositionSnapshot(infos)
+		}
+	}
 }
 
 // runMarketScheduler manages WebSocket lifecycle and trading engine based on KST market hours:

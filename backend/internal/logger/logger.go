@@ -1,9 +1,19 @@
 package logger
 
 import (
+	"context"
 	"log/slog"
 	"os"
+	"strings"
 )
+
+type AlertHook func(level, message, detail string)
+
+var alertHook AlertHook
+
+func RegisterAlertHook(h AlertHook) {
+	alertHook = h
+}
 
 // Setup configures the process-wide logger for GCP Cloud Logging compatible JSON.
 func Setup() {
@@ -22,7 +32,26 @@ func Setup() {
 			return a
 		},
 	})
-	slog.SetDefault(slog.New(h))
+	slog.SetDefault(slog.New(hookHandler{Handler: h}))
+}
+
+type hookHandler struct {
+	slog.Handler
+}
+
+func (h hookHandler) Handle(ctx context.Context, r slog.Record) error {
+	if alertHook != nil && r.Level >= slog.LevelWarn && !strings.HasPrefix(r.Message, "discord webhook") {
+		detail := ""
+		r.Attrs(func(a slog.Attr) bool {
+			if detail != "" {
+				detail += " "
+			}
+			detail += a.Key + "=" + a.Value.String()
+			return true
+		})
+		go alertHook(r.Level.String(), r.Message, detail)
+	}
+	return h.Handler.Handle(ctx, r)
 }
 
 func toGCPSeverity(l slog.Level) string {

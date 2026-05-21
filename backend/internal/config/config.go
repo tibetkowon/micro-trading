@@ -21,6 +21,10 @@ type Config struct {
 	SQLitePath              string // SQLITE_PATH env var
 	AdminAPIKey             string // ADMIN_API_KEY env var
 
+	DiscordWebhookURL        string // DISCORD_WEBHOOK_URL
+	DiscordKISFailThreshold  int    // DISCORD_KIS_FAIL_THRESHOLD
+	DiscordPositionSnapshotM int    // DISCORD_POSITION_SNAPSHOT_MIN
+
 	FrontendOrigin string // Firebase Hosting origin for CORS (e.g. https://xxx.web.app)
 
 	ServerPort   string
@@ -44,6 +48,10 @@ func Load() (*Config, error) {
 		FirebaseCredentialsJSON: getEnv("FIREBASE_CREDENTIALS_JSON", ""),
 		SQLitePath:              getEnv("SQLITE_PATH", "/data/trading.db"),
 		AdminAPIKey:             getEnv("ADMIN_API_KEY", ""),
+
+		DiscordWebhookURL:        getEnv("DISCORD_WEBHOOK_URL", ""),
+		DiscordKISFailThreshold:  getEnvInt("DISCORD_KIS_FAIL_THRESHOLD", 5),
+		DiscordPositionSnapshotM: getEnvInt("DISCORD_POSITION_SNAPSHOT_MIN", 30),
 
 		FrontendOrigin: getEnv("FRONTEND_ORIGIN", ""),
 

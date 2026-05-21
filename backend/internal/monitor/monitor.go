@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
+	"github.com/micro-trading-for-agent/backend/internal/discord"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
@@ -78,6 +79,7 @@ type Monitor struct {
 	wsClient  *kis.WebSocketClient
 	db        *database.DB
 	mstStore  *stockmaster.Store
+	discord   *discord.Client
 
 	// 횡보 감지
 	stagnMu                       sync.Mutex
@@ -93,6 +95,12 @@ type Monitor struct {
 	partialTPRaiseStop bool    // 부분 익절 후 손절가를 매입가(BEP)로 올리기
 
 	macdSellMinLossPct float64
+}
+
+func (m *Monitor) SetDiscord(dc *discord.Client) {
+	m.mu.Lock()
+	m.discord = dc
+	m.mu.Unlock()
 }
 
 // New creates a Monitor.
@@ -186,6 +194,9 @@ func (m *Monitor) Register(ctx context.Context, pos MonitoredEntry) error {
 			"target_price": pos.TargetPrice,
 			"stop_price":   pos.StopPrice,
 		})
+	if m.discord != nil {
+		m.discord.TradeBuy(pos.StockCode, pos.StockName, int(pos.FilledPrice), pos.Qty, "position registered")
+	}
 	return nil
 }
 
@@ -420,6 +431,13 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 
 	logger.Info("auto-sell: sell order placed",
 		map[string]any{"stock_code": stockCode, "qty": qty, "filled_price": pos.FilledPrice, "reason": reason})
+	if m.discord != nil {
+		profitPct := 0.0
+		if pos.FilledPrice > 0 {
+			profitPct = (pos.CurrentPrice - pos.FilledPrice) / pos.FilledPrice * 100
+		}
+		m.discord.TradeSell(stockCode, pos.StockName, int(pos.FilledPrice), int(pos.CurrentPrice), qty, reason, profitPct)
+	}
 
 	kisOrderID := ""
 	if resp != nil {
@@ -758,6 +776,13 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 
 		logger.Info("liquidate: sell order placed",
 			map[string]any{"stock_code": code, "qty": qty})
+		if m.discord != nil {
+			profitPct := 0.0
+			if pos.FilledPrice > 0 {
+				profitPct = (currentPrice - pos.FilledPrice) / pos.FilledPrice * 100
+			}
+			m.discord.TradeSell(code, pos.StockName, int(pos.FilledPrice), int(currentPrice), qty, "일일 자동 청산", profitPct)
+		}
 		kisOrderID := ""
 		if liqResp != nil {
 			kisOrderID = liqResp.KISOrderID
@@ -817,6 +842,17 @@ func (m *Monitor) List() []models.MonitoredPosition {
 			RemainingQty: pos.Qty,
 			CreatedAt:    pos.CreatedAt,
 		})
+	}
+	return result
+}
+
+func (m *Monitor) GetPositions() []*MonitoredEntry {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]*MonitoredEntry, 0, len(m.positions))
+	for _, e := range m.positions {
+		cp := *e
+		result = append(result, &cp)
 	}
 	return result
 }
