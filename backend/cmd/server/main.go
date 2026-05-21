@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata" // NCP Micro 이미지에 tzdata 없을 경우 Asia/Seoul 로드 실패 방지
@@ -21,40 +19,38 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/ops"
 	"github.com/micro-trading-for-agent/backend/internal/report"
 	"github.com/micro-trading-for-agent/backend/internal/simulation"
+	"github.com/micro-trading-for-agent/backend/internal/slack"
 	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
 	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
 
 func main() {
+	logger.Setup()
+
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
+		slog.Error("config error", "error", err)
 		os.Exit(1)
 	}
+	slackClient := slack.New(cfg.SlackWebhookURL)
+	logger.RegisterAlertHook(func(level, message, detail string) {
+		if level == "WARN" || level == "WARNING" {
+			slackClient.AlertWarn(message, detail)
+			return
+		}
+		slackClient.AlertError(message, detail)
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	db, err := database.New(ctx, cfg.FirebaseProjectID, cfg.FirebaseCredentialsJSON)
+	db, err := database.New(cfg.SQLitePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "database error: %v\n", err)
+		slog.Error("database error", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
-	logger.Info("database initialized", map[string]any{"project": cfg.FirebaseProjectID})
-
-	logger.RegisterSink(func(e logger.Entry) {
-		source := inferLogSource(e.Message)
-		detail := ""
-		if e.Extra != nil {
-			if b, err := json.Marshal(e.Extra); err == nil {
-				detail = string(b)
-			}
-		}
-		sinkCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = db.CreateServiceLog(sinkCtx, source, string(e.Level), e.Message, detail)
-	})
+	slog.Info("database initialized", "path", cfg.SQLitePath)
 
 	// Initialize KIS token manager.
 	tokenManager := kis.NewTokenManager(cfg.KISBaseURL, cfg.KISAppKey, cfg.KISAppSecret, db)
@@ -82,6 +78,7 @@ func main() {
 		tokenManager,
 		db,
 	)
+	kisClient.ConfigureSlack(slackClient, cfg.SlackKISFailThreshold)
 
 	// --- KIS WebSocket client (optional — requires credentials) ---
 	var wsClient *kis.WebSocketClient
@@ -91,10 +88,11 @@ func main() {
 	}
 
 	// --- Stock master store — monitor보다 먼저 생성.
-	mstStore := stockmaster.NewStore(db.FirestoreClient())
+	mstStore := stockmaster.NewStore(db.SQLDB())
 
 	// --- Position monitor ---
 	mon := monitor.New(db, kisClient, wsClient, mstStore)
+	mon.SetSlack(slackClient)
 
 	// --- Trading engine: created before LoadFromDB to wire soldCh ---
 	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, mstStore)
@@ -146,6 +144,7 @@ func main() {
 	if wsClient != nil {
 		go mon.StartPriceConsumer(ctx)
 	}
+	go runPositionSnapshotScheduler(ctx, mon, slackClient, cfg.SlackPositionSnapshotM)
 
 	handler := api.NewHandler(db, kisClient, tokenManager, cfg, mon, wsClient)
 	handler.SetEngine(tradingEngine)
@@ -167,7 +166,7 @@ func main() {
 	go func() {
 		logger.Info("server starting", map[string]any{"port": cfg.ServerPort})
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+			slog.Error("server error", "error", err)
 			os.Exit(1)
 		}
 	}()
@@ -200,6 +199,48 @@ func parseHHMM(s string, def int) int {
 	return t.Hour()*100 + t.Minute()
 }
 
+func runPositionSnapshotScheduler(ctx context.Context, mon *monitor.Monitor, sc *slack.Client, intervalMin int) {
+	if sc == nil || !sc.Enabled() {
+		return
+	}
+	if intervalMin <= 0 {
+		intervalMin = 30
+	}
+	kst, _ := time.LoadLocation("Asia/Seoul")
+	ticker := time.NewTicker(time.Duration(intervalMin) * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now().In(kst)
+			h, m := now.Hour(), now.Minute()
+			if h < 9 || (h == 15 && m > 30) || h > 15 {
+				continue
+			}
+			positions := mon.GetPositions()
+			infos := make([]slack.PositionInfo, 0, len(positions))
+			for _, p := range positions {
+				profitPct := 0.0
+				if p.FilledPrice > 0 {
+					profitPct = (p.CurrentPrice - p.FilledPrice) / p.FilledPrice * 100
+				}
+				infos = append(infos, slack.PositionInfo{
+					Code:         p.StockCode,
+					Name:         p.StockName,
+					CurrentPrice: int(p.CurrentPrice),
+					BuyPrice:     int(p.FilledPrice),
+					TargetPrice:  int(p.TargetPrice),
+					StopPrice:    int(p.StopPrice),
+					ProfitPct:    profitPct,
+				})
+			}
+			sc.PositionSnapshot(infos)
+		}
+	}
+}
+
 // runMarketScheduler manages WebSocket lifecycle and trading engine based on KST market hours:
 //
 //	08:50 → issue fresh token → fetch approval_key → connect → subscribe
@@ -224,6 +265,7 @@ func runMarketScheduler(ctx context.Context,
 	var mstDownloaded bool
 	var reportGenerated bool
 	var simulationStarted bool
+	var purgeDone bool
 	var stopEngine func()
 	var stopIndicator context.CancelFunc
 
@@ -392,6 +434,14 @@ func runMarketScheduler(ctx context.Context,
 					logger.Info("market scheduler: daily simulation completed", map[string]any{"date": date})
 				}()
 
+			case !purgeDone && hhmm >= 1605:
+				purgeDone = true
+				go func() {
+					if err := db.PurgeOldRecords(context.Background()); err != nil {
+						slog.Error("purge failed", "error", err)
+					}
+				}()
+
 			case hhmm == 1600 && wsRunning:
 				// 16:00 — disconnect
 				wsClient.Disconnect()
@@ -400,19 +450,9 @@ func runMarketScheduler(ctx context.Context,
 				engineRunning = false
 				reportGenerated = false
 				simulationStarted = false
+				purgeDone = false
 				logger.AutomationInfo("market scheduler: WebSocket disconnected at 16:00", nil)
 			}
 		}
-	}
-}
-
-func inferLogSource(msg string) string {
-	switch {
-	case strings.HasPrefix(msg, "engine:"):
-		return "TRADER"
-	case strings.HasPrefix(msg, "monitor"):
-		return "MONITOR"
-	default:
-		return "SYSTEM"
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 	"github.com/micro-trading-for-agent/backend/internal/ops"
+	"github.com/micro-trading-for-agent/backend/internal/slack"
 	"github.com/micro-trading-for-agent/backend/internal/stockmaster"
 )
 
@@ -78,6 +79,7 @@ type Monitor struct {
 	wsClient  *kis.WebSocketClient
 	db        *database.DB
 	mstStore  *stockmaster.Store
+	slack     *slack.Client
 
 	// 횡보 감지
 	stagnMu                       sync.Mutex
@@ -93,6 +95,12 @@ type Monitor struct {
 	partialTPRaiseStop bool    // 부분 익절 후 손절가를 매입가(BEP)로 올리기
 
 	macdSellMinLossPct float64
+}
+
+func (m *Monitor) SetSlack(sc *slack.Client) {
+	m.mu.Lock()
+	m.slack = sc
+	m.mu.Unlock()
 }
 
 // New creates a Monitor.
@@ -186,6 +194,9 @@ func (m *Monitor) Register(ctx context.Context, pos MonitoredEntry) error {
 			"target_price": pos.TargetPrice,
 			"stop_price":   pos.StopPrice,
 		})
+	if m.slack != nil {
+		m.slack.TradeBuy(pos.StockCode, pos.StockName, int(pos.FilledPrice), pos.Qty, "position registered")
+	}
 	return nil
 }
 
@@ -391,7 +402,6 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	if err != nil {
 		logger.Error("auto-sell: GetHoldings failed",
 			map[string]any{"stock_code": stockCode, "error": err.Error()})
-		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "자동 매도 실패: GetHoldings 오류", fmt.Sprintf("stock_code=%s error=%s", stockCode, err.Error()))
 		return -1 // 잔고 확인 불가 — 안전을 위해 Remove 차단
 	}
 
@@ -416,12 +426,18 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry, reason stri
 	if err != nil {
 		logger.Error("auto-sell: PlaceSellOrder failed",
 			map[string]any{"stock_code": stockCode, "qty": qty, "error": err.Error()})
-		m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "자동 매도 실패: 주문 오류 — 포지션 모니터링 유지", fmt.Sprintf("stock_code=%s qty=%d error=%s", stockCode, qty, err.Error()))
 		return -1 // 주문 실패 — 실제 잔고 있음, Remove 차단
 	}
 
 	logger.Info("auto-sell: sell order placed",
 		map[string]any{"stock_code": stockCode, "qty": qty, "filled_price": pos.FilledPrice, "reason": reason})
+	if m.slack != nil {
+		profitPct := 0.0
+		if pos.FilledPrice > 0 {
+			profitPct = (pos.CurrentPrice - pos.FilledPrice) / pos.FilledPrice * 100
+		}
+		m.slack.TradeSell(stockCode, pos.StockName, int(pos.FilledPrice), int(pos.CurrentPrice), qty, reason, profitPct)
+	}
 
 	kisOrderID := ""
 	if resp != nil {
@@ -755,12 +771,18 @@ func (m *Monitor) LiquidateAll(ctx context.Context, market ...string) {
 			// 매도 주문 실패 시 Remove 하지 않음 — 실제 잔고가 남아있으므로 모니터링 유지
 			logger.Error("liquidate: sell order failed — position retained in monitor",
 				map[string]any{"stock_code": code, "qty": qty, "error": err.Error()})
-			m.db.InsertServiceLog(ctx, "MONITOR", "ERROR", "장마감 청산 실패: 잔고 남아있음", fmt.Sprintf("stock_code=%s qty=%d error=%s", code, qty, err.Error()))
 			continue
 		}
 
 		logger.Info("liquidate: sell order placed",
 			map[string]any{"stock_code": code, "qty": qty})
+		if m.slack != nil {
+			profitPct := 0.0
+			if pos.FilledPrice > 0 {
+				profitPct = (currentPrice - pos.FilledPrice) / pos.FilledPrice * 100
+			}
+			m.slack.TradeSell(code, pos.StockName, int(pos.FilledPrice), int(currentPrice), qty, "일일 자동 청산", profitPct)
+		}
 		kisOrderID := ""
 		if liqResp != nil {
 			kisOrderID = liqResp.KISOrderID
@@ -820,6 +842,17 @@ func (m *Monitor) List() []models.MonitoredPosition {
 			RemainingQty: pos.Qty,
 			CreatedAt:    pos.CreatedAt,
 		})
+	}
+	return result
+}
+
+func (m *Monitor) GetPositions() []*MonitoredEntry {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]*MonitoredEntry, 0, len(m.positions))
+	for _, e := range m.positions {
+		cp := *e
+		result = append(result, &cp)
 	}
 	return result
 }

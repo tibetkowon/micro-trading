@@ -159,6 +159,6 @@ func StartOrderSyncScheduler(ctx context.Context, client *kis.Client, db *databa
 }
 
 // GetLocalOrderHistory returns paginated orders from the local database.
-func GetLocalOrderHistory(ctx context.Context, db *database.DB, limit, offset int) ([]models.Order, error) {
-	return db.ListOrders(ctx, limit, offset)
+func GetLocalOrderHistory(ctx context.Context, db *database.DB, since time.Time, limit, offset int) ([]models.Order, error) {
+	return db.ListOrdersSince(ctx, since, limit, offset)
 }

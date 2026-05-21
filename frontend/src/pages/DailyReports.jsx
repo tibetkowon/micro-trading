@@ -1,26 +1,25 @@
 import { useState, useEffect } from 'react'
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore'
 import { fmtPct, fmtSigned, fmt } from '../components/shared'
-import { db } from '../lib/firebase'
+import { apiFetch } from '../utils/api'
 
 const parseSafe = (s) => { try { return JSON.parse(s || 'null') } catch { return null } }
 const apiBase = import.meta.env.VITE_API_BASE_URL || ''
 const todayKST = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
 function transformReport(d) {
-  const r = { _docId: d.id, ...d.data() }
-  const totalTrades = r.total_trades || 0
-  const winningTrades = r.winning_trades || 0
+  const r = d || {}
+  const totalTrades = r.trade_count || 0
+  const winningTrades = r.wins || 0
   return {
-    _docId: r._docId,
+    _docId: r.date,
     date: r.date,
     trade_count: totalTrades,
     wins: winningTrades,
-    losses: r.losing_trades || 0,
-    pnl: r.total_profit_amount || 0,
-    pnl_pct: r.avg_profit_pct || 0,
+    losses: r.losses || 0,
+    pnl: r.pnl || 0,
+    pnl_pct: r.pnl_pct || 0,
     win_rate: totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0,
-    trades: parseSafe(r.trade_summary) || [],
+    trades: parseSafe(r.report_summary) || [],
     best_trade: parseSafe(r.best_trade),
     worst_trade: parseSafe(r.worst_trade),
   }
@@ -164,9 +163,9 @@ export default function DailyReports() {
   const [activeTab, setActiveTab] = useState('daily')
 
   useEffect(() => {
-    const q = query(collection(db, 'daily_reports'), orderBy('date', 'desc'), limit(50))
-    getDocs(q)
-      .then(snap => setReports(snap.docs.map(d => transformReport(d))))
+    apiFetch('/api/reports/daily?limit=50')
+      .then(res => res.json())
+      .then(data => setReports((data.data || []).map(d => transformReport(d))))
       .finally(() => setLoading(false))
   }, [])
 

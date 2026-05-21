@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore'
 import { fmt, fmtPct, fmtSigned, Badge } from '../components/shared'
-import { db } from '../lib/firebase'
+import { apiFetch } from '../utils/api'
 
 const SELL_REASON_COLOR = {
   '목표가 도달': 'green',
@@ -16,43 +15,12 @@ function SellReasonBadge({ reason }) {
   return <Badge color={SELL_REASON_COLOR[reason] || 'gray'}>{reason || '—'}</Badge>
 }
 
-function fmtTime(ts) {
-  if (!ts) return '—'
-  const d = ts.toDate ? ts.toDate() : new Date(ts)
-  return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false })
-}
-
-function calcHoldPeriod(start, end) {
-  if (!start || !end) return '—'
-  const s = start.toDate ? start.toDate() : new Date(start)
-  const e = end.toDate ? end.toDate() : new Date(end)
-  const mins = Math.round((e - s) / 60000)
-  if (mins < 60) return `${mins}m`
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`
-}
-
 function groupByDate(reports) {
-  const groups = {}
-  for (const r of reports) {
-    const date = r.date || 'unknown'
-    if (!groups[date]) groups[date] = { date, day_pnl: 0, trades: [] }
-    groups[date].day_pnl += r.profit_amount || 0
-    groups[date].trades.push({
-      id: r._docId,
-      stock_code: r.stock_code,
-      stock_name: r.stock_name,
-      buy_price: r.buy_price,
-      sell_price: r.sell_price,
-      pnl_amount: r.profit_amount,
-      pnl_pct: r.profit_pct,
-      sell_reason: r.sell_reason,
-      buy_time: fmtTime(r.created_at),
-      sell_time: fmtTime(r.sold_at),
-      hold_period: calcHoldPeriod(r.created_at, r.sold_at),
-      indicators: (() => { try { return JSON.parse(r.buy_indicators || '{}') } catch { return {} } })(),
-    })
-  }
-  return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date))
+  return reports.map(g => ({
+    date: g.date,
+    day_pnl: g.day_pnl,
+    trades: g.trades || [],
+  }))
 }
 
 const PAGE_SIZE = 20
@@ -66,15 +34,15 @@ export default function TradeReports() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const q = query(collection(db, 'trade_reports'), orderBy('created_at', 'desc'), limit(500))
-    getDocs(q)
-      .then(snap => setAllReports(snap.docs.map(d => ({ _docId: d.id, ...d.data() }))))
+    apiFetch('/api/reports/trades?limit=100')
+      .then(res => res.json())
+      .then(data => setAllReports(data.data || []))
       .finally(() => setLoading(false))
   }, [])
 
   const filtered = allReports.filter(r => {
     if (dateFilter && r.date !== dateFilter) return false
-    if (codeFilter && !r.stock_code?.includes(codeFilter.toUpperCase())) return false
+    if (codeFilter && !(r.trades || []).some(t => t.stock_code?.includes(codeFilter.toUpperCase()))) return false
     return true
   })
 

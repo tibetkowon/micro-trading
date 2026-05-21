@@ -178,7 +178,7 @@ const orders = [
 ]
 
 // ── 서비스 로그 ──
-const serviceLogs = [
+const _serviceLogs = [
   {
     id: 1,
     level: 'ERROR',
@@ -222,7 +222,7 @@ const serviceLogs = [
 ]
 
 // ── KIS API 에러 로그 ──
-const kisLogs = [
+const _kisLogs = [
   {
     id: 1,
     error_code: 'EGW00123',
@@ -404,16 +404,6 @@ export const handlers = [
   http.get('/api/orders', () => HttpResponse.json({ orders })),
   http.post('/api/orders/:id/cancel', () => HttpResponse.json({ message: '취소됨' })),
   http.delete('/api/orders/:id', () => HttpResponse.json({ message: '삭제됨' })),
-
-  http.get('/api/logs/service', ({ request }) => {
-    const url = new URL(request.url)
-    const source = url.searchParams.get('source') || 'ALL'
-    const filtered = source === 'ALL' ? serviceLogs : serviceLogs.filter(l => l.source === source)
-    return HttpResponse.json({ logs: filtered })
-  }),
-
-  http.get('/api/logs/kis', () => HttpResponse.json({ logs: kisLogs })),
-  http.delete('/api/logs/kis/:id', () => HttpResponse.json({ message: '삭제됨' })),
 
   http.get('/api/logs/ranking', () => HttpResponse.json({ logs: rankingLogs })),
   http.get('/api/logs/selection', () => HttpResponse.json({ logs: selectionLogs })),

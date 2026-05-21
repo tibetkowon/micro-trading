@@ -64,6 +64,33 @@ func (h *Handler) SetEngine(e *trader.Engine) {
 	h.engine = e
 }
 
+func (h *Handler) GetAdminTables(c *gin.Context) {
+	tables := []string{
+		"orders", "monitored_positions", "scan_logs",
+		"trade_reports", "daily_reports", "simulation_results",
+		"balances", "settings", "tokens",
+	}
+	c.JSON(http.StatusOK, gin.H{"tables": tables})
+}
+
+func (h *Handler) GetAdminTableData(c *gin.Context) {
+	table := c.Param("table")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit > 200 {
+		limit = 200
+	}
+	rows, total, err := h.db.ListTable(c.Request.Context(), table, page, limit)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"table": table, "page": page, "limit": limit,
+		"total": total, "rows": rows,
+	})
+}
+
 // GET /api/balance
 func (h *Handler) GetBalance(c *gin.Context) {
 	bal, err := ops.GetAccountBalance(c.Request.Context(), h.client, h.db)
@@ -109,26 +136,28 @@ func (h *Handler) GetBalance(c *gin.Context) {
 func (h *Handler) GetOrders(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	if limit <= 0 || limit > 200 {
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "1"))
+	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
+	if days < 1 || days > 90 {
+		days = 1
+	}
+	since := time.Now().AddDate(0, 0, -(days - 1))
+	since = time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, since.Location())
 
 	var syncError string
 	if c.Query("sync") == "true" {
-		days, _ := strconv.Atoi(c.DefaultQuery("days", "1"))
-		if days < 1 || days > 90 {
-			days = 1
-		}
-		endDate := time.Now().Format("20060102")
-		startDate := time.Now().AddDate(0, 0, -(days - 1)).Format("20060102")
 		syncCtx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 		defer cancel()
+		endDate := time.Now().Format("20060102")
+		startDate := since.Format("20060102")
 		if _, err := ops.GetOrderHistory(syncCtx, h.client, h.db, startDate, endDate); err != nil {
 			syncError = err.Error()
 		}
 	}
 
-	orders, err := ops.GetLocalOrderHistory(c.Request.Context(), h.db, limit, offset)
+	orders, err := ops.GetLocalOrderHistory(c.Request.Context(), h.db, since, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -136,7 +165,7 @@ func (h *Handler) GetOrders(c *gin.Context) {
 	if orders == nil {
 		orders = []models.Order{}
 	}
-	total, _ := h.db.CountOrders(c.Request.Context())
+	total, _ := h.db.CountOrdersSince(c.Request.Context(), since)
 	resp := gin.H{"orders": orders, "data": orders, "total": total, "limit": limit, "offset": offset}
 	if syncError != "" {
 		resp["sync_error"] = syncError
@@ -178,34 +207,6 @@ func (h *Handler) DeleteOrder(c *gin.Context) {
 		return
 	}
 	if err := h.db.DeleteOrder(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"deleted": id})
-}
-
-// DELETE /api/logs/kis/:id
-func (h *Handler) DeleteKISLog(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-	if err := h.db.DeleteKISAPILog(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"deleted": id})
-}
-
-// DELETE /api/logs/service/:id
-func (h *Handler) DeleteServiceLog(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-	if err := h.db.DeleteServiceLog(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -475,93 +476,6 @@ func (h *Handler) GetPositions(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"positions": holdings})
-}
-
-// GET /api/logs/kis?limit=N&summary=true
-// summary=true 이면 raw_response 필드를 제외한 요약 형태로 반환
-func (h *Handler) GetKISLogs(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
-	if limit <= 0 || limit > 500 {
-		limit = 100
-	}
-	summary := c.Query("summary") == "true"
-
-	logs, err := h.db.ListKISAPILogs(c.Request.Context(), limit)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if logs == nil {
-		logs = []models.KISAPILog{}
-	}
-	type kisLogView struct {
-		ID          int64  `json:"id"`
-		Endpoint    string `json:"endpoint"`
-		ErrorCode   string `json:"error_code"`
-		ErrorMsg    string `json:"error_message"`
-		RawResponse string `json:"raw_response,omitempty"`
-		CreatedAt   string `json:"created_at"`
-		Message     string `json:"message"`
-	}
-	views := make([]kisLogView, len(logs))
-	for i, l := range logs {
-		raw := ""
-		if !summary {
-			raw = l.RawResponse
-		}
-		views[i] = kisLogView{
-			ID:          l.ID,
-			Endpoint:    l.Endpoint,
-			ErrorCode:   l.ErrorCode,
-			ErrorMsg:    l.ErrorMsg,
-			RawResponse: raw,
-			CreatedAt:   l.Timestamp.In(ops.KSTLocation()).Format("2006-01-02 15:04:05"),
-			Message:     l.ErrorMsg,
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{"data": views})
-}
-
-// GET /api/logs/service?limit=100&source=ALL|TRADER|MONITOR|SYSTEM — 서비스 전체 에러 로그 조회
-func (h *Handler) GetServiceLogs(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
-	if limit <= 0 || limit > 500 {
-		limit = 100
-	}
-	source := c.DefaultQuery("source", "ALL")
-
-	logs, err := h.db.ListServiceLogs(c.Request.Context(), limit)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if logs == nil {
-		logs = []models.ServiceLog{}
-	}
-	type svcLogView struct {
-		ID        int64  `json:"id"`
-		Source    string `json:"source"`
-		Level     string `json:"level"`
-		Message   string `json:"message"`
-		Detail    string `json:"detail"`
-		CreatedAt string `json:"created_at"`
-	}
-	kst := ops.KSTLocation()
-	views := make([]svcLogView, 0, len(logs))
-	for _, l := range logs {
-		if source != "ALL" && l.Source != source {
-			continue
-		}
-		views = append(views, svcLogView{
-			ID:        l.ID,
-			Source:    l.Source,
-			Level:     l.Level,
-			Message:   l.Message,
-			Detail:    l.Detail,
-			CreatedAt: l.Timestamp.In(kst).Format("2006-01-02 15:04:05"),
-		})
-	}
-	c.JSON(http.StatusOK, gin.H{"data": views})
 }
 
 // GET /api/logs/scan?limit=20 — 스캔 로그 조회 (최신 순)
@@ -872,6 +786,58 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"filters": filters,
 		// 스케줄
 		"schedule": schedule,
+		// 트레일링
+		"trailing_trigger_pct":       ts.TrailingTriggerPct,
+		"trailing_stop_pct":          ts.TrailingStopPct,
+		"trailing_mode":              ts.TrailingMode,
+		"tick_tier0_stop_loss_ticks": ts.TickTier0StopLossTicks,
+		"tick_tier1_trigger_pct":     ts.TickTier1TriggerPct,
+		"tick_tier1_trail_ticks":     ts.TickTier1TrailTicks,
+		"tick_tier2_trigger_pct":     ts.TickTier2TriggerPct,
+		"tick_tier2_trail_ticks":     ts.TickTier2TrailTicks,
+		// 스태그네이션
+		"stagnation_threshold_pct":         ts.StagnationThresholdPct,
+		"stagnation_duration_min":          ts.StagnationDurationMin,
+		"stagnation_partial_exit_enabled":  ts.StagnationPartialExitEnabled,
+		"stagnation_bidask_sell_threshold": ts.StagnationBidAskSellThreshold,
+		// 랭킹 (누락)
+		"ranking_types":     ts.RankingTypes,
+		"ranking_price_min": ts.RankingPriceMin,
+		"ranking_price_max": ts.RankingPriceMax,
+		"ranking_exchanges": ts.RankingExchanges,
+		// 재진입 / 손절
+		"sell_on_upper_limit":              ts.SellOnUpperLimit,
+		"max_consecutive_losses":           ts.MaxConsecutiveLosses,
+		"consecutive_loss_reset_on_profit": ts.ConsecutiveLossResetOnProfit,
+		"max_bidask_spread_pct":            ts.MaxBidAskSpreadPct,
+		"block_reentry_on_loss":            ts.BlockReentryOnLoss,
+		"reentry_score_penalty":            ts.ReentryScorePenalty,
+		"reentry_cooldown_min":             ts.ReentryCooldownMin,
+		"loss_cooldown_min":                ts.LossCooldownMin,
+		"loss_reentry_price_guard":         ts.LossReentryPriceGuard,
+		// 하드 필터 (누락)
+		"hard_ma60_support_enabled":  ts.HardMA60SupportEnabled,
+		"hard_ma120_support_enabled": ts.HardMA120SupportEnabled,
+		"hard_program_buy_min":       ts.HardProgramBuyMin,
+		"hard_peak_turn_enabled":     ts.HardPeakTurnEnabled,
+		"hard_peak_rsi_min":          ts.HardPeakRSIMin,
+		// 스트림
+		"stream_bypass_enabled":     ts.StreamBypassEnabled,
+		"stream_big_trade_amount":   ts.StreamBigTradeAmount,
+		"stream_velocity_threshold": ts.StreamVelocityThreshold,
+		// 매도 조건
+		"sell_conditions": ts.SellConditions,
+		"buy_order_type":  ts.BuyOrderType,
+		// 스코어 가중치 (flat 키로 노출 — transformSettings fallback 호환)
+		"score_weight_strength":     ts.ScoreWeightStrength,
+		"score_weight_rsi":          ts.ScoreWeightRSI,
+		"score_weight_macd":         ts.ScoreWeightMACD,
+		"score_weight_bidask":       ts.ScoreWeightBidAsk,
+		"score_weight_vwap":         ts.ScoreWeightVWAP,
+		"score_weight_volume":       ts.ScoreWeightVolume,
+		"score_weight_program_buy":  ts.ScoreWeightProgramBuy,
+		"score_weight_micro_bidask": ts.ScoreWeightMicroBidAsk,
+		"score_weight_vi_disparity": ts.ScoreWeightVIDisparity,
 		// 시스템 / KIS 설정 (읽기 전용)
 		"account_no":      maskedAccount,
 		"account_type":    h.cfg.KISAccountType,
@@ -980,7 +946,26 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		PartialTPRatio     *float64 `json:"partial_tp_ratio"`
 		PartialTPRaiseStop *bool    `json:"partial_tp_raise_stop"`
 		// UI 거래조건 추가 필드
-		DailyLossLimitPct       *float64 `json:"daily_loss_limit_pct"`
+		DailyLossLimitPct *float64 `json:"daily_loss_limit_pct"`
+		// 재진입 / 손절 제어
+		SellOnUpperLimit             *bool    `json:"sell_on_upper_limit"`
+		MaxConsecutiveLosses         *int     `json:"max_consecutive_losses"`
+		ConsecutiveLossResetOnProfit *bool    `json:"consecutive_loss_reset_on_profit"`
+		MaxBidAskSpreadPct           *float64 `json:"max_bidask_spread_pct"`
+		BlockReentryOnLoss           *bool    `json:"block_reentry_on_loss"`
+		ReentryScorePenalty          *float64 `json:"reentry_score_penalty"`
+		ReentryCooldownMin           *int     `json:"reentry_cooldown_min"`
+		LossCooldownMin              *int     `json:"loss_cooldown_min"`
+		LossReentryPriceGuard        *bool    `json:"loss_reentry_price_guard"`
+		// 하드 피크 감지
+		HardPeakTurnEnabled *bool    `json:"hard_peak_turn_enabled"`
+		HardPeakRSIMin      *float64 `json:"hard_peak_rsi_min"`
+		// 주문 유형
+		BuyOrderType *string `json:"buy_order_type"`
+		// 스트림
+		StreamBypassEnabled     *bool    `json:"stream_bypass_enabled"`
+		StreamBigTradeAmount    *float64 `json:"stream_big_trade_amount"`
+		StreamVelocityThreshold *float64 `json:"stream_velocity_threshold"`
 		IndicatorRSISellEnabled *bool    `json:"indicator_rsi_sell_enabled"`
 		MinScore                *float64 `json:"min_score"`
 		MinScoreThreshold       *float64 `json:"min_score_threshold"`
@@ -1277,8 +1262,8 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 	if req.TrailingStopPct != nil {
-		if *req.TrailingStopPct <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "trailing_stop_pct는 0보다 커야 합니다"})
+		if *req.TrailingStopPct < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "trailing_stop_pct는 0 이상이어야 합니다"})
 			return
 		}
 		if !save("trailing_stop_pct", strconv.FormatFloat(*req.TrailingStopPct, 'f', -1, 64)) {
@@ -1616,6 +1601,106 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			return
 		}
 		if !save("universal_cooldown_min", strconv.Itoa(*req.UniversalCooldownMin)) {
+			return
+		}
+	}
+	// 재진입 / 손절 제어
+	if req.SellOnUpperLimit != nil {
+		v := "false"
+		if *req.SellOnUpperLimit {
+			v = "true"
+		}
+		if !save("sell_on_upper_limit", v) {
+			return
+		}
+	}
+	if req.MaxConsecutiveLosses != nil {
+		if !save("max_consecutive_losses", strconv.Itoa(*req.MaxConsecutiveLosses)) {
+			return
+		}
+	}
+	if req.ConsecutiveLossResetOnProfit != nil {
+		v := "false"
+		if *req.ConsecutiveLossResetOnProfit {
+			v = "true"
+		}
+		if !save("consecutive_loss_reset_on_profit", v) {
+			return
+		}
+	}
+	if req.MaxBidAskSpreadPct != nil {
+		if !save("max_bidask_spread_pct", strconv.FormatFloat(*req.MaxBidAskSpreadPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.BlockReentryOnLoss != nil {
+		v := "false"
+		if *req.BlockReentryOnLoss {
+			v = "true"
+		}
+		if !save("block_reentry_on_loss", v) {
+			return
+		}
+	}
+	if req.ReentryScorePenalty != nil {
+		if !save("reentry_score_penalty", strconv.FormatFloat(*req.ReentryScorePenalty, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.ReentryCooldownMin != nil {
+		if !save("reentry_cooldown_min", strconv.Itoa(*req.ReentryCooldownMin)) {
+			return
+		}
+	}
+	if req.LossCooldownMin != nil {
+		if !save("loss_cooldown_min", strconv.Itoa(*req.LossCooldownMin)) {
+			return
+		}
+	}
+	if req.LossReentryPriceGuard != nil {
+		v := "false"
+		if *req.LossReentryPriceGuard {
+			v = "true"
+		}
+		if !save("loss_reentry_price_guard", v) {
+			return
+		}
+	}
+	if req.HardPeakTurnEnabled != nil {
+		v := "false"
+		if *req.HardPeakTurnEnabled {
+			v = "true"
+		}
+		if !save("hard_peak_turn_enabled", v) {
+			return
+		}
+	}
+	if req.HardPeakRSIMin != nil {
+		if !save("hard_peak_rsi_min", strconv.FormatFloat(*req.HardPeakRSIMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.BuyOrderType != nil {
+		if !save("buy_order_type", *req.BuyOrderType) {
+			return
+		}
+	}
+	if req.StreamBypassEnabled != nil {
+		v := "false"
+		if *req.StreamBypassEnabled {
+			v = "true"
+		}
+		if !save("stream_bypass_enabled", v) {
+			return
+		}
+	}
+	if req.StreamBigTradeAmount != nil {
+		if !save("stream_big_trade_amount", strconv.FormatFloat(*req.StreamBigTradeAmount, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.StreamVelocityThreshold != nil {
+		if !save("stream_velocity_threshold", strconv.FormatFloat(*req.StreamVelocityThreshold, 'f', -1, 64)) {
 			return
 		}
 	}
@@ -2144,6 +2229,8 @@ func (h *Handler) GetDailyReports(c *gin.Context) {
 		PnlPct        float64 `json:"pnl_pct"`
 		WinRate       float64 `json:"win_rate"`
 		ReportSummary string  `json:"report_summary"`
+		BestTrade     string  `json:"best_trade"`
+		WorstTrade    string  `json:"worst_trade"`
 	}
 	views := make([]dailyView, len(reports))
 	for i, r := range reports {
@@ -2160,6 +2247,8 @@ func (h *Handler) GetDailyReports(c *gin.Context) {
 			PnlPct:        r.AvgProfitPct,
 			WinRate:       winRate,
 			ReportSummary: r.TradeSummary,
+			BestTrade:     r.BestTrade,
+			WorstTrade:    r.WorstTrade,
 		}
 	}
 

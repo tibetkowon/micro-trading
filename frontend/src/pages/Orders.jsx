@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore'
 import { apiFetch } from '../utils/api'
 import { fmt, Badge, Spinner } from '../components/shared'
-import { db, fmtTs } from '../lib/firebase'
+import { fmtTs } from '../lib/firebase'
 
 const STATUS_COLOR = { FILLED: 'green', PENDING: 'yellow', CANCELLED: 'gray', FAILED: 'red', PARTIALLY_FILLED: 'yellow' }
 const STATUS_LABEL = { FILLED: '체결', PENDING: '대기', CANCELLED: '취소', FAILED: '실패', PARTIALLY_FILLED: '부분체결' }
@@ -23,17 +22,9 @@ export default function Orders() {
   const fetchOrders = useCallback(async () => {
     setLoading(true)
     try {
-      const since = new Date()
-      since.setDate(since.getDate() - days)
-      since.setHours(0, 0, 0, 0)
-      const q = query(
-        collection(db, 'orders'),
-        where('created_at', '>=', Timestamp.fromDate(since)),
-        orderBy('created_at', 'desc'),
-        limit(500)
-      )
-      const snap = await getDocs(q)
-      setOrders(snap.docs.map(d => ({ _docId: d.id, ...d.data() })))
+      const res = await apiFetch(`/api/orders?days=${days}&limit=500`)
+      const data = await res.json()
+      setOrders(data.orders || data.data || [])
     } finally {
       setLoading(false)
     }
@@ -120,7 +111,7 @@ export default function Orders() {
                 ) : paged.map(o => {
                   const isBuy = o.order_type === 'BUY'
                   return (
-                    <tr key={o._docId}>
+                    <tr key={o.id || o.kis_order_id}>
                       <td className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtTs(o.created_at)}</td>
                       <td>
                         <div style={{ fontWeight: 600 }}>{o.stock_name}</div>

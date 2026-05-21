@@ -10,24 +10,30 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/logger"
+	"github.com/micro-trading-for-agent/backend/internal/slack"
 )
 
 // Client is the KIS API HTTP client.
-// All responses are rate-limited; errors are persisted to kis_api_logs.
+// All responses are rate-limited; errors are emitted as structured logs.
 type Client struct {
-	baseURL      string
-	appKey       string
-	appSecret    string
-	accountNo    string
-	accountType  string
-	tokenManager *TokenManager
-	rateLimiter  *RateLimiter
-	db           *database.DB
-	httpClient   *http.Client
+	baseURL       string
+	appKey        string
+	appSecret     string
+	accountNo     string
+	accountType   string
+	tokenManager  *TokenManager
+	rateLimiter   *RateLimiter
+	db            *database.DB
+	httpClient    *http.Client
+	slack         *slack.Client
+	failCount     int
+	failThreshold int
+	mu            sync.Mutex
 }
 
 // NewClient creates a fully configured KIS API client.
@@ -51,6 +57,16 @@ func NewClient(
 		db:          db,
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+func (c *Client) ConfigureSlack(sc *slack.Client, failThreshold int) {
+	if failThreshold <= 0 {
+		failThreshold = 5
+	}
+	c.mu.Lock()
+	c.slack = sc
+	c.failThreshold = failThreshold
+	c.mu.Unlock()
 }
 
 // --- Request/Response DTOs ---
@@ -911,6 +927,7 @@ func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([
 			return nil, fmt.Errorf("KIS error [%s]: %s", envelope.MsgCode, envelope.Msg)
 		}
 
+		c.recordSuccess()
 		return raw, nil
 	}
 	return nil, fmt.Errorf("KIS GET %s failed after %d retries (TPS exceeded)", endpoint, tpsMaxRetries)
@@ -986,6 +1003,7 @@ func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoin
 			return nil, fmt.Errorf("KIS order error [%s]: %s", result.MsgCode, result.Msg)
 		}
 
+		c.recordSuccess()
 		return &result.Output, nil
 	}
 	return nil, fmt.Errorf("KIS POST %s failed after %d retries (TPS exceeded)", endpoint, tpsMaxRetries)
@@ -999,15 +1017,29 @@ func (c *Client) setHeaders(req *http.Request, accessToken, trID string) {
 	req.Header.Set("custtype", "P")
 }
 
-// logAPIError persists a KIS API error to the database and structured logger.
+// logAPIError writes a structured KIS API error.
 // Per CLAUDE.md: Error Code + Timestamp + raw KIS API Response Message are REQUIRED.
 // requestContext should contain the query parameters or stock code context (e.g. "?FID_INPUT_ISCD=005930").
 func (c *Client) logAPIError(endpoint, errorCode, rawResponse, requestContext string) {
 	logger.KISError(endpoint, errorCode, rawResponse, requestContext)
-	ctx := context.Background()
-	if err := c.db.CreateKISAPILog(ctx, endpoint, errorCode, extractMsg(rawResponse), rawResponse, requestContext); err != nil {
-		logger.Error("failed to persist KIS API error log", map[string]any{"error": err.Error()})
+	c.recordFailure(endpoint, errorCode)
+}
+
+func (c *Client) recordFailure(endpoint, errorCode string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.failCount++
+	if c.slack != nil && c.failThreshold > 0 && c.failCount >= c.failThreshold {
+		failCount := c.failCount
+		go c.slack.KISAPIFailure(endpoint, errorCode, failCount)
+		c.failCount = 0
 	}
+}
+
+func (c *Client) recordSuccess() {
+	c.mu.Lock()
+	c.failCount = 0
+	c.mu.Unlock()
 }
 
 // extractMsg attempts to pull msg1 from raw JSON for a human-readable message.

@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -17,6 +18,13 @@ type Config struct {
 
 	FirebaseProjectID       string // GCP project ID
 	FirebaseCredentialsJSON string // service account JSON (file path or inline JSON)
+	SQLitePath              string // SQLITE_PATH env var
+	AgentAPIKey             string // AGENT_API_KEY env var
+	AdminAPIKey             string // ADMIN_API_KEY env var
+
+	SlackWebhookURL        string // SLACK_WEBHOOK_URL
+	SlackKISFailThreshold  int    // SLACK_KIS_FAIL_THRESHOLD
+	SlackPositionSnapshotM int    // SLACK_POSITION_SNAPSHOT_MIN
 
 	FrontendOrigin string // Firebase Hosting origin for CORS (e.g. https://xxx.web.app)
 
@@ -39,6 +47,13 @@ func Load() (*Config, error) {
 
 		FirebaseProjectID:       getEnv("FIREBASE_PROJECT_ID", ""),
 		FirebaseCredentialsJSON: getEnv("FIREBASE_CREDENTIALS_JSON", ""),
+		SQLitePath:              getEnv("SQLITE_PATH", "/data/trading.db"),
+		AgentAPIKey:             getEnv("AGENT_API_KEY", ""),
+		AdminAPIKey:             getEnv("ADMIN_API_KEY", ""),
+
+		SlackWebhookURL:        getEnv("SLACK_WEBHOOK_URL", ""),
+		SlackKISFailThreshold:  getEnvInt("SLACK_KIS_FAIL_THRESHOLD", 5),
+		SlackPositionSnapshotM: getEnvInt("SLACK_POSITION_SNAPSHOT_MIN", 30),
 
 		FrontendOrigin: getEnv("FRONTEND_ORIGIN", ""),
 
@@ -47,6 +62,15 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func getEnvInt(key string, defaultVal int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return defaultVal
 }
 
 func getEnv(key, defaultVal string) string {

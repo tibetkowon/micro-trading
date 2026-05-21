@@ -27,10 +27,6 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		api.POST("/orders/:id/cancel", h.CancelOrder)
 		api.DELETE("/orders/:id", h.DeleteOrder)
 		api.GET("/orders/feasibility", h.GetFeasibility)
-		api.GET("/logs/kis", h.GetKISLogs)
-		api.DELETE("/logs/kis/:id", h.DeleteKISLog)
-		api.GET("/logs/service", h.GetServiceLogs)
-		api.DELETE("/logs/service/:id", h.DeleteServiceLog)
 		api.GET("/logs/scan", h.GetScanLogs)
 		api.GET("/logs/scan/:id/raw", h.GetScanLogRaw)
 		api.GET("/settings", h.GetSettings)
@@ -92,6 +88,23 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		}
 	}
 
+	admin := r.Group("/api/admin", AdminAuth(h.cfg.AdminAPIKey))
+	{
+		admin.GET("/tables", h.GetAdminTables)
+		admin.GET("/tables/:table", h.GetAdminTableData)
+	}
+
+	agent := r.Group("/api/agent", AgentAuth(h.cfg.AgentAPIKey))
+	{
+		agent.GET("/settings", h.AgentGetSettings)
+		agent.PATCH("/settings", h.AgentUpdateSetting)
+		agent.GET("/positions", h.AgentGetPositions)
+		agent.POST("/positions/:code/sell", h.AgentSellPosition)
+		agent.POST("/positions/liquidate", h.AgentLiquidateAll)
+		agent.GET("/status", h.AgentGetStatus)
+		agent.GET("/stats", h.AgentGetStats)
+	}
+
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
@@ -123,7 +136,7 @@ func corsMiddleware(allowedOrigin string) gin.HandlerFunc {
 		if allowedOrigin != "" {
 			c.Header("Access-Control-Allow-Origin", allowedOrigin)
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Content-Type")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, X-Admin-Key, X-Agent-Key")
 		}
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)

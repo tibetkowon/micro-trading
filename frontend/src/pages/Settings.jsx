@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { Toggle } from '../components/shared'
-import { db } from '../lib/firebase'
+import { apiFetch } from '../utils/api'
 
 function pf(v, d) { const n = parseFloat(v); return isNaN(n) ? d : n }
 function pi(v, d) { const n = parseInt(v, 10); return isNaN(n) ? d : n }
@@ -15,13 +14,13 @@ function transformSettings(raw) {
   const filters = {}
   for (const k of FILTER_KEYS) {
     filters[k] = {
-      enabled: pb(raw[`filter_${k}_enabled`], false),
-      value: pf(raw[`filter_${k}_value`], 0),
+      enabled: pb(raw.filters?.[k]?.enabled ?? raw[`filter_${k}_enabled`], false),
+      value: pf(raw.filters?.[k]?.value ?? raw[`filter_${k}_value`], 0),
     }
   }
   const weights = {}
   for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume', 'program_buy', 'micro_bidask', 'vi_disparity']) {
-    weights[k] = pi(raw[`score_weight_${k}`] ?? raw[`weight_${k}`], 0)
+    weights[k] = pi(raw[`score_weight_${k}`] ?? raw.weights?.[k] ?? raw[`weight_${k}`], 0)
   }
   return {
     max_positions: pi(raw.max_positions, 1),
@@ -30,7 +29,7 @@ function transformSettings(raw) {
     stop_loss_pct: pf(raw.stop_loss_pct, 2),
     etf_take_profit_pct: pf(raw.etf_take_profit_pct, 2),
     etf_stop_loss_pct: pf(raw.etf_stop_loss_pct, 1),
-    daily_loss_limit_pct: pf(raw.daily_max_loss_pct, 3),
+    daily_loss_limit_pct: pf(raw.daily_loss_limit_pct ?? raw.daily_max_loss_pct, 3),
     indicator_rsi_sell_enabled: raw.indicator_rsi_sell_enabled != null
       ? pb(raw.indicator_rsi_sell_enabled, false)
       : pf(raw.indicator_rsi_sell_threshold, 0) > 0,
@@ -47,14 +46,14 @@ function transformSettings(raw) {
     ranking_price_max: raw.ranking_price_max || '200000',
     ranking_exchanges: pj(raw.ranking_exchanges, ['0001', '1001']),
     ranking_exclude_cls: raw.ranking_exclude_cls || '1111111111',
-    min_score: pf(raw.min_score_threshold, 0),
+    min_score: pf(raw.min_score ?? raw.min_score_threshold, 0),
     weights,
     filters,
     schedule: {
-      trade_start: raw.trading_start_time || '09:15',
-      trade_end: raw.trading_end_time || '15:15',
-      scan_interval: pi(raw.scan_interval, 1),
-      indicator_check_interval: pi(raw.indicator_check_interval_min, 5),
+      trade_start: raw.schedule?.trade_start ?? raw.trading_start_time ?? '09:15',
+      trade_end: raw.schedule?.trade_end ?? raw.trading_end_time ?? '15:15',
+      scan_interval: pi(raw.schedule?.scan_interval ?? raw.scan_interval, 1),
+      indicator_check_interval: pi(raw.schedule?.indicator_check_interval ?? raw.indicator_check_interval_min, 5),
     },
     sell_on_upper_limit: pb(raw.sell_on_upper_limit, false),
     max_consecutive_losses: pi(raw.max_consecutive_losses, 0),
@@ -87,7 +86,7 @@ function transformSettings(raw) {
     buy_order_type: raw.buy_order_type || 'limit',
     stream: {
       bypass_enabled: pb(raw.stream_bypass_enabled, true),
-      big_trade_amount: pf(raw.stream_big_trade_amount, 30000000),
+      big_trade_amount: pi(raw.stream_big_trade_amount, 30000000),
       velocity_threshold: pf(raw.stream_velocity_threshold, 5.0),
     },
   }
@@ -157,8 +156,9 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    getDoc(doc(db, 'settings', 'config'))
-      .then(snap => setSettings(transformSettings(snap.exists() ? snap.data() : {})))
+    apiFetch('/api/settings')
+      .then(res => res.json())
+      .then(data => setSettings(transformSettings(data?.data || {})))
       .finally(() => setLoading(false))
   }, [])
 
@@ -180,68 +180,81 @@ export default function Settings() {
     setSaving(true)
     try {
       const flat = {}
-      flat.max_positions = String(settings.max_positions ?? 1)
-      flat.order_amount_pct = String(settings.order_amount_pct ?? 95)
-      flat.take_profit_pct = String(settings.take_profit_pct ?? 3)
-      flat.stop_loss_pct = String(settings.stop_loss_pct ?? 2)
-      flat.etf_take_profit_pct = String(settings.etf_take_profit_pct ?? 2)
-      flat.etf_stop_loss_pct = String(settings.etf_stop_loss_pct ?? 1)
-      flat.daily_max_loss_pct = String(settings.daily_loss_limit_pct ?? 3)
-      flat.indicator_rsi_sell_enabled = String(settings.indicator_rsi_sell_enabled ?? false)
-      flat.indicator_macd_bearish_sell = String(settings.indicator_macd_bearish_sell ?? false)
-      flat.hard_ma60_support_enabled = String(settings.hard_ma60_support_enabled ?? false)
-      flat.hard_ma120_support_enabled = String(settings.hard_ma120_support_enabled ?? false)
-      flat.hard_program_buy_min = String(settings.hard_program_buy_min ?? 0)
+      flat.max_positions = settings.max_positions ?? 1
+      flat.order_amount_pct = settings.order_amount_pct ?? 95
+      flat.take_profit_pct = settings.take_profit_pct ?? 3
+      flat.stop_loss_pct = settings.stop_loss_pct ?? 2
+      flat.etf_take_profit_pct = settings.etf_take_profit_pct ?? 2
+      flat.etf_stop_loss_pct = settings.etf_stop_loss_pct ?? 1
+      flat.daily_max_loss_pct = settings.daily_loss_limit_pct ?? 3
+      flat.indicator_rsi_sell_enabled = settings.indicator_rsi_sell_enabled ?? false
+      flat.indicator_macd_bearish_sell = settings.indicator_macd_bearish_sell ?? false
+      flat.hard_ma60_support_enabled = settings.hard_ma60_support_enabled ?? false
+      flat.hard_ma120_support_enabled = settings.hard_ma120_support_enabled ?? false
+      flat.hard_program_buy_min = settings.hard_program_buy_min ?? 0
       flat.buy_pause_start = settings.buy_pause_start || ''
       flat.buy_pause_end = settings.buy_pause_end || ''
-      flat.ranking_types = JSON.stringify(settings.ranking_types ?? [])
+      flat.ranking_types = settings.ranking_types ?? []
       flat.ranking_condition = settings.ranking_condition || 'OR'
-      flat.ranking_top_n = String(settings.ranking_top_n ?? 30)
-      flat.ranking_price_min = String(settings.ranking_price_min ?? '5000')
-      flat.ranking_price_max = String(settings.ranking_price_max ?? '200000')
-      flat.ranking_exchanges = JSON.stringify(settings.ranking_exchanges ?? [])
+      flat.ranking_top_n = settings.ranking_top_n ?? 30
+      flat.ranking_price_min = settings.ranking_price_min ?? '5000'
+      flat.ranking_price_max = settings.ranking_price_max ?? '200000'
+      flat.ranking_exchanges = settings.ranking_exchanges ?? []
       flat.ranking_exclude_cls = settings.ranking_exclude_cls || '1111111111'
-      flat.min_score_threshold = String(settings.min_score ?? 0)
+      flat.min_score_threshold = settings.min_score ?? 0
       flat.trading_start_time = settings.schedule?.trade_start || '09:15'
       flat.trading_end_time = settings.schedule?.trade_end || '15:15'
-      flat.scan_interval = String(settings.schedule?.scan_interval ?? 1)
-      flat.indicator_check_interval_min = String(settings.schedule?.indicator_check_interval ?? 5)
+      flat.scan_interval = settings.schedule?.scan_interval ?? 1
+      flat.indicator_check_interval_min = settings.schedule?.indicator_check_interval ?? 5
+      const weightApiKey = { bidask: 'bid_ask', micro_bidask: 'micro_bid_ask' }
       for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume', 'program_buy', 'micro_bidask', 'vi_disparity'])
-        flat[`score_weight_${k}`] = String(settings.weights?.[k] ?? 0)
+        flat[`score_weight_${weightApiKey[k] ?? k}`] = settings.weights?.[k] ?? 0
+      const filtersPayload = {}
       for (const k of ['rsi_upper_limit', 'strength_lower', 'vwap_min', 'vwap_max',
           'high_disparity', 'open_rise_limit', 'high_elapsed_min', 'volume_ratio_lower']) {
-        flat[`filter_${k}_enabled`] = String(settings.filters?.[k]?.enabled ?? false)
-        flat[`filter_${k}_value`] = String(settings.filters?.[k]?.value ?? 0)
+        filtersPayload[k] = {
+          enabled: settings.filters?.[k]?.enabled ?? false,
+          value: settings.filters?.[k]?.value ?? 0,
+        }
       }
-      flat.sell_on_upper_limit = String(settings.sell_on_upper_limit ?? false)
-      flat.max_consecutive_losses = String(settings.max_consecutive_losses ?? 0)
-      flat.consecutive_loss_reset_on_profit = String(settings.consecutive_loss_reset_on_profit ?? true)
-      flat.max_bidask_spread_pct = String(settings.max_bidask_spread_pct ?? 0)
-      flat.trailing_trigger_pct = String(settings.trailing?.trigger_pct ?? 0)
-      flat.trailing_stop_pct = String(settings.trailing?.stop_pct ?? 0)
+      flat.filters = filtersPayload
+      flat.sell_on_upper_limit = settings.sell_on_upper_limit ?? false
+      flat.max_consecutive_losses = settings.max_consecutive_losses ?? 0
+      flat.consecutive_loss_reset_on_profit = settings.consecutive_loss_reset_on_profit ?? true
+      flat.max_bidask_spread_pct = settings.max_bidask_spread_pct ?? 0
+      flat.trailing_trigger_pct = settings.trailing?.trigger_pct ?? 0
+      flat.trailing_stop_pct = settings.trailing?.stop_pct ?? 0
       flat.trailing_mode = settings.trailing?.mode || 'pct'
-      flat.tick_tier0_stop_loss_ticks = String(settings.trailing?.tick_tier0_stop_loss_ticks ?? 3)
-      flat.tick_tier1_trigger_pct = String(settings.trailing?.tick_tier1_trigger_pct ?? 0)
-      flat.tick_tier1_trail_ticks = String(settings.trailing?.tick_tier1_trail_ticks ?? 5)
-      flat.tick_tier2_trigger_pct = String(settings.trailing?.tick_tier2_trigger_pct ?? 0)
-      flat.tick_tier2_trail_ticks = String(settings.trailing?.tick_tier2_trail_ticks ?? 2)
-      flat.stagnation_threshold_pct = String(settings.stagnation?.threshold_pct ?? 0)
-      flat.stagnation_duration_min = String(settings.stagnation?.duration_min ?? 0)
-      flat.stagnation_partial_exit_enabled = String(settings.stagnation?.partial_exit_enabled ?? false)
-      flat.stagnation_bidask_sell_threshold = String(settings.stagnation?.bidask_sell_threshold ?? 1.0)
-      flat.sell_conditions = JSON.stringify(settings.sell_conditions ?? [])
-      flat.block_reentry_on_loss = String(settings.block_reentry_on_loss ?? true)
-      flat.reentry_score_penalty = String(settings.reentry_score_penalty ?? 10)
-      flat.reentry_cooldown_min = String(settings.reentry_cooldown_min ?? 15)
-      flat.loss_cooldown_min = String(settings.loss_cooldown_min ?? 20)
-      flat.loss_reentry_price_guard = String(settings.loss_reentry_price_guard ?? true)
-      flat.hard_peak_turn_enabled = String(settings.hard_peak_turn_enabled ?? false)
-      flat.hard_peak_rsi_min = String(settings.hard_peak_rsi_min ?? 65.0)
+      flat.tick_tier0_stop_loss_ticks = settings.trailing?.tick_tier0_stop_loss_ticks ?? 3
+      flat.tick_tier1_trigger_pct = settings.trailing?.tick_tier1_trigger_pct ?? 0
+      flat.tick_tier1_trail_ticks = settings.trailing?.tick_tier1_trail_ticks ?? 5
+      flat.tick_tier2_trigger_pct = settings.trailing?.tick_tier2_trigger_pct ?? 0
+      flat.tick_tier2_trail_ticks = settings.trailing?.tick_tier2_trail_ticks ?? 2
+      flat.stagnation_threshold_pct = settings.stagnation?.threshold_pct ?? 0
+      flat.stagnation_duration_min = settings.stagnation?.duration_min ?? 0
+      flat.stagnation_partial_exit_enabled = settings.stagnation?.partial_exit_enabled ?? false
+      flat.stagnation_bid_ask_sell_threshold = settings.stagnation?.bidask_sell_threshold ?? 1.0
+      flat.sell_conditions = settings.sell_conditions ?? []
+      flat.block_reentry_on_loss = settings.block_reentry_on_loss ?? true
+      flat.reentry_score_penalty = settings.reentry_score_penalty ?? 10
+      flat.reentry_cooldown_min = settings.reentry_cooldown_min ?? 15
+      flat.loss_cooldown_min = settings.loss_cooldown_min ?? 20
+      flat.loss_reentry_price_guard = settings.loss_reentry_price_guard ?? true
+      flat.hard_peak_turn_enabled = settings.hard_peak_turn_enabled ?? false
+      flat.hard_peak_rsi_min = settings.hard_peak_rsi_min ?? 65.0
       flat.buy_order_type = settings.buy_order_type || 'limit'
-      flat.stream_bypass_enabled = String(settings.stream?.bypass_enabled ?? true)
-      flat.stream_big_trade_amount = String(settings.stream?.big_trade_amount ?? 30000000)
-      flat.stream_velocity_threshold = String(settings.stream?.velocity_threshold ?? 5.0)
-      await setDoc(doc(db, 'settings', 'config'), flat, { merge: true })
+      flat.stream_bypass_enabled = settings.stream?.bypass_enabled ?? true
+      flat.stream_big_trade_amount = settings.stream?.big_trade_amount ?? 30000000
+      flat.stream_velocity_threshold = settings.stream?.velocity_threshold ?? 5.0
+      const res = await apiFetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(flat),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `서버 오류 (${res.status})`)
+      }
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch (err) {
