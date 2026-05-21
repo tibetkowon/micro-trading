@@ -244,11 +244,15 @@ export default function Settings() {
       flat.stream_bypass_enabled = settings.stream?.bypass_enabled ?? true
       flat.stream_big_trade_amount = settings.stream?.big_trade_amount ?? 30000000
       flat.stream_velocity_threshold = settings.stream?.velocity_threshold ?? 5.0
-      await apiFetch('/api/settings', {
+      const res = await apiFetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(flat),
       })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `서버 오류 (${res.status})`)
+      }
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch (err) {
