@@ -49,6 +49,8 @@
 
 2. **작업 완료 후 컨텍스트 파악이 필요하면** → `git log --oneline -20` 으로 최근 이력 확인.
 
+3. **플랜이 확정되면** → 직접 코드를 작성하지 않고 `/codex:rescue`로 위임한다. 플랜 파일 경로를 전달하여 Codex가 구현을 담당하게 한다.
+
 ---
 
 ## 스킬 자동 실행 규칙
@@ -62,3 +64,4 @@
 | KIS API 에러 조사 또는 자동매매 실패 | `.claude/skills/analyze_trade_logs.md` — 로그 스마트 추출 및 분석 |
 | 새 API 패턴/버그 패턴/프로젝트 규칙 발견 | `.claude/skills/manage_skills.md` — 스킬 또는 문서에 기록 |
 | KIS API 신규 기능 구현 또는 기존 기능 수정 | `.claude/skills/implement_kis_feature.md` — `docs/kis-api/` 명세 확인 후 구현 |
+| 플랜 확정 후 실제 코드 구현 시 | `/codex:rescue` 사용 — 플랜 파일 경로를 전달하여 Codex가 구현 담당 |
