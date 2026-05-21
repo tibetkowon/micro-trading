@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -61,7 +62,19 @@ func migrateSettings(ctx context.Context, fs *firestore.Client, db *database.DB)
 	}
 	count := 0
 	for k, v := range doc.Data() {
-		if err := db.SetSetting(ctx, k, fmt.Sprintf("%v", v)); err != nil {
+		var strVal string
+		switch v.(type) {
+		case []interface{}, map[string]interface{}:
+			b, merr := json.Marshal(v)
+			if merr != nil {
+				slog.Error("marshal setting failed", "key", k, "error", merr)
+				continue
+			}
+			strVal = string(b)
+		default:
+			strVal = fmt.Sprintf("%v", v)
+		}
+		if err := db.SetSetting(ctx, k, strVal); err != nil {
 			slog.Error("set setting failed", "key", k, "error", err)
 			continue
 		}

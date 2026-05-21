@@ -946,7 +946,26 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		PartialTPRatio     *float64 `json:"partial_tp_ratio"`
 		PartialTPRaiseStop *bool    `json:"partial_tp_raise_stop"`
 		// UI 거래조건 추가 필드
-		DailyLossLimitPct       *float64 `json:"daily_loss_limit_pct"`
+		DailyLossLimitPct *float64 `json:"daily_loss_limit_pct"`
+		// 재진입 / 손절 제어
+		SellOnUpperLimit             *bool    `json:"sell_on_upper_limit"`
+		MaxConsecutiveLosses         *int     `json:"max_consecutive_losses"`
+		ConsecutiveLossResetOnProfit *bool    `json:"consecutive_loss_reset_on_profit"`
+		MaxBidAskSpreadPct           *float64 `json:"max_bidask_spread_pct"`
+		BlockReentryOnLoss           *bool    `json:"block_reentry_on_loss"`
+		ReentryScorePenalty          *float64 `json:"reentry_score_penalty"`
+		ReentryCooldownMin           *int     `json:"reentry_cooldown_min"`
+		LossCooldownMin              *int     `json:"loss_cooldown_min"`
+		LossReentryPriceGuard        *bool    `json:"loss_reentry_price_guard"`
+		// 하드 피크 감지
+		HardPeakTurnEnabled *bool    `json:"hard_peak_turn_enabled"`
+		HardPeakRSIMin      *float64 `json:"hard_peak_rsi_min"`
+		// 주문 유형
+		BuyOrderType *string `json:"buy_order_type"`
+		// 스트림
+		StreamBypassEnabled     *bool    `json:"stream_bypass_enabled"`
+		StreamBigTradeAmount    *float64 `json:"stream_big_trade_amount"`
+		StreamVelocityThreshold *float64 `json:"stream_velocity_threshold"`
 		IndicatorRSISellEnabled *bool    `json:"indicator_rsi_sell_enabled"`
 		MinScore                *float64 `json:"min_score"`
 		MinScoreThreshold       *float64 `json:"min_score_threshold"`
@@ -1582,6 +1601,106 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			return
 		}
 		if !save("universal_cooldown_min", strconv.Itoa(*req.UniversalCooldownMin)) {
+			return
+		}
+	}
+	// 재진입 / 손절 제어
+	if req.SellOnUpperLimit != nil {
+		v := "false"
+		if *req.SellOnUpperLimit {
+			v = "true"
+		}
+		if !save("sell_on_upper_limit", v) {
+			return
+		}
+	}
+	if req.MaxConsecutiveLosses != nil {
+		if !save("max_consecutive_losses", strconv.Itoa(*req.MaxConsecutiveLosses)) {
+			return
+		}
+	}
+	if req.ConsecutiveLossResetOnProfit != nil {
+		v := "false"
+		if *req.ConsecutiveLossResetOnProfit {
+			v = "true"
+		}
+		if !save("consecutive_loss_reset_on_profit", v) {
+			return
+		}
+	}
+	if req.MaxBidAskSpreadPct != nil {
+		if !save("max_bidask_spread_pct", strconv.FormatFloat(*req.MaxBidAskSpreadPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.BlockReentryOnLoss != nil {
+		v := "false"
+		if *req.BlockReentryOnLoss {
+			v = "true"
+		}
+		if !save("block_reentry_on_loss", v) {
+			return
+		}
+	}
+	if req.ReentryScorePenalty != nil {
+		if !save("reentry_score_penalty", strconv.FormatFloat(*req.ReentryScorePenalty, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.ReentryCooldownMin != nil {
+		if !save("reentry_cooldown_min", strconv.Itoa(*req.ReentryCooldownMin)) {
+			return
+		}
+	}
+	if req.LossCooldownMin != nil {
+		if !save("loss_cooldown_min", strconv.Itoa(*req.LossCooldownMin)) {
+			return
+		}
+	}
+	if req.LossReentryPriceGuard != nil {
+		v := "false"
+		if *req.LossReentryPriceGuard {
+			v = "true"
+		}
+		if !save("loss_reentry_price_guard", v) {
+			return
+		}
+	}
+	if req.HardPeakTurnEnabled != nil {
+		v := "false"
+		if *req.HardPeakTurnEnabled {
+			v = "true"
+		}
+		if !save("hard_peak_turn_enabled", v) {
+			return
+		}
+	}
+	if req.HardPeakRSIMin != nil {
+		if !save("hard_peak_rsi_min", strconv.FormatFloat(*req.HardPeakRSIMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.BuyOrderType != nil {
+		if !save("buy_order_type", *req.BuyOrderType) {
+			return
+		}
+	}
+	if req.StreamBypassEnabled != nil {
+		v := "false"
+		if *req.StreamBypassEnabled {
+			v = "true"
+		}
+		if !save("stream_bypass_enabled", v) {
+			return
+		}
+	}
+	if req.StreamBigTradeAmount != nil {
+		if !save("stream_big_trade_amount", strconv.FormatFloat(*req.StreamBigTradeAmount, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.StreamVelocityThreshold != nil {
+		if !save("stream_velocity_threshold", strconv.FormatFloat(*req.StreamVelocityThreshold, 'f', -1, 64)) {
 			return
 		}
 	}

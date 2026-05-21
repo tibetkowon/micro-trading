@@ -235,7 +235,7 @@ export default function Settings() {
       if ((settings.stagnation?.duration_min ?? 0) >= 1)
         flat.stagnation_duration_min = settings.stagnation.duration_min
       flat.stagnation_partial_exit_enabled = settings.stagnation?.partial_exit_enabled ?? false
-      flat.stagnation_bidask_sell_threshold = settings.stagnation?.bidask_sell_threshold ?? 1.0
+      flat.stagnation_bid_ask_sell_threshold = settings.stagnation?.bidask_sell_threshold ?? 1.0
       flat.sell_conditions = settings.sell_conditions ?? []
       flat.block_reentry_on_loss = settings.block_reentry_on_loss ?? true
       flat.reentry_score_penalty = settings.reentry_score_penalty ?? 10
