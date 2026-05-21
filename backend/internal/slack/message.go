@@ -13,7 +13,7 @@ const (
 )
 
 func (c *Client) AlertWarn(message, detail string) {
-	c.sendAttachments([]Attachment{{
+	c.sendAlertAttachments([]Attachment{{
 		Color:     colorOrange,
 		Title:     "경고",
 		Text:      message,
@@ -23,7 +23,7 @@ func (c *Client) AlertWarn(message, detail string) {
 }
 
 func (c *Client) AlertError(message, detail string) {
-	c.sendAttachments([]Attachment{{
+	c.sendAlertAttachments([]Attachment{{
 		Color:     colorRed,
 		Title:     "에러",
 		Text:      message,
@@ -33,7 +33,7 @@ func (c *Client) AlertError(message, detail string) {
 }
 
 func (c *Client) KISAPIFailure(endpoint, errorCode string, failCount int) {
-	c.sendAttachments([]Attachment{{
+	c.sendKISAttachments([]Attachment{{
 		Title: fmt.Sprintf("KIS API %d회 연속 실패", failCount),
 		Color: colorRed,
 		Fields: []Field{
@@ -45,7 +45,7 @@ func (c *Client) KISAPIFailure(endpoint, errorCode string, failCount int) {
 }
 
 func (c *Client) TradeBuy(code, name string, price, qty int, reason string) {
-	c.sendAttachments([]Attachment{{
+	c.sendTradeAttachments([]Attachment{{
 		Title: fmt.Sprintf("매수 체결 - %s (%s)", name, code),
 		Color: colorGreen,
 		Fields: []Field{
@@ -65,7 +65,7 @@ func (c *Client) TradeSell(code, name string, buyPrice, sellPrice, qty int, reas
 		color = colorRed
 		title = "손실 매도 체결"
 	}
-	c.sendAttachments([]Attachment{{
+	c.sendTradeAttachments([]Attachment{{
 		Title: fmt.Sprintf("%s - %s (%s)", title, name, code),
 		Color: color,
 		Fields: []Field{
@@ -92,7 +92,7 @@ func (c *Client) PositionSnapshot(positions []PositionInfo) {
 				p.CurrentPrice, p.ProfitPct, p.StopPrice, p.TargetPrice),
 		})
 	}
-	c.sendAttachments([]Attachment{{
+	c.sendPositionAttachments([]Attachment{{
 		Title:     "보유 포지션 현황",
 		Color:     colorBlue,
 		Fields:    fields,

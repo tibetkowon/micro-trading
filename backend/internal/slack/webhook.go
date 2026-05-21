@@ -9,19 +9,39 @@ import (
 )
 
 type Client struct {
-	webhookURL string
-	http       *http.Client
+	webhooks Webhooks
+	http     *http.Client
+}
+
+type Webhooks struct {
+	Default  string
+	Alert    string
+	KIS      string
+	Trade    string
+	Position string
 }
 
 func New(webhookURL string) *Client {
+	return NewWithWebhooks(Webhooks{Default: webhookURL})
+}
+
+func NewWithWebhooks(webhooks Webhooks) *Client {
 	return &Client{
-		webhookURL: webhookURL,
-		http:       &http.Client{Timeout: 5 * time.Second},
+		webhooks: webhooks,
+		http:     &http.Client{Timeout: 5 * time.Second},
 	}
 }
 
 func (c *Client) Enabled() bool {
-	return c != nil && c.webhookURL != ""
+	return c != nil && (c.webhooks.Default != "" ||
+		c.webhooks.Alert != "" ||
+		c.webhooks.KIS != "" ||
+		c.webhooks.Trade != "" ||
+		c.webhooks.Position != "")
+}
+
+func (c *Client) PositionEnabled() bool {
+	return c != nil && c.routeURL(c.webhooks.Position) != ""
 }
 
 type Attachment struct {
@@ -39,12 +59,33 @@ type Field struct {
 }
 
 func (c *Client) sendAttachments(attachments []Attachment) {
-	if !c.Enabled() {
+	c.sendAttachmentsTo(c.webhooks.Default, attachments)
+}
+
+func (c *Client) sendAlertAttachments(attachments []Attachment) {
+	c.sendAttachmentsTo(c.webhooks.Alert, attachments)
+}
+
+func (c *Client) sendKISAttachments(attachments []Attachment) {
+	c.sendAttachmentsTo(c.webhooks.KIS, attachments)
+}
+
+func (c *Client) sendTradeAttachments(attachments []Attachment) {
+	c.sendAttachmentsTo(c.webhooks.Trade, attachments)
+}
+
+func (c *Client) sendPositionAttachments(attachments []Attachment) {
+	c.sendAttachmentsTo(c.webhooks.Position, attachments)
+}
+
+func (c *Client) sendAttachmentsTo(webhookURL string, attachments []Attachment) {
+	webhookURL = c.routeURL(webhookURL)
+	if webhookURL == "" {
 		return
 	}
 	payload := map[string]any{"attachments": attachments}
 	b, _ := json.Marshal(payload)
-	resp, err := c.http.Post(c.webhookURL, "application/json", bytes.NewReader(b))
+	resp, err := c.http.Post(webhookURL, "application/json", bytes.NewReader(b))
 	if err != nil {
 		slog.Warn("slack webhook failed", "error", err)
 		return
@@ -53,4 +94,14 @@ func (c *Client) sendAttachments(attachments []Attachment) {
 	if resp.StatusCode >= 400 {
 		slog.Warn("slack webhook error response", "status", resp.StatusCode)
 	}
+}
+
+func (c *Client) routeURL(webhookURL string) string {
+	if c == nil {
+		return ""
+	}
+	if webhookURL != "" {
+		return webhookURL
+	}
+	return c.webhooks.Default
 }

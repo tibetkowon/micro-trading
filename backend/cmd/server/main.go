@@ -32,7 +32,13 @@ func main() {
 		slog.Error("config error", "error", err)
 		os.Exit(1)
 	}
-	slackClient := slack.New(cfg.SlackWebhookURL)
+	slackClient := slack.NewWithWebhooks(slack.Webhooks{
+		Default:  cfg.SlackWebhookURL,
+		Alert:    cfg.SlackAlertWebhookURL,
+		KIS:      cfg.SlackKISWebhookURL,
+		Trade:    cfg.SlackTradeWebhookURL,
+		Position: cfg.SlackPositionWebhookURL,
+	})
 	logger.RegisterAlertHook(func(level, message, detail string) {
 		if level == "WARN" || level == "WARNING" {
 			slackClient.AlertWarn(message, detail)
@@ -200,7 +206,7 @@ func parseHHMM(s string, def int) int {
 }
 
 func runPositionSnapshotScheduler(ctx context.Context, mon *monitor.Monitor, sc *slack.Client, intervalMin int) {
-	if sc == nil || !sc.Enabled() {
+	if sc == nil || !sc.PositionEnabled() {
 		return
 	}
 	if intervalMin <= 0 {
