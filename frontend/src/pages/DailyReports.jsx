@@ -20,8 +20,8 @@ function transformReport(d) {
     pnl_pct: r.pnl_pct || 0,
     win_rate: totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0,
     trades: parseSafe(r.report_summary) || [],
-    best_trade: null,
-    worst_trade: null,
+    best_trade: parseSafe(r.best_trade),
+    worst_trade: parseSafe(r.worst_trade),
   }
 }
 

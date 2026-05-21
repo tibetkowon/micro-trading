@@ -2229,6 +2229,8 @@ func (h *Handler) GetDailyReports(c *gin.Context) {
 		PnlPct        float64 `json:"pnl_pct"`
 		WinRate       float64 `json:"win_rate"`
 		ReportSummary string  `json:"report_summary"`
+		BestTrade     string  `json:"best_trade"`
+		WorstTrade    string  `json:"worst_trade"`
 	}
 	views := make([]dailyView, len(reports))
 	for i, r := range reports {
@@ -2245,6 +2247,8 @@ func (h *Handler) GetDailyReports(c *gin.Context) {
 			PnlPct:        r.AvgProfitPct,
 			WinRate:       winRate,
 			ReportSummary: r.TradeSummary,
+			BestTrade:     r.BestTrade,
+			WorstTrade:    r.WorstTrade,
 		}
 	}
 

@@ -230,10 +230,8 @@ export default function Settings() {
       flat.tick_tier1_trail_ticks = settings.trailing?.tick_tier1_trail_ticks ?? 5
       flat.tick_tier2_trigger_pct = settings.trailing?.tick_tier2_trigger_pct ?? 0
       flat.tick_tier2_trail_ticks = settings.trailing?.tick_tier2_trail_ticks ?? 2
-      if ((settings.stagnation?.threshold_pct ?? 0) > 0)
-        flat.stagnation_threshold_pct = settings.stagnation.threshold_pct
-      if ((settings.stagnation?.duration_min ?? 0) >= 1)
-        flat.stagnation_duration_min = settings.stagnation.duration_min
+      flat.stagnation_threshold_pct = settings.stagnation?.threshold_pct ?? 0
+      flat.stagnation_duration_min = settings.stagnation?.duration_min ?? 0
       flat.stagnation_partial_exit_enabled = settings.stagnation?.partial_exit_enabled ?? false
       flat.stagnation_bid_ask_sell_threshold = settings.stagnation?.bidask_sell_threshold ?? 1.0
       flat.sell_conditions = settings.sell_conditions ?? []
