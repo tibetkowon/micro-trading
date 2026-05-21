@@ -6,6 +6,7 @@ import Orders from './pages/Orders'
 import TradeReports from './pages/TradeReports'
 import DailyReports from './pages/DailyReports'
 import Settings from './pages/Settings'
+import AdminDB from './pages/AdminDB'
 
 const SCREEN_TITLES = {
   '/':               '대시보드',
@@ -14,6 +15,7 @@ const SCREEN_TITLES = {
   '/reports/trades': '리포트 › 거래별',
   '/reports/daily':  '리포트 › 일별',
   '/settings':       '설정',
+  '/admin':          'DB Admin',
 }
 
 const SIDEBAR_ITEMS = [
@@ -27,6 +29,7 @@ const SIDEBAR_REPORT_ITEMS = [
 ]
 const SIDEBAR_BOTTOM_ITEMS = [
   { path: '/settings', icon: '◎', label: '설정' },
+  { path: '/admin',    icon: '▦', label: 'DB Admin' },
 ]
 
 const BOTTOM_TABS = [
@@ -175,6 +178,7 @@ export default function App() {
             <Route path="/reports/trades" element={<TradeReports />} />
             <Route path="/reports/daily" element={<DailyReports />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/admin" element={<AdminDB />} />
             <Route path="*" element={<Dashboard />} />
           </Routes>
         </div>

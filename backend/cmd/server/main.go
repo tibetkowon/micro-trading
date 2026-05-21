@@ -35,13 +35,13 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	db, err := database.New(ctx, cfg.FirebaseProjectID, cfg.FirebaseCredentialsJSON)
+	db, err := database.New(cfg.SQLitePath)
 	if err != nil {
 		slog.Error("database error", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
-	slog.Info("database initialized", "project", cfg.FirebaseProjectID)
+	slog.Info("database initialized", "path", cfg.SQLitePath)
 
 	// Initialize KIS token manager.
 	tokenManager := kis.NewTokenManager(cfg.KISBaseURL, cfg.KISAppKey, cfg.KISAppSecret, db)
@@ -78,7 +78,7 @@ func main() {
 	}
 
 	// --- Stock master store — monitor보다 먼저 생성.
-	mstStore := stockmaster.NewStore(db.FirestoreClient())
+	mstStore := stockmaster.NewStore(db.SQLDB())
 
 	// --- Position monitor ---
 	mon := monitor.New(db, kisClient, wsClient, mstStore)
@@ -211,6 +211,7 @@ func runMarketScheduler(ctx context.Context,
 	var mstDownloaded bool
 	var reportGenerated bool
 	var simulationStarted bool
+	var purgeDone bool
 	var stopEngine func()
 	var stopIndicator context.CancelFunc
 
@@ -379,6 +380,14 @@ func runMarketScheduler(ctx context.Context,
 					logger.Info("market scheduler: daily simulation completed", map[string]any{"date": date})
 				}()
 
+			case !purgeDone && hhmm >= 1605:
+				purgeDone = true
+				go func() {
+					if err := db.PurgeOldRecords(context.Background()); err != nil {
+						slog.Error("purge failed", "error", err)
+					}
+				}()
+
 			case hhmm == 1600 && wsRunning:
 				// 16:00 — disconnect
 				wsClient.Disconnect()
@@ -387,6 +396,7 @@ func runMarketScheduler(ctx context.Context,
 				engineRunning = false
 				reportGenerated = false
 				simulationStarted = false
+				purgeDone = false
 				logger.AutomationInfo("market scheduler: WebSocket disconnected at 16:00", nil)
 			}
 		}

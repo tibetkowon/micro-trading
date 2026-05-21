@@ -1,26 +1,16 @@
-import { useState, useEffect, useMemo } from 'react'
-import { collection, onSnapshot } from 'firebase/firestore'
+import { useState, useMemo } from 'react'
 import { apiFetch } from '../utils/api'
 import { useApi } from '../hooks/useApi'
 import { fmt, Badge, Modal, EmptyState } from '../components/shared'
-import { db, fmtTs } from '../lib/firebase'
+import { fmtTs } from '../lib/firebase'
 
 export default function Positions() {
-  const [positions, setPositions] = useState([])
-  const [loading, setLoading] = useState(true)
   const [confirmAll, setConfirmAll] = useState(false)
   const [confirmSell, setConfirmSell] = useState(null)
   const [acting, setActing] = useState(false)
-  const { data: apiPositions } = useApi('/api/monitor/positions', { pollInterval: 3000 })
-  const priceMap = useMemo(() => new Map((apiPositions?.data ?? []).map(p => [p.stock_code, p.current_price])), [apiPositions])
-
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'monitored_positions'), snap => {
-      setPositions(snap.docs.map(d => ({ _docId: d.id, ...d.data() })))
-      setLoading(false)
-    })
-    return unsub
-  }, [])
+  const { data: apiPositions, loading } = useApi('/api/monitor/positions', { pollInterval: 3000 })
+  const positions = apiPositions?.data ?? []
+  const priceMap = useMemo(() => new Map(positions.map(p => [p.stock_code, p.current_price])), [positions])
 
   async function forceSell(code) {
     setActing(true)
@@ -64,7 +54,7 @@ export default function Positions() {
         <div className="pos-grid">
           {positions.map(p => {
             return (
-              <div key={p._docId} className="pos-card">
+              <div key={p.stock_code} className="pos-card">
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
                   <div>
                     <div style={{ fontSize: 16, fontWeight: 700 }}>{p.stock_name}</div>
@@ -75,7 +65,7 @@ export default function Positions() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
                   {[
-                    ['매수가', fmt(p.filled_price)],
+                    ['매수가', fmt(p.avg_price)],
                     ['목표가', fmt(p.target_price)],
                     ['손절가', fmt(p.stop_price)],
                     ['현재가', fmt(priceMap.get(p.stock_code) ?? 0)],
@@ -88,7 +78,7 @@ export default function Positions() {
                 </div>
 
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>
-                  진입시각: <span className="mono">{fmtTs(p.created_at)}</span>
+                  진입시각: <span className="mono">{fmtTs(p.entry_time)}</span>
                 </div>
 
                 <button className="btn btn-danger" style={{ width: '100%', justifyContent: 'center' }}
@@ -123,7 +113,7 @@ export default function Positions() {
             </button>,
           ]}>
           <p><strong>{confirmSell.stock_name} ({confirmSell.stock_code})</strong>를 시장가로 강제 매도합니다.</p>
-          <p style={{ marginTop: 8 }}>매수가 <span className="mono">{fmt(confirmSell.filled_price)}</span> 기준으로 주문합니다.</p>
+          <p style={{ marginTop: 8 }}>매수가 <span className="mono">{fmt(confirmSell.avg_price)}</span> 기준으로 주문합니다.</p>
         </Modal>
       )}
     </div>

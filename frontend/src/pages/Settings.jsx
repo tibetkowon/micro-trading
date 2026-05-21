@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { Toggle } from '../components/shared'
-import { db } from '../lib/firebase'
+import { apiFetch } from '../utils/api'
 
 function pf(v, d) { const n = parseFloat(v); return isNaN(n) ? d : n }
 function pi(v, d) { const n = parseInt(v, 10); return isNaN(n) ? d : n }
@@ -157,8 +156,9 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    getDoc(doc(db, 'settings', 'config'))
-      .then(snap => setSettings(transformSettings(snap.exists() ? snap.data() : {})))
+    apiFetch('/api/settings')
+      .then(res => res.json())
+      .then(data => setSettings(transformSettings(data || {})))
       .finally(() => setLoading(false))
   }, [])
 
@@ -241,7 +241,11 @@ export default function Settings() {
       flat.stream_bypass_enabled = String(settings.stream?.bypass_enabled ?? true)
       flat.stream_big_trade_amount = String(settings.stream?.big_trade_amount ?? 30000000)
       flat.stream_velocity_threshold = String(settings.stream?.velocity_threshold ?? 5.0)
-      await setDoc(doc(db, 'settings', 'config'), flat, { merge: true })
+      await apiFetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(flat),
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch (err) {

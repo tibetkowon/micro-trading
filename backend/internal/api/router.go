@@ -88,6 +88,12 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		}
 	}
 
+	admin := r.Group("/api/admin", AdminAuth(h.cfg.AdminAPIKey))
+	{
+		admin.GET("/tables", h.GetAdminTables)
+		admin.GET("/tables/:table", h.GetAdminTableData)
+	}
+
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})

@@ -64,6 +64,33 @@ func (h *Handler) SetEngine(e *trader.Engine) {
 	h.engine = e
 }
 
+func (h *Handler) GetAdminTables(c *gin.Context) {
+	tables := []string{
+		"orders", "monitored_positions", "scan_logs",
+		"trade_reports", "daily_reports", "simulation_results",
+		"balances", "settings", "tokens",
+	}
+	c.JSON(http.StatusOK, gin.H{"tables": tables})
+}
+
+func (h *Handler) GetAdminTableData(c *gin.Context) {
+	table := c.Param("table")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit > 200 {
+		limit = 200
+	}
+	rows, total, err := h.db.ListTable(c.Request.Context(), table, page, limit)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"table": table, "page": page, "limit": limit,
+		"total": total, "rows": rows,
+	})
+}
+
 // GET /api/balance
 func (h *Handler) GetBalance(c *gin.Context) {
 	bal, err := ops.GetAccountBalance(c.Request.Context(), h.client, h.db)
