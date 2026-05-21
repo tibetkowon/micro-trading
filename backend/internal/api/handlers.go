@@ -1243,8 +1243,8 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 	if req.TrailingStopPct != nil {
-		if *req.TrailingStopPct <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "trailing_stop_pct는 0보다 커야 합니다"})
+		if *req.TrailingStopPct < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "trailing_stop_pct는 0 이상이어야 합니다"})
 			return
 		}
 		if !save("trailing_stop_pct", strconv.FormatFloat(*req.TrailingStopPct, 'f', -1, 64)) {

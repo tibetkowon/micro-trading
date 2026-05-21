@@ -206,8 +206,9 @@ export default function Settings() {
       flat.trading_end_time = settings.schedule?.trade_end || '15:15'
       flat.scan_interval = settings.schedule?.scan_interval ?? 1
       flat.indicator_check_interval_min = settings.schedule?.indicator_check_interval ?? 5
+      const weightApiKey = { bidask: 'bid_ask', micro_bidask: 'micro_bid_ask' }
       for (const k of ['strength', 'rsi', 'macd', 'bidask', 'vwap', 'volume', 'program_buy', 'micro_bidask', 'vi_disparity'])
-        flat[`score_weight_${k}`] = settings.weights?.[k] ?? 0
+        flat[`score_weight_${weightApiKey[k] ?? k}`] = settings.weights?.[k] ?? 0
       for (const k of ['rsi_upper_limit', 'strength_lower', 'vwap_min', 'vwap_max',
           'high_disparity', 'open_rise_limit', 'high_elapsed_min', 'volume_ratio_lower']) {
         flat[`filter_${k}_enabled`] = settings.filters?.[k]?.enabled ?? false
@@ -218,16 +219,17 @@ export default function Settings() {
       flat.consecutive_loss_reset_on_profit = settings.consecutive_loss_reset_on_profit ?? true
       flat.max_bidask_spread_pct = settings.max_bidask_spread_pct ?? 0
       flat.trailing_trigger_pct = settings.trailing?.trigger_pct ?? 0
-      if ((settings.trailing?.stop_pct ?? 0) > 0)
-        flat.trailing_stop_pct = settings.trailing.stop_pct
+      flat.trailing_stop_pct = settings.trailing?.stop_pct ?? 0
       flat.trailing_mode = settings.trailing?.mode || 'pct'
       flat.tick_tier0_stop_loss_ticks = settings.trailing?.tick_tier0_stop_loss_ticks ?? 3
       flat.tick_tier1_trigger_pct = settings.trailing?.tick_tier1_trigger_pct ?? 0
       flat.tick_tier1_trail_ticks = settings.trailing?.tick_tier1_trail_ticks ?? 5
       flat.tick_tier2_trigger_pct = settings.trailing?.tick_tier2_trigger_pct ?? 0
       flat.tick_tier2_trail_ticks = settings.trailing?.tick_tier2_trail_ticks ?? 2
-      flat.stagnation_threshold_pct = settings.stagnation?.threshold_pct ?? 0
-      flat.stagnation_duration_min = settings.stagnation?.duration_min ?? 0
+      if ((settings.stagnation?.threshold_pct ?? 0) > 0)
+        flat.stagnation_threshold_pct = settings.stagnation.threshold_pct
+      if ((settings.stagnation?.duration_min ?? 0) >= 1)
+        flat.stagnation_duration_min = settings.stagnation.duration_min
       flat.stagnation_partial_exit_enabled = settings.stagnation?.partial_exit_enabled ?? false
       flat.stagnation_bidask_sell_threshold = settings.stagnation?.bidask_sell_threshold ?? 1.0
       flat.sell_conditions = settings.sell_conditions ?? []
