@@ -136,7 +136,7 @@ func corsMiddleware(allowedOrigin string) gin.HandlerFunc {
 		if allowedOrigin != "" {
 			c.Header("Access-Control-Allow-Origin", allowedOrigin)
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Content-Type")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, X-Admin-Key, X-Agent-Key")
 		}
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
