@@ -136,26 +136,28 @@ func (h *Handler) GetBalance(c *gin.Context) {
 func (h *Handler) GetOrders(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	if limit <= 0 || limit > 200 {
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "1"))
+	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
+	if days < 1 || days > 90 {
+		days = 1
+	}
+	since := time.Now().AddDate(0, 0, -(days - 1))
+	since = time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, since.Location())
 
 	var syncError string
 	if c.Query("sync") == "true" {
-		days, _ := strconv.Atoi(c.DefaultQuery("days", "1"))
-		if days < 1 || days > 90 {
-			days = 1
-		}
-		endDate := time.Now().Format("20060102")
-		startDate := time.Now().AddDate(0, 0, -(days - 1)).Format("20060102")
 		syncCtx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 		defer cancel()
+		endDate := time.Now().Format("20060102")
+		startDate := since.Format("20060102")
 		if _, err := ops.GetOrderHistory(syncCtx, h.client, h.db, startDate, endDate); err != nil {
 			syncError = err.Error()
 		}
 	}
 
-	orders, err := ops.GetLocalOrderHistory(c.Request.Context(), h.db, limit, offset)
+	orders, err := ops.GetLocalOrderHistory(c.Request.Context(), h.db, since, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -163,7 +165,7 @@ func (h *Handler) GetOrders(c *gin.Context) {
 	if orders == nil {
 		orders = []models.Order{}
 	}
-	total, _ := h.db.CountOrders(c.Request.Context())
+	total, _ := h.db.CountOrdersSince(c.Request.Context(), since)
 	resp := gin.H{"orders": orders, "data": orders, "total": total, "limit": limit, "offset": offset}
 	if syncError != "" {
 		resp["sync_error"] = syncError
@@ -784,6 +786,58 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"filters": filters,
 		// 스케줄
 		"schedule": schedule,
+		// 트레일링
+		"trailing_trigger_pct":       ts.TrailingTriggerPct,
+		"trailing_stop_pct":          ts.TrailingStopPct,
+		"trailing_mode":              ts.TrailingMode,
+		"tick_tier0_stop_loss_ticks": ts.TickTier0StopLossTicks,
+		"tick_tier1_trigger_pct":     ts.TickTier1TriggerPct,
+		"tick_tier1_trail_ticks":     ts.TickTier1TrailTicks,
+		"tick_tier2_trigger_pct":     ts.TickTier2TriggerPct,
+		"tick_tier2_trail_ticks":     ts.TickTier2TrailTicks,
+		// 스태그네이션
+		"stagnation_threshold_pct":         ts.StagnationThresholdPct,
+		"stagnation_duration_min":          ts.StagnationDurationMin,
+		"stagnation_partial_exit_enabled":  ts.StagnationPartialExitEnabled,
+		"stagnation_bidask_sell_threshold": ts.StagnationBidAskSellThreshold,
+		// 랭킹 (누락)
+		"ranking_types":     ts.RankingTypes,
+		"ranking_price_min": ts.RankingPriceMin,
+		"ranking_price_max": ts.RankingPriceMax,
+		"ranking_exchanges": ts.RankingExchanges,
+		// 재진입 / 손절
+		"sell_on_upper_limit":              ts.SellOnUpperLimit,
+		"max_consecutive_losses":           ts.MaxConsecutiveLosses,
+		"consecutive_loss_reset_on_profit": ts.ConsecutiveLossResetOnProfit,
+		"max_bidask_spread_pct":            ts.MaxBidAskSpreadPct,
+		"block_reentry_on_loss":            ts.BlockReentryOnLoss,
+		"reentry_score_penalty":            ts.ReentryScorePenalty,
+		"reentry_cooldown_min":             ts.ReentryCooldownMin,
+		"loss_cooldown_min":                ts.LossCooldownMin,
+		"loss_reentry_price_guard":         ts.LossReentryPriceGuard,
+		// 하드 필터 (누락)
+		"hard_ma60_support_enabled":  ts.HardMA60SupportEnabled,
+		"hard_ma120_support_enabled": ts.HardMA120SupportEnabled,
+		"hard_program_buy_min":       ts.HardProgramBuyMin,
+		"hard_peak_turn_enabled":     ts.HardPeakTurnEnabled,
+		"hard_peak_rsi_min":          ts.HardPeakRSIMin,
+		// 스트림
+		"stream_bypass_enabled":     ts.StreamBypassEnabled,
+		"stream_big_trade_amount":   ts.StreamBigTradeAmount,
+		"stream_velocity_threshold": ts.StreamVelocityThreshold,
+		// 매도 조건
+		"sell_conditions": ts.SellConditions,
+		"buy_order_type":  ts.BuyOrderType,
+		// 스코어 가중치 (flat 키로 노출 — transformSettings fallback 호환)
+		"score_weight_strength":     ts.ScoreWeightStrength,
+		"score_weight_rsi":          ts.ScoreWeightRSI,
+		"score_weight_macd":         ts.ScoreWeightMACD,
+		"score_weight_bidask":       ts.ScoreWeightBidAsk,
+		"score_weight_vwap":         ts.ScoreWeightVWAP,
+		"score_weight_volume":       ts.ScoreWeightVolume,
+		"score_weight_program_buy":  ts.ScoreWeightProgramBuy,
+		"score_weight_micro_bidask": ts.ScoreWeightMicroBidAsk,
+		"score_weight_vi_disparity": ts.ScoreWeightVIDisparity,
 		// 시스템 / KIS 설정 (읽기 전용)
 		"account_no":      maskedAccount,
 		"account_type":    h.cfg.KISAccountType,

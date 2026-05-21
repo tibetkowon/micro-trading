@@ -523,6 +523,26 @@ func (db *DB) ListOrders(ctx context.Context, limit, offset int) ([]models.Order
 	return orders, rows.Err()
 }
 
+func (db *DB) ListOrdersSince(ctx context.Context, since time.Time, limit, offset int) ([]models.Order, error) {
+	rows, err := db.sql.QueryContext(ctx, `SELECT id,kis_order_id,stock_code,stock_name,order_type,qty,price,
+		filled_price,status,source,target_pct,stop_pct,sell_reason,created_at,expire_at
+		FROM orders WHERE datetime(created_at) >= datetime(?) ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		since.UTC().Format("2006-01-02 15:04:05"), limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var orders []models.Order
+	for rows.Next() {
+		o, err := db.scanOrder(rows)
+		if err != nil {
+			return nil, err
+		}
+		orders = append(orders, *o)
+	}
+	return orders, rows.Err()
+}
+
 func (db *DB) GetLastAgentBuyOrder(ctx context.Context, stockCode string) (*models.Order, error) {
 	o, err := db.scanOrder(db.sql.QueryRowContext(ctx, `SELECT id,kis_order_id,stock_code,stock_name,order_type,qty,price,
 		filled_price,status,source,target_pct,stop_pct,sell_reason,created_at,expire_at
@@ -537,6 +557,13 @@ func (db *DB) GetLastAgentBuyOrder(ctx context.Context, stockCode string) (*mode
 func (db *DB) CountOrders(ctx context.Context) (int, error) {
 	var n int
 	err := db.sql.QueryRowContext(ctx, "SELECT COUNT(*) FROM orders").Scan(&n)
+	return n, err
+}
+
+func (db *DB) CountOrdersSince(ctx context.Context, since time.Time) (int, error) {
+	var n int
+	err := db.sql.QueryRowContext(ctx, "SELECT COUNT(*) FROM orders WHERE datetime(created_at) >= datetime(?)",
+		since.UTC().Format("2006-01-02 15:04:05")).Scan(&n)
 	return n, err
 }
 
