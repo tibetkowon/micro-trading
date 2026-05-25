@@ -153,22 +153,7 @@ func RunDailySimulation(ctx context.Context, db *database.DB, kisClient *kis.Cli
 	}
 	actualNetPnl := actualGrossPnl - commissionPct*float64(len(prepared))
 
-	summaries := make([]ScenarioSummary, 0, len(scenarios))
-	for _, scenario := range scenarios {
-		var summary ScenarioSummary
-		var err error
-		if scenario.Params.MinScoreThreshold != base.MinScoreThreshold {
-			summary, err = runScenarioWithThreshold(prepared, virtualPrepared, scenario)
-		} else {
-			summary, err = runScenarioForTrades(prepared, scenario)
-		}
-		if err != nil {
-			logger.Warn("simulation: scenario skipped", map[string]any{"label": scenario.Label, "error": err.Error()})
-			continue
-		}
-		summary.DeltaVsActualPct = roundPct(summary.TotalPnlPct - actualNetPnl)
-		summaries = append(summaries, summary)
-	}
+	summaries := runScenariosParallel(prepared, virtualPrepared, scenarios, base.MinScoreThreshold, actualNetPnl)
 
 	recommended := pickBestScenario(summaries, base)
 
@@ -194,9 +179,13 @@ func RunDailySimulation(ctx context.Context, db *database.DB, kisClient *kis.Cli
 }
 
 // runScenariosParallel runs scenarios concurrently with a worker pool capped by GOMAXPROCS.
+// Scenarios requiring a different MinScoreThreshold are routed to runScenarioWithThreshold;
+// others use runScenarioForTrades. Results are returned in scenario order.
 func runScenariosParallel(
 	prepared []tradeCandles,
+	virtualPrepared []tradeCandles,
 	scenarios []Scenario,
+	baseThreshold float64,
 	actualNetPnl float64,
 ) []ScenarioSummary {
 	if len(scenarios) == 0 {
@@ -233,7 +222,13 @@ func runScenariosParallel(
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				summary, err := runScenarioForTrades(prepared, j.scenario)
+				var summary ScenarioSummary
+				var err error
+				if j.scenario.Params.MinScoreThreshold != baseThreshold {
+					summary, err = runScenarioWithThreshold(prepared, virtualPrepared, j.scenario)
+				} else {
+					summary, err = runScenarioForTrades(prepared, j.scenario)
+				}
 				if err == nil {
 					summary.DeltaVsActualPct = roundPct(summary.TotalPnlPct - actualNetPnl)
 				}

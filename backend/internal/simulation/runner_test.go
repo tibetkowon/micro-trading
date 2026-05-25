@@ -150,7 +150,7 @@ func TestRunScenariosParallel_DeltaUsesActualNetPnl(t *testing.T) {
 	actualGrossPnl := 4.0
 	actualNetPnl := actualGrossPnl - commissionPct*float64(len(prepared))
 
-	summaries := runScenariosParallel(prepared, scenarios, actualNetPnl)
+	summaries := runScenariosParallel(prepared, nil, scenarios, 0, actualNetPnl)
 	if len(summaries) != 1 {
 		t.Fatalf("want 1 summary, got %d", len(summaries))
 	}
