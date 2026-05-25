@@ -72,12 +72,33 @@ func (s *Store) Search(ctx context.Context, q string, etfOnly bool, market strin
 	if limit <= 0 {
 		limit = 200
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT data FROM stock_masters ORDER BY stock_code")
+	q = strings.ToLower(q)
+
+	query := "SELECT data FROM stock_masters WHERE 1=1"
+	args := make([]any, 0, 4)
+
+	if q != "" {
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q)
+		pattern := "%" + escaped + "%"
+		query += " AND (LOWER(stock_code) LIKE ? ESCAPE '\\' OR LOWER(stock_name) LIKE ? ESCAPE '\\')"
+		args = append(args, pattern, pattern)
+	}
+	if etfOnly {
+		query += " AND is_etf = 1"
+	}
+	if market != "" {
+		query += " AND market_type = ?"
+		args = append(args, market)
+	}
+	query += " ORDER BY stock_code LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	q = strings.ToLower(q)
+
 	var results []*StockMaster
 	for rows.Next() {
 		var blob string
@@ -88,19 +109,7 @@ func (s *Store) Search(ctx context.Context, q string, etfOnly bool, market strin
 		if err := json.Unmarshal([]byte(blob), &m); err != nil {
 			continue
 		}
-		if q != "" && !strings.Contains(strings.ToLower(m.StockCode), q) && !strings.Contains(strings.ToLower(m.StockName), q) {
-			continue
-		}
-		if etfOnly && !m.IsETF {
-			continue
-		}
-		if market != "" && m.MarketType != market {
-			continue
-		}
 		results = append(results, &m)
-		if len(results) >= limit {
-			break
-		}
 	}
 	return results, rows.Err()
 }

@@ -4,9 +4,9 @@ import { fmt, fmtPct, fmtSigned, Badge, BotStateBadge, PriceProgressBar } from '
 import ScanRawModal from '../components/ScanRawModal'
 
 export default function Dashboard() {
-  const { data: balance, loading: balLoading } = useApi('/api/balance')
+  const { data: balance, loading: balLoading } = useApi('/api/balance', { pollInterval: 3000 })
   const { data: positions } = useApi('/api/monitor/positions', { pollInterval: 3000 })
-  const { data: traderStatus } = useApi('/api/server/status')
+  const { data: traderStatus } = useApi('/api/server/status', { pollInterval: 3000 })
   const { data: scanLogs } = useApi('/api/logs/scan?limit=5')
 
   const [expanded, setExpanded] = useState({})
