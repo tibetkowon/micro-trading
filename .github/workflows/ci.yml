@@ -69,10 +69,10 @@ jobs:
           fi
 
       - name: Build
-        run: CGO_ENABLED=0 go build ./...
+        run: CGO_ENABLED=1 go build ./...
 
       - name: Test
-        run: CGO_ENABLED=0 go test ./...
+        run: CGO_ENABLED=1 go test ./...
 
   frontend-ci:
     name: React Lint & Build
@@ -122,7 +122,7 @@ jobs:
         working-directory: backend
         run: |
           go mod download
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
