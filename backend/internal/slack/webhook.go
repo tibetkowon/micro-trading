@@ -1,19 +1,18 @@
 package slack
 
 import (
-	"bytes"
-	"encoding/json"
 	"log/slog"
-	"net/http"
-	"time"
+
+	slackapi "github.com/slack-go/slack"
 )
 
 type Client struct {
-	webhooks Webhooks
-	http     *http.Client
+	api      *slackapi.Client
+	token    string
+	channels Channels
 }
 
-type Webhooks struct {
+type Channels struct {
 	Default  string
 	Alert    string
 	KIS      string
@@ -21,87 +20,73 @@ type Webhooks struct {
 	Position string
 }
 
-func New(webhookURL string) *Client {
-	return NewWithWebhooks(Webhooks{Default: webhookURL})
+func New(token string) *Client {
+	return NewWithChannels(token, Channels{Default: ""})
 }
 
-func NewWithWebhooks(webhooks Webhooks) *Client {
+func NewWithChannels(token string, channels Channels) *Client {
+	return newWithChannels(token, channels)
+}
+
+func newWithChannels(token string, channels Channels, options ...slackapi.Option) *Client {
 	return &Client{
-		webhooks: webhooks,
-		http:     &http.Client{Timeout: 5 * time.Second},
+		api:      slackapi.New(token, options...),
+		token:    token,
+		channels: channels,
 	}
 }
 
 func (c *Client) Enabled() bool {
-	return c != nil && (c.webhooks.Default != "" ||
-		c.webhooks.Alert != "" ||
-		c.webhooks.KIS != "" ||
-		c.webhooks.Trade != "" ||
-		c.webhooks.Position != "")
+	return c != nil && c.token != "" && (c.channels.Default != "" ||
+		c.channels.Alert != "" ||
+		c.channels.KIS != "" ||
+		c.channels.Trade != "" ||
+		c.channels.Position != "")
 }
 
 func (c *Client) PositionEnabled() bool {
-	return c != nil && c.routeURL(c.webhooks.Position) != ""
+	return c != nil && c.token != "" && c.routeChannel(c.channels.Position) != ""
 }
 
-type Attachment struct {
-	Color     string  `json:"color,omitempty"`
-	Title     string  `json:"title,omitempty"`
-	Text      string  `json:"text,omitempty"`
-	Fields    []Field `json:"fields,omitempty"`
-	Timestamp int64   `json:"ts,omitempty"`
+func (c *Client) sendAttachments(attachments []slackapi.Attachment) {
+	c.send(c.channels.Default, attachments)
 }
 
-type Field struct {
-	Title string `json:"title"`
-	Value string `json:"value"`
-	Short bool   `json:"short,omitempty"`
+func (c *Client) sendAlertAttachments(attachments []slackapi.Attachment) {
+	c.send(c.channels.Alert, attachments)
 }
 
-func (c *Client) sendAttachments(attachments []Attachment) {
-	c.sendAttachmentsTo(c.webhooks.Default, attachments)
+func (c *Client) sendKISAttachments(attachments []slackapi.Attachment) {
+	c.send(c.channels.KIS, attachments)
 }
 
-func (c *Client) sendAlertAttachments(attachments []Attachment) {
-	c.sendAttachmentsTo(c.webhooks.Alert, attachments)
+func (c *Client) sendTradeAttachments(attachments []slackapi.Attachment) {
+	c.send(c.channels.Trade, attachments)
 }
 
-func (c *Client) sendKISAttachments(attachments []Attachment) {
-	c.sendAttachmentsTo(c.webhooks.KIS, attachments)
+func (c *Client) sendPositionAttachments(attachments []slackapi.Attachment) {
+	c.send(c.channels.Position, attachments)
 }
 
-func (c *Client) sendTradeAttachments(attachments []Attachment) {
-	c.sendAttachmentsTo(c.webhooks.Trade, attachments)
-}
-
-func (c *Client) sendPositionAttachments(attachments []Attachment) {
-	c.sendAttachmentsTo(c.webhooks.Position, attachments)
-}
-
-func (c *Client) sendAttachmentsTo(webhookURL string, attachments []Attachment) {
-	webhookURL = c.routeURL(webhookURL)
-	if webhookURL == "" {
+func (c *Client) send(channelID string, attachments []slackapi.Attachment) {
+	if c == nil || c.api == nil || c.token == "" {
 		return
 	}
-	payload := map[string]any{"attachments": attachments}
-	b, _ := json.Marshal(payload)
-	resp, err := c.http.Post(webhookURL, "application/json", bytes.NewReader(b))
-	if err != nil {
+	channelID = c.routeChannel(channelID)
+	if channelID == "" {
+		return
+	}
+	if _, _, err := c.api.PostMessage(channelID, slackapi.MsgOptionAttachments(attachments...)); err != nil {
 		slog.Warn("slack webhook failed", "error", err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		slog.Warn("slack webhook error response", "status", resp.StatusCode)
 	}
 }
 
-func (c *Client) routeURL(webhookURL string) string {
+func (c *Client) routeChannel(channelID string) string {
 	if c == nil {
 		return ""
 	}
-	if webhookURL != "" {
-		return webhookURL
+	if channelID != "" {
+		return channelID
 	}
-	return c.webhooks.Default
+	return c.channels.Default
 }
