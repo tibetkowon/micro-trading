@@ -16,9 +16,7 @@ type Config struct {
 	KISBaseURL     string
 	KISHTSID       string // HTS ID — used as tr_key for 체결통보 (H0STCNI0)
 
-	FirebaseProjectID       string // GCP project ID
-	FirebaseCredentialsJSON string // service account JSON (file path or inline JSON)
-	SQLitePath              string // SQLITE_PATH env var
+	SQLitePath string // SQLITE_PATH env var
 	AgentAPIKey             string // AGENT_API_KEY env var
 	AdminAPIKey             string // ADMIN_API_KEY env var
 
@@ -50,9 +48,7 @@ func Load() (*Config, error) {
 		KISBaseURL:     getEnv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443"),
 		KISHTSID:       getEnv("KIS_HTS_ID", ""),
 
-		FirebaseProjectID:       getEnv("FIREBASE_PROJECT_ID", ""),
-		FirebaseCredentialsJSON: getEnv("FIREBASE_CREDENTIALS_JSON", ""),
-		SQLitePath:              getEnv("SQLITE_PATH", "/data/trading.db"),
+		SQLitePath: getEnv("SQLITE_PATH", "/data/trading.db"),
 		AgentAPIKey:             getEnv("AGENT_API_KEY", ""),
 		AdminAPIKey:             getEnv("ADMIN_API_KEY", ""),
 
