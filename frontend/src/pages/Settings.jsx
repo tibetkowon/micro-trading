@@ -222,14 +222,17 @@ export default function Settings() {
       flat.max_consecutive_losses = settings.max_consecutive_losses ?? 0
       flat.consecutive_loss_reset_on_profit = settings.consecutive_loss_reset_on_profit ?? true
       flat.max_bidask_spread_pct = settings.max_bidask_spread_pct ?? 0
-      flat.trailing_trigger_pct = settings.trailing?.trigger_pct ?? 0
-      flat.trailing_stop_pct = settings.trailing?.stop_pct ?? 0
       flat.trailing_mode = settings.trailing?.mode || 'pct'
-      flat.tick_tier0_stop_loss_ticks = settings.trailing?.tick_tier0_stop_loss_ticks ?? 3
-      flat.tick_tier1_trigger_pct = settings.trailing?.tick_tier1_trigger_pct ?? 0
-      flat.tick_tier1_trail_ticks = settings.trailing?.tick_tier1_trail_ticks ?? 5
-      flat.tick_tier2_trigger_pct = settings.trailing?.tick_tier2_trigger_pct ?? 0
-      flat.tick_tier2_trail_ticks = settings.trailing?.tick_tier2_trail_ticks ?? 2
+      if (flat.trailing_mode === 'tick') {
+        flat.tick_tier0_stop_loss_ticks = settings.trailing?.tick_tier0_stop_loss_ticks ?? 3
+        flat.tick_tier1_trigger_pct = settings.trailing?.tick_tier1_trigger_pct ?? 0
+        flat.tick_tier1_trail_ticks = settings.trailing?.tick_tier1_trail_ticks ?? 5
+        flat.tick_tier2_trigger_pct = settings.trailing?.tick_tier2_trigger_pct ?? 0
+        flat.tick_tier2_trail_ticks = settings.trailing?.tick_tier2_trail_ticks ?? 2
+      } else {
+        flat.trailing_trigger_pct = settings.trailing?.trigger_pct ?? 0
+        flat.trailing_stop_pct = settings.trailing?.stop_pct ?? 0
+      }
       flat.stagnation_threshold_pct = settings.stagnation?.threshold_pct ?? 0
       flat.stagnation_duration_min = settings.stagnation?.duration_min ?? 0
       flat.stagnation_partial_exit_enabled = settings.stagnation?.partial_exit_enabled ?? false

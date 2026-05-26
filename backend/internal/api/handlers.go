@@ -1187,8 +1187,8 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 	if req.StagnationThresholdPct != nil {
-		if *req.StagnationThresholdPct <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "stagnation_threshold_pct는 0보다 커야 합니다"})
+		if *req.StagnationThresholdPct < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "stagnation_threshold_pct는 0 이상이어야 합니다"})
 			return
 		}
 		if !save("stagnation_threshold_pct", strconv.FormatFloat(*req.StagnationThresholdPct, 'f', -1, 64)) {
@@ -1196,8 +1196,8 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 	if req.StagnationDurationMin != nil {
-		if *req.StagnationDurationMin < 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "stagnation_duration_min은 1 이상이어야 합니다"})
+		if *req.StagnationDurationMin < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "stagnation_duration_min은 0 이상이어야 합니다"})
 			return
 		}
 		if !save("stagnation_duration_min", strconv.Itoa(*req.StagnationDurationMin)) {
