@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '../utils/api'
 import { fmt, Badge, Spinner } from '../components/shared'
-import { fmtTs } from '../lib/firebase'
+import { fmtTs } from '../lib/time'
 
 const STATUS_COLOR = { FILLED: 'green', PENDING: 'yellow', CANCELLED: 'gray', FAILED: 'red', PARTIALLY_FILLED: 'yellow' }
 const STATUS_LABEL = { FILLED: '체결', PENDING: '대기', CANCELLED: '취소', FAILED: '실패', PARTIALLY_FILLED: '부분체결' }

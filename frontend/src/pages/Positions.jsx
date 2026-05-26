@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { apiFetch } from '../utils/api'
 import { useApi } from '../hooks/useApi'
 import { fmt, Badge, Modal, EmptyState } from '../components/shared'
-import { fmtTs } from '../lib/firebase'
+import { fmtTs } from '../lib/time'
 
 export default function Positions() {
   const [confirmAll, setConfirmAll] = useState(false)
