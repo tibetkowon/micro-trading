@@ -32,12 +32,12 @@ func main() {
 		slog.Error("config error", "error", err)
 		os.Exit(1)
 	}
-	slackClient := slack.NewWithWebhooks(slack.Webhooks{
-		Default:  cfg.SlackWebhookURL,
-		Alert:    cfg.SlackAlertWebhookURL,
-		KIS:      cfg.SlackKISWebhookURL,
-		Trade:    cfg.SlackTradeWebhookURL,
-		Position: cfg.SlackPositionWebhookURL,
+	slackClient := slack.NewWithChannels(cfg.SlackBotToken, slack.Channels{
+		Default:  cfg.SlackDefaultChannelID,
+		Alert:    cfg.SlackAlertChannelID,
+		KIS:      cfg.SlackKISChannelID,
+		Trade:    cfg.SlackTradeChannelID,
+		Position: cfg.SlackPositionChannelID,
 	})
 	logger.RegisterAlertHook(func(level, message, detail string) {
 		if level == "WARN" || level == "WARNING" {

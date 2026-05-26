@@ -22,13 +22,14 @@ type Config struct {
 	AgentAPIKey             string // AGENT_API_KEY env var
 	AdminAPIKey             string // ADMIN_API_KEY env var
 
-	SlackWebhookURL         string // SLACK_WEBHOOK_URL (fallback)
-	SlackAlertWebhookURL    string // SLACK_ALERT_WEBHOOK_URL
-	SlackKISWebhookURL      string // SLACK_KIS_WEBHOOK_URL
-	SlackTradeWebhookURL    string // SLACK_TRADE_WEBHOOK_URL
-	SlackPositionWebhookURL string // SLACK_POSITION_WEBHOOK_URL
-	SlackKISFailThreshold   int    // SLACK_KIS_FAIL_THRESHOLD
-	SlackPositionSnapshotM  int    // SLACK_POSITION_SNAPSHOT_MIN
+	SlackBotToken          string // SLACK_BOT_TOKEN
+	SlackDefaultChannelID  string // SLACK_DEFAULT_CHANNEL_ID
+	SlackAlertChannelID    string // SLACK_ALERT_CHANNEL_ID
+	SlackKISChannelID      string // SLACK_KIS_CHANNEL_ID
+	SlackTradeChannelID    string // SLACK_TRADE_CHANNEL_ID
+	SlackPositionChannelID string // SLACK_POSITION_CHANNEL_ID
+	SlackKISFailThreshold  int    // SLACK_KIS_FAIL_THRESHOLD
+	SlackPositionSnapshotM int    // SLACK_POSITION_SNAPSHOT_MIN
 
 	FrontendOrigin string // Firebase Hosting origin for CORS (e.g. https://xxx.web.app)
 
@@ -55,13 +56,14 @@ func Load() (*Config, error) {
 		AgentAPIKey:             getEnv("AGENT_API_KEY", ""),
 		AdminAPIKey:             getEnv("ADMIN_API_KEY", ""),
 
-		SlackWebhookURL:         getEnv("SLACK_WEBHOOK_URL", ""),
-		SlackAlertWebhookURL:    getEnv("SLACK_ALERT_WEBHOOK_URL", ""),
-		SlackKISWebhookURL:      getEnv("SLACK_KIS_WEBHOOK_URL", ""),
-		SlackTradeWebhookURL:    getEnv("SLACK_TRADE_WEBHOOK_URL", ""),
-		SlackPositionWebhookURL: getEnv("SLACK_POSITION_WEBHOOK_URL", ""),
-		SlackKISFailThreshold:   getEnvInt("SLACK_KIS_FAIL_THRESHOLD", 5),
-		SlackPositionSnapshotM:  getEnvInt("SLACK_POSITION_SNAPSHOT_MIN", 30),
+		SlackBotToken:          getEnv("SLACK_BOT_TOKEN", ""),
+		SlackDefaultChannelID:  getEnv("SLACK_DEFAULT_CHANNEL_ID", ""),
+		SlackAlertChannelID:    getEnv("SLACK_ALERT_CHANNEL_ID", ""),
+		SlackKISChannelID:      getEnv("SLACK_KIS_CHANNEL_ID", ""),
+		SlackTradeChannelID:    getEnv("SLACK_TRADE_CHANNEL_ID", ""),
+		SlackPositionChannelID: getEnv("SLACK_POSITION_CHANNEL_ID", ""),
+		SlackKISFailThreshold:  getEnvInt("SLACK_KIS_FAIL_THRESHOLD", 5),
+		SlackPositionSnapshotM: getEnvInt("SLACK_POSITION_SNAPSHOT_MIN", 30),
 
 		FrontendOrigin: getEnv("FRONTEND_ORIGIN", ""),
 
